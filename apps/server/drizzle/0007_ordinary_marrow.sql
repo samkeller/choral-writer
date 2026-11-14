@@ -1,0 +1,1 @@
+ALTER TABLE "budget_reservations" ADD COLUMN "settled_amount" numeric;

@@ -1,0 +1,1 @@
+ALTER TABLE "projects" ADD COLUMN "world_initialized" boolean DEFAULT true NOT NULL;
