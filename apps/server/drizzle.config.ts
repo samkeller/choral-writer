@@ -5,5 +5,5 @@ export default defineConfig({
   schema: './src/schema.ts',
   schemaFilter: ['choral_writer'],
   out: './drizzle',
-  dbCredentials: { url: process.env.DATABASE_URL ?? '' }
+  dbCredentials: { url: process.env.DATABASE_URL ?? '' },
 });

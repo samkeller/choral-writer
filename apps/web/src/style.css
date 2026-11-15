@@ -1,24 +1,189 @@
-:root { font-family: system-ui, sans-serif; color: #242331; background: #f7f5f0; line-height: 1.5; }
-* { box-sizing: border-box; }
-body { margin: 0; }
-main { max-width: 56rem; margin: 0 auto; padding: 1rem; }
-header, .toolbar, .actions, nav { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; }
-header { justify-content: space-between; }
-h1 { font-size: 1.8rem; }
-h2, h3 { margin: .5rem 0; }
-nav { margin: 1rem 0; }
-.panel { background: white; border: 1px solid #e2ded6; border-radius: .7rem; padding: 1rem; margin: 1rem 0; }
-form, label { display: grid; gap: .5rem; }
-label { margin: .75rem 0; font-weight: 600; }
-input, textarea, select, button { font: inherit; padding: .7rem; border-radius: .4rem; border: 1px solid #aaa5a0; max-width: 100%; }
-textarea { width: 100%; resize: vertical; font-weight: normal; }
-button { cursor: pointer; background: #55497d; color: white; border-color: #55497d; }
-button:disabled { opacity: .5; cursor: not-allowed; }
-.secondary { background: white; color: #44375c; border-color: #aaa5a0; }
-.selected { background: #55497d; }
-.project { display: block; width: 100%; text-align: left; margin: .4rem 0; }
-.muted { color: #6b6671; font-size: .9rem; }
-.error { color: #a12525; }
-.prose { white-space: pre-wrap; line-height: 1.8; }
-pre, .code { font: .85rem/1.5 ui-monospace, monospace; }
-pre { overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 30rem; }
+:root {
+  color-scheme: light;
+  font-family: system-ui, sans-serif;
+  color: #242331;
+  background: #f7f5f0;
+  line-height: 1.5;
+  --color-accent: #55497d;
+  --color-accent-dark: #44375c;
+  --color-border: #aaa5a0;
+  --color-panel-border: #e2ded6;
+  --color-muted: #6b6671;
+  --color-error: #a12525;
+  --color-surface: #fff;
+  --radius-control: 0.4rem;
+  --radius-panel: 0.7rem;
+  --space-panel: 1rem;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+main {
+  width: min(100%, 58rem);
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+header,
+.toolbar,
+.actions,
+nav {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+header {
+  justify-content: space-between;
+}
+
+h1 {
+  font-size: clamp(1.5rem, 5vw, 1.8rem);
+}
+
+h2,
+h3,
+h4 {
+  margin: 0.5rem 0;
+}
+
+nav {
+  margin: 1rem 0;
+}
+
+.panel {
+  background: var(--color-surface);
+  border: 1px solid var(--color-panel-border);
+  border-radius: var(--radius-panel);
+  padding: var(--space-panel);
+  margin: 1rem 0;
+}
+
+form,
+label {
+  display: grid;
+  gap: 0.5rem;
+}
+
+label {
+  margin: 0.75rem 0;
+  font-weight: 600;
+}
+
+input,
+textarea,
+select,
+button {
+  min-width: 0;
+  max-width: 100%;
+  font: inherit;
+  padding: 0.7rem;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--color-border);
+}
+
+textarea {
+  width: 100%;
+  resize: vertical;
+  font-weight: normal;
+}
+
+button {
+  min-height: 2.75rem;
+  cursor: pointer;
+  background: var(--color-accent);
+  color: white;
+  border-color: var(--color-accent);
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+summary:focus-visible {
+  outline: 3px solid #8a75bd;
+  outline-offset: 2px;
+}
+
+.secondary {
+  background: var(--color-surface);
+  color: var(--color-accent-dark);
+  border-color: var(--color-border);
+}
+
+.selected {
+  background: var(--color-accent);
+}
+
+.project {
+  display: block;
+  width: 100%;
+  margin: 0.4rem 0;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.muted {
+  color: var(--color-muted);
+  font-size: 0.9rem;
+}
+
+.error {
+  color: var(--color-error);
+}
+
+.prose {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.8;
+}
+
+pre,
+.code {
+  font:
+    0.85rem/1.5 ui-monospace,
+    monospace;
+}
+
+pre {
+  max-height: 30rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.reservation {
+  border-top: 1px solid var(--color-panel-border);
+  padding-block: 0.5rem;
+}
+
+@media (max-width: 36rem) {
+  main {
+    padding: 0.75rem;
+  }
+
+  .panel {
+    padding: 0.8rem;
+  }
+
+  .toolbar > h2 {
+    overflow-wrap: anywhere;
+  }
+
+  nav > button,
+  .actions > button {
+    flex: 1 1 auto;
+  }
+}

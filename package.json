@@ -6,8 +6,19 @@
     "build": "pnpm -r build",
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm exec eslint apps packages",
+    "format:check": "pnpm exec prettier --check \"apps/**/*.{ts,tsx,json,css,html}\" \"packages/**/*.{ts,tsx,json}\" \"*.json\" \"*.yaml\" \"eslint.config.mjs\" \".github/**/*.{yml,md}\" \"docs/**/*.md\" \"README.md\"",
     "db:generate": "pnpm --filter @choral/server db:generate",
     "db:migrate": "pnpm --filter @choral/server db:migrate",
     "dev": "pnpm --parallel --filter @choral/server --filter @choral/web dev"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.15.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.8",
+    "globals": "^17.14.0",
+    "prettier": "^3.10.1",
+    "typescript-eslint": "^8.72.2"
   }
 }

@@ -24,7 +24,13 @@ Le projet utilise par défaut un interpréteur, un narrateur et un gardien. Un Y
 Un budget optionnel se configure à la création ou dans **Agents → Budget du projet** avec, par exemple :
 
 ```json
-{"budget":{"project_usd":10,"turn_usd":0.5,"prices":{"deepseek/deepseek-chat":{"input_per_million":0.3,"output_per_million":1.2}}}}
+{
+  "budget": {
+    "project_usd": 10,
+    "turn_usd": 0.5,
+    "prices": { "deepseek/deepseek-chat": { "input_per_million": 0.3, "output_per_million": 1.2 } }
+  }
+}
 ```
 
 Les prix sont en dollars par million de tokens. Renseigner un plafond tarifaire à jour pour chaque modèle, y compris les frais éventuels : avant chaque tentative, le système réserve le coût maximal estimé d'après les octets d'entrée et `max_tokens`, en tenant compte des appels parallèles. La trace conserve le coût réel renvoyé par le fournisseur, ou l'estimation si le coût est absent. Une interruption avant la trace laisse la réservation comptabilisée pour éviter de sous-estimer les dépenses. Dans **Agents → Réservations de budget**, il est possible de rapprocher cette réservation avec le coût vérifié auprès du fournisseur ; l'estimation d'origine reste conservée. Ne pas renseigner zéro sans avoir vérifié que l'appel n'a pas été facturé. Si les tarifs réels dépassent les plafonds configurés, un dépassement reste possible ; les appels suivants seront bloqués. Un budget de projet ne peut pas être appliqué si des appels antérieurs ont un coût inconnu.
@@ -39,33 +45,20 @@ Le `Dockerfile` construit les trois paquets, applique les migrations au démarra
 
 ## Vérification
 
-`pnpm test` exécute les tests unitaires. Pour le test d'intégration PostgreSQL, utiliser une base **réservée aux tests** : la migration y sera appliquée.
+Les contrôles locaux et l'usage de la base de test sont détaillés dans [docs/DEVELOPMENT.md](./docs/DEVELOPMENT.md).
 
 ```sh
-TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/choral_test pnpm test
+pnpm typecheck
+pnpm lint
+pnpm format:check
+pnpm test
+pnpm build
 ```
 
-### Contrôle manuel de cohérence sur 30 tours
+Pour le test d'intégration PostgreSQL, utiliser une base **réservée aux tests** : la migration y sera appliquée.
 
-Avec un fournisseur LLM configuré, créer une histoire de test contenant Pierre, Marie, Léon, Hugo et un baron. Dans le monde initial, Pierre a perdu sa main gauche ; la porte de la crypte est verrouillée et personne ne possède sa clé ; Léon a tué le baron et il est seul à le savoir ; Marie croit à tort que Hugo l'a tué. Marie refuse d'accuser publiquement quelqu'un sans preuve. Vérifier les propositions initiales avant de les appliquer : la mort causée par Léon doit être un fait privé HIGH connu de Léon, et la croyance de Marie une connaissance fausse liée à ce fait. Corriger la mémoire si nécessaire.
-
-Ajouter un agent d'analyse pour Marie, avec un modèle disponible et la configuration suivante. Il décide de ses réactions, tandis que Pierre est piloté par l'utilisateur.
-
-```json
-{
-  "key": "marie", "name": "Marie", "kind": "analysis",
-  "model": "REMPLACER_PAR_LE_MODELE_CONFIGURE",
-  "system_prompt": "Tu incarnes Marie. Ne connais que les informations de ta vue. Tu refuses d'accuser publiquement quelqu'un sans preuve, même sous pression. Décide librement de tes réactions et exprime ton refus comme une contrainte si nécessaire.",
-  "params": {"temperature": 0.7, "max_tokens": 800, "timeout_ms": 60000},
-  "context": {"entities": ["marie"], "knowledge_of": ["marie"], "events": {"last": 6}, "summaries": [1]},
-  "schedule": {"mode": "always"}, "required": true, "enabled": true
-}
-```
-
-Jouer 30 tours en cinq séries de six : installer la scène et rappeler les faits ; demander à Pierre d'utiliser ses deux mains ou de franchir la porte sans moyen établi ; lui faire interroger Marie puis faire pression pour qu'elle accuse Hugo ; introduire des ellipses et scènes sans Marie ; revenir sur la porte, la main et le secret. Varier les formulations et examiner la prose et le debug après chaque tour. Vérifier que les intentions de Pierre ne deviennent pas automatiquement des résultats, que le refus de Marie est transmis et respecté, que sa croyance ne devient pas un fait, et que ni Pierre ni Marie n'apprennent le secret sans événement justificatif. Contrôler aussi les propositions et les résumés après les tours 5, 10, 15, 20, 25 et 30.
-
-Noter toute contradiction avec son numéro de tour, la prose, la résolution, les contributions et les propositions du debug. Une résolution ou correction explicitement justifiée peut faire évoluer l'état ; seule une contradiction sans justification est un échec. Ce contrôle évalue le modèle et les prompts choisis et ne remplace pas les tests automatisés.
+L'évaluation manuelle avec un vrai fournisseur est décrite dans [docs/LLM-EVALUATION.md](./docs/LLM-EVALUATION.md). Elle entraîne des coûts et complète les tests automatisés sans les remplacer.
 
 ## Limites actuelles
 
-Une reprise nécessite une action explicite et peut répéter un appel interrompu avant que son résultat soit persisté. Les projections sont stockées sous forme d'un document JSON par branche plutôt que dans les tables relationnelles détaillées du dossier. Les règles du réducteur limitent les contradictions mais ne peuvent pas garantir à elles seules la cohérence de la prose ; le test manuel de 30 tours reste à effectuer.
+Une reprise nécessite une action explicite et peut répéter un appel interrompu avant que son résultat soit persisté. La mémoire utilise un journal d'événements et une projection JSONB par branche; les tables mémoire normalisées décrites dans les notes de conception ne sont pas implémentées. Les règles du réducteur limitent les contradictions mais ne peuvent pas garantir à elles seules la cohérence de la prose ; l'évaluation manuelle de 30 tours reste à effectuer.

@@ -36,7 +36,10 @@ export class NarrationParser {
         this.phase = 'done';
       } else {
         const safe = Math.max(0, this.buffer.length - ('</prose>'.length - 1));
-        if (safe) { await this.emit(this.buffer.slice(0, safe)); this.buffer = this.buffer.slice(safe); }
+        if (safe) {
+          await this.emit(this.buffer.slice(0, safe));
+          this.buffer = this.buffer.slice(safe);
+        }
       }
     }
     if (this.phase === 'done' && this.buffer.trim()) throw new Error('Unexpected text after prose');
