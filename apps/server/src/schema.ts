@@ -1,13 +1,15 @@
-import { boolean, check, jsonb, pgTable, text, timestamp, uuid, integer, numeric, uniqueIndex } from 'drizzle-orm/pg-core';
+import { boolean, check, jsonb, pgTable, text, timestamp, uuid, integer, numeric, uniqueIndex, pgSchema } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import type { Memory, Message, Mutation } from '@choral/engine';
 
-export const globalSettings = pgTable('global_settings', {
+export const choralWriterSchema = pgSchema('choral_writer');
+
+export const globalSettings = choralWriterSchema.table('global_settings', {
   key: text('key').primaryKey(),
   value: text('value').notNull()
 });
 
-export const projects = pgTable('projects', {
+export const projects = choralWriterSchema.table('projects', {
   id: uuid('id').defaultRandom().primaryKey(),
   name: text('name').notNull(),
   instructions: text('instructions').notNull().default(''),
@@ -20,7 +22,7 @@ export const projects = pgTable('projects', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
 });
 
-export const agents = pgTable('agents', {
+export const agents = choralWriterSchema.table('agents', {
   id: uuid('id').defaultRandom().primaryKey(),
   projectId: uuid('project_id').notNull().references(() => projects.id),
   key: text('key').notNull(),
@@ -38,7 +40,7 @@ export const agents = pgTable('agents', {
   check('agents_kind_check', sql`${table.kind} in ('interpreter', 'analysis', 'output')`)
 ]);
 
-export const turns = pgTable('turns', {
+export const turns = choralWriterSchema.table('turns', {
   id: uuid('id').defaultRandom().primaryKey(),
   projectId: uuid('project_id').notNull().references(() => projects.id),
   branchId: uuid('branch_id'),
@@ -56,7 +58,7 @@ export const turns = pgTable('turns', {
   committedAt: timestamp('committed_at', { withTimezone: true })
 }, table => [uniqueIndex('turns_project_seq').on(table.projectId, table.seq)]);
 
-export const llmCalls = pgTable('llm_calls', {
+export const llmCalls = choralWriterSchema.table('llm_calls', {
   id: uuid('id').defaultRandom().primaryKey(),
   projectId: uuid('project_id').notNull().references(() => projects.id),
   turnId: uuid('turn_id').references(() => turns.id),
@@ -76,7 +78,7 @@ export const llmCalls = pgTable('llm_calls', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
 });
 
-export const budgetReservations = pgTable('budget_reservations', {
+export const budgetReservations = choralWriterSchema.table('budget_reservations', {
   id: uuid('id').defaultRandom().primaryKey(),
   projectId: uuid('project_id').notNull().references(() => projects.id),
   turnId: uuid('turn_id').references(() => turns.id),
@@ -86,7 +88,7 @@ export const budgetReservations = pgTable('budget_reservations', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
 });
 
-export const branches = pgTable('branches', {
+export const branches = choralWriterSchema.table('branches', {
   id: uuid('id').defaultRandom().primaryKey(),
   projectId: uuid('project_id').notNull().references(() => projects.id),
   parentBranchId: uuid('parent_branch_id'),
@@ -94,7 +96,7 @@ export const branches = pgTable('branches', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
 });
 
-export const events = pgTable('events', {
+export const events = choralWriterSchema.table('events', {
   id: uuid('id').defaultRandom().primaryKey(),
   projectId: uuid('project_id').notNull().references(() => projects.id),
   branchId: uuid('branch_id').notNull().references(() => branches.id),
@@ -110,13 +112,13 @@ export const events = pgTable('events', {
   check('events_category_check', sql`${table.category} in ('narrative', 'mutation')`)
 ]);
 
-export const memoryProjections = pgTable('memory_projections', {
+export const memoryProjections = choralWriterSchema.table('memory_projections', {
   branchId: uuid('branch_id').primaryKey().references(() => branches.id),
   projectId: uuid('project_id').notNull().references(() => projects.id),
   state: jsonb('state').$type<Memory>().notNull()
 });
 
-export const whiteboardEntries = pgTable('whiteboard_entries', {
+export const whiteboardEntries = choralWriterSchema.table('whiteboard_entries', {
   id: uuid('id').defaultRandom().primaryKey(),
   turnId: uuid('turn_id').notNull().references(() => turns.id),
   agentId: uuid('agent_id').notNull().references(() => agents.id),
@@ -125,7 +127,7 @@ export const whiteboardEntries = pgTable('whiteboard_entries', {
   error: text('error')
 });
 
-export const proposals = pgTable('proposals', {
+export const proposals = choralWriterSchema.table('proposals', {
   id: uuid('id').defaultRandom().primaryKey(),
   projectId: uuid('project_id').notNull().references(() => projects.id),
   turnId: uuid('turn_id').references(() => turns.id),
@@ -138,7 +140,7 @@ export const proposals = pgTable('proposals', {
   eventSeq: integer('event_seq')
 });
 
-export const summaries = pgTable('summaries', {
+export const summaries = choralWriterSchema.table('summaries', {
   id: uuid('id').defaultRandom().primaryKey(),
   projectId: uuid('project_id').notNull().references(() => projects.id),
   branchId: uuid('branch_id').notNull().references(() => branches.id),

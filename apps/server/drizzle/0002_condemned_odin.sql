@@ -1,1 +1,0 @@
-CREATE UNIQUE INDEX "summaries_branch_level_range" ON "summaries" USING btree ("branch_id","level","from_turn","to_turn");

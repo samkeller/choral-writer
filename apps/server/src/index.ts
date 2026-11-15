@@ -1,11 +1,11 @@
-import { config } from 'dotenv';
 import { Pool } from 'pg';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { z } from 'zod';
 import { buildApp } from './app.js';
+import { loadEnv } from './env.js';
 import { fileURLToPath } from 'node:url';
 
-config({ path: new URL('../../../.env', import.meta.url).pathname });
+loadEnv();
 const env = z.object({
   DATABASE_URL: z.string().min(1),
   APP_PASSWORD: z.string().min(12),
