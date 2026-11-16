@@ -1,0 +1,23 @@
+.assistantMessage {
+  align-self: flex-start;
+  width: 100%;
+}
+
+.userMessage {
+  align-self: flex-end;
+  max-width: 92%;
+  border-color: var(--mantine-color-choral-8);
+}
+
+.messageContent {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.assistantContent {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: ui-serif, Georgia, Cambria, "Times New Roman", serif;
+  font-size: var(--mantine-font-size-md);
+  line-height: 1.8;
+}

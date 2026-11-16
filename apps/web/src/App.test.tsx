@@ -44,6 +44,11 @@ function renderApp(path: string) {
 }
 
 beforeEach(() => {
+  vi.stubGlobal('ResizeObserver', class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  });
   vi.stubGlobal('matchMedia', vi.fn().mockImplementation((query: string) => ({
     matches: false,
     media: query,
@@ -171,8 +176,8 @@ describe('projects and chat screens', () => {
     });
     renderApp('/projects');
 
-    await screen.findByText('Aucun projet pour le moment. Créez votre premier chatbot.');
-    fireEvent.click(screen.getByRole('button', { name: 'Nouveau projet' }));
+    await screen.findByText('Aucun projet pour le moment.');
+    fireEvent.click(screen.getByRole('button', { name: 'Créer un projet' }));
     fireEvent.change(screen.getByLabelText('Nom du projet', { exact: false }), { target: { value: 'Mon histoire' } });
     fireEvent.change(screen.getByLabelText('Prompt système'), { target: { value: 'Tu es le narrateur.' } });
     fireEvent.click(screen.getByRole('button', { name: 'Enregistrer' }));
@@ -186,7 +191,7 @@ describe('projects and chat screens', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Supprimer' }));
     fireEvent.click(screen.getByRole('button', { name: 'Confirmer la suppression' }));
-    await screen.findByText('Aucun projet pour le moment. Créez votre premier chatbot.');
+    await screen.findByText('Aucun projet pour le moment.');
     expect(saved).toBeNull();
   });
 

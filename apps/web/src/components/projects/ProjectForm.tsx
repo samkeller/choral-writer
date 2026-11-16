@@ -47,7 +47,7 @@ export function ProjectForm({ initial, onSubmit, onCancel }: ProjectFormProps) {
           value={systemPrompt} onChange={(event) => setSystemPrompt(event.currentTarget.value)}
           minRows={8} autosize maxRows={18} maxLength={50_000} disabled={pending}
         />
-        {error && <Alert color="red">{error}</Alert>}
+        {error && <Alert color="red" role="alert">{error}</Alert>}
         <Group justify="flex-end">
           <Button variant="default" onClick={onCancel} disabled={pending}>Annuler</Button>
           <Button type="submit" loading={pending}>Enregistrer</Button>

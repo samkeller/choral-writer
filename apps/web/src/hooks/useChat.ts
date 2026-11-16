@@ -5,6 +5,9 @@ import { getErrorMessage } from '../api/client.js';
 import { getMessages, getProject } from '../api/projects.js';
 import { streamTurn } from '../api/chat.js';
 
+/**
+ * TODO DOC
+ */
 export function useChat(projectId: string) {
   const [project, setProject] = useState<Project | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);

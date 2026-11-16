@@ -34,7 +34,7 @@ export function MessageComposer({ pending, onSend }: {
           onChange={(event) => setContent(event.currentTarget.value)}
           minRows={3} autosize maxRows={8} maxLength={20_000} disabled={pending}
         />
-        {error && <Alert color="red">{error}</Alert>}
+        {error && <Alert color="red" role="alert">{error}</Alert>}
         <Group justify="flex-end">
           <Button type="submit" loading={pending} disabled={!content.trim()}>Envoyer</Button>
         </Group>

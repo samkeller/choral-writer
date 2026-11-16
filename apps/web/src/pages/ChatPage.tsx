@@ -1,9 +1,11 @@
-import { Alert, Button, Group, Loader, Stack, Text, Title } from '@mantine/core';
+import { Alert, Button, Center, Loader, Stack, Text } from '@mantine/core';
 import { Link, useParams } from 'react-router-dom';
 import { projectParamsSchema } from '@choral-writer/shared';
 
+import { PageHeader } from '../components/PageHeader.js';
 import { MessageComposer } from '../components/chat/MessageComposer.js';
 import { MessageList } from '../components/chat/MessageList.js';
+import styles from './ChatPage.module.css';
 import { useChat } from '../hooks/useChat.js';
 import { NotFoundPage } from './NotFoundPage.js';
 
@@ -16,25 +18,31 @@ export function ChatPage() {
 function ProjectChat({ projectId }: { projectId: string }) {
   const chat = useChat(projectId);
 
-  if (chat.loading) return <Loader aria-label="Chargement de la conversation" />;
+  if (chat.loading) {
+    return <Center py="xl"><Loader color="choral" aria-label="Chargement de la conversation" /></Center>;
+  }
 
   return (
-    <Stack gap="lg">
-      <Group justify="space-between">
-        <Title order={1} size="h2">{chat.project?.name ?? 'Conversation'}</Title>
-        <Button component={Link} to="/projects" variant="subtle">Tous les projets</Button>
-      </Group>
+    <Stack gap="lg" maw={800} mx="auto" w="100%">
+      <PageHeader
+        title={chat.project?.name ?? 'Conversation'}
+        actions={<Button component={Link} to="/projects" variant="subtle">Tous les projets</Button>}
+      />
       {chat.error && (
-        <Alert color="red" title="Conversation">
-          {chat.error}
-          {!chat.pending && <Button variant="subtle" onClick={chat.reload}>Recharger l’historique</Button>}
+        <Alert color="red" title="Conversation" role="alert">
+          <Stack gap="sm">
+            <Text>{chat.error}</Text>
+            {!chat.pending && (
+              <Button variant="subtle" w="fit-content" onClick={chat.reload}>Recharger l’historique</Button>
+            )}
+          </Stack>
         </Alert>
       )}
       {chat.project && (
         <>
-          <details>
+          <details className={styles.systemPrompt}>
             <summary>Prompt système</summary>
-            <Text size="sm" c="dimmed" className="message-content" mt="sm">{chat.project.systemPrompt || 'Aucun prompt système.'}</Text>
+            <Text size="sm" c="dimmed" mt="sm">{chat.project.systemPrompt || 'Aucun prompt système.'}</Text>
           </details>
           <MessageList messages={chat.messages} partial={chat.partial} pending={chat.pending} />
           <MessageComposer pending={chat.pending} onSend={chat.send} />

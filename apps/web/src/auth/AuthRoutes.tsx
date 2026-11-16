@@ -8,16 +8,16 @@ export function SessionBoundary() {
   const { session, retry } = useAuth();
 
   if (session.status === 'loading') {
-    return <Center className="screen-center"><Loader color="teal" aria-label="Chargement de la session" /></Center>;
+    return <Center mih="100dvh" p="md"><Loader color="choral" aria-label="Chargement de la session" /></Center>;
   }
 
   if (session.status === 'error') {
     return (
-      <Center className="screen-center">
-        <Paper className="login-card" p="xl" radius="lg" withBorder>
-          <Stack>
+      <Center mih="100dvh" p="md">
+        <Paper w="100%" maw={420} p="xl" withBorder>
+          <Stack gap="lg">
             <Brand />
-            <Alert color="red" title="Connexion au serveur impossible">{session.message}</Alert>
+            <Alert color="red" title="Connexion au serveur impossible" role="alert">{session.message}</Alert>
             <Button onClick={retry}>Réessayer</Button>
           </Stack>
         </Paper>

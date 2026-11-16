@@ -4,6 +4,9 @@ import type { Project } from '@choral-writer/shared';
 import { listProjects } from '../api/projects.js';
 import { getErrorMessage } from '../api/client.js';
 
+/**
+ * TODO DOC
+ */
 export function useProjects() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);

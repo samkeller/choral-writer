@@ -47,8 +47,8 @@ export function LoginPage() {
   }
 
   return (
-    <Center className="screen-center">
-      <Paper className="login-card" p="xl" radius="lg" withBorder>
+    <Center mih="100dvh" p="md">
+      <Paper w="100%" maw={420} p="xl" withBorder>
         <form onSubmit={submit}>
           <Stack>
             <Brand />
@@ -59,7 +59,7 @@ export function LoginPage() {
               autoComplete="current-password"
               autoFocus
             />
-            {error && <Alert color="red">{error}</Alert>}
+            {error && <Alert color="red" role="alert">{error}</Alert>}
             <Button type="submit" loading={pending} fullWidth>Se connecter</Button>
           </Stack>
         </form>

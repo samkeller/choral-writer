@@ -9,6 +9,13 @@
             "headers": {
                 "Authorization": "Bearer ${LLM_API_KEY}"
             }
+        },
+        "mantine": {
+            "command": "npx",
+            "args": [
+                "-y",
+                "@mantine/mcp-server"
+            ]
         }
     }
 }
