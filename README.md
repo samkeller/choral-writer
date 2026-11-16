@@ -11,7 +11,7 @@ Socle M1 de Choral Writer : API Fastify, PostgreSQL/Drizzle, authentification pa
 ## Démarrage local
 
 1. Copier `.env.example` vers `.env`, puis renseigner le mot de passe, un secret de cookie d'au moins 32 caractères et les identifiants du fournisseur LLM.
-2. Démarrer PostgreSQL avec `docker compose up -d`.
+2. (facultatif) Démarrer PostgreSQL avec `docker compose up -d`.
 3. Installer les dépendances avec `pnpm install`.
 4. Appliquer les migrations avec `pnpm db:migrate`.
 5. Démarrer l'API et le front avec `pnpm dev`, puis ouvrir l'URL Vite affichée dans le terminal.
@@ -27,6 +27,15 @@ Avant le démarrage du service, lancer `pnpm db:migrate`. Les commandes de build
 - `pnpm dev` : API et front en mode développement
 - `pnpm build` : build des packages et de l'application web
 - `pnpm typecheck` : vérification TypeScript stricte
-- `pnpm test` : tests Vitest de l'authentification et du client LLM
+- `pnpm test` : tests Vitest de l'API et du front
 - `pnpm db:generate` : générer une migration Drizzle depuis le schéma
 - `pnpm db:migrate` : appliquer les migrations PostgreSQL
+
+## Organisation du front
+
+- `App.tsx` compose les routes React Router ; `pages/` contient les écrans et `components/` le layout et la navigation responsive.
+- `auth/` gère la session et protège les routes. Un 401 redirige vers `/login`, puis la connexion ramène à la page demandée. Une erreur serveur reste affichée avec une possibilité de réessayer.
+- `api/` centralise Axios et les appels REST ; l'intercepteur invalide la session sur un 401, sauf lors d'une tentative de connexion.
+- `theme/` contient le thème Mantine. Les routes ont leurs propres URL : `/`, `/projects`, `/agents`, `/memories`, `/traces`.
+
+En production, le serveur hébergeant le front doit servir `index.html` pour les routes de l'application, et acheminer `/api` vers Fastify.

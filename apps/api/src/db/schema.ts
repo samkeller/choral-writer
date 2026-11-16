@@ -1,3 +1,1 @@
-import { llmCall } from "./entities/llmCall.js";
-
-export default { llmCall };
+export { llmCall } from './entities/llmCall.js';

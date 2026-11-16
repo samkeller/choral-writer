@@ -1,21 +1,19 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { MantineProvider, createTheme } from '@mantine/core';
+import { MantineProvider } from '@mantine/core';
+import { BrowserRouter } from 'react-router-dom';
 
 import '@mantine/core/styles.css';
 import './styles.css';
 import { App } from './App.js';
-
-const theme = createTheme({
-  primaryColor: 'teal',
-  defaultRadius: 'md',
-  fontFamily: 'Inter, ui-sans-serif, system-ui, sans-serif',
-});
+import { theme } from './theme/index.js';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <MantineProvider defaultColorScheme="dark" theme={theme}>
-      <App />
+      <BrowserRouter>
+        <App />
+      </BrowserRouter>
     </MantineProvider>
   </React.StrictMode>,
 );
