@@ -7,4 +7,4 @@
 - Limiter le CSS global aux bases du document ; toute exception UI locale va dans un CSS Module utilisant les variables Mantine.
 - Documenter les nouvelles conventions durables et éviter les abstractions sans réutilisation concrète.
 - Vérifier au minimum `pnpm --filter @choral-writer/web typecheck`, `pnpm --filter @choral-writer/web test` et `pnpm --filter @choral-writer/web build`.
-- Pour l'organisation et les états UI, voir [`../../docs/web/FRONTEND_CONVENTIONS.md`](../../docs/web/FRONTEND_CONVENTIONS.md) ; pour les commandes et workspaces, voir [`../../docs/web/DEVELOPMENT.md`](../../docs/web/DEVELOPMENT.md).
+- Pour l'organisation et les états UI, voir [`../../docs/web/FRONTEND_CONVENTIONS.md`](../../docs/web/FRONTEND_CONVENTIONS.md) ; pour les commandes et workspaces, voir [`../../docs/DEVELOPMENT.md`](../../docs/DEVELOPMENT.md).

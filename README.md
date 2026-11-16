@@ -36,6 +36,6 @@ Avant le démarrage du service, lancer `pnpm db:migrate`. Les commandes de build
 - pages/` contient les écrans et `components/` les éléments du workspace et des domaines métier.
 - `auth/` gère la session et protège les routes. Un 401 redirige vers `/login`, puis la connexion ramène à la page demandée. Une erreur serveur reste affichée avec une possibilité de réessayer.
 - `api/` centralise Axios et les appels REST ; l'intercepteur invalide la session sur un 401, sauf lors d'une tentative de connexion.
-- `theme/` contient le thème Mantine. Les conventions, le design system et les commandes de développement sont documentés dans [`docs/`](./docs/web/DEVELOPMENT.md). Les routes ont leurs propres URL : `/`, `/projects`, `/agents`, `/memories`, `/traces`.
+- `theme/` contient le thème Mantine. Les conventions, le design system et les commandes de développement sont documentés dans [`docs/`](./docs/DEVELOPMENT.md). Les routes ont leurs propres URL : `/`, `/projects`, `/agents`, `/memories`, `/traces`.
 
 En production, le serveur hébergeant le front doit servir `index.html` pour les routes de l'application, et acheminer `/api` vers Fastify.
