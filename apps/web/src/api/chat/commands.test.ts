@@ -1,35 +1,17 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { ClientApiError, sessionEvents } from './client.js';
-import { readChatEvents, streamTurn } from './chat.js';
-
-function bytesStream(bytes: Uint8Array[]) {
-  return new ReadableStream<Uint8Array>({
-    start(controller) {
-      for (const bytesPart of bytes) controller.enqueue(bytesPart);
-      controller.close();
-    },
-  });
-}
+import { ClientApiError, sessionEvents } from '../client.js';
+import { streamTurn } from './commands.js';
+import { bytesStream } from './testing/streams.js';
 
 afterEach(() => vi.unstubAllGlobals());
 
-describe('chat SSE', () => {
-  it('handles fragmented UTF-8, CRLF, multiple events, and heartbeat comments', async () => {
-    const bytes = new TextEncoder().encode(
-      ': heartbeat\r\n\r\nevent: chat.message.delta\r\ndata: {"type":"chat.message.delta","delta":"Clé 🔑"}\r\n\r\n'
-      + 'data: {"type":"chat.message.delta","delta":" suivante"}\n\n',
-    );
-    const events = [];
-    for await (const event of readChatEvents(bytesStream(Array.from(bytes, (byte) => new Uint8Array([byte]))))) {
-      events.push(event);
-    }
-    expect(events).toEqual([
-      { type: 'chat.message.delta', delta: 'Clé 🔑' },
-      { type: 'chat.message.delta', delta: ' suivante' },
-    ]);
-  });
+const command = {
+  projectId: 'project', branchId: 'branch', expectedHeadTurnId: null,
+  operation: 'send' as const, content: 'hello',
+};
 
+describe('chat SSE commands', () => {
   it('rejects a connection that ends without completion instead of accepting a partial answer', async () => {
     const stream = bytesStream([new TextEncoder().encode(
       'data: {"type":"chat.message.delta","delta":"partial"}\n\n',
@@ -39,9 +21,24 @@ describe('chat SSE', () => {
     })));
     const onEvent = vi.fn();
 
-    await expect(streamTurn('project', 'hello', new AbortController().signal, onEvent))
+    await expect(streamTurn(command, new AbortController().signal, onEvent))
       .rejects.toThrow('interrompue');
     expect(onEvent).toHaveBeenCalledWith({ type: 'chat.message.delta', delta: 'partial' });
+  });
+
+  it.each([1, 2])('honors cancellation with %i buffered events instead of updating an abandoned view', async (count) => {
+    const stream = bytesStream([new TextEncoder().encode(
+      'data: {"type":"chat.message.delta","delta":"partial"}\n\n'.repeat(count),
+    )]);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(stream, {
+      headers: { 'Content-Type': 'text/event-stream' },
+    })));
+    const controller = new AbortController();
+    const reason = new DOMException('Navigation changed.', 'AbortError');
+    const onEvent = vi.fn(() => controller.abort(reason));
+
+    await expect(streamTurn(command, controller.signal, onEvent)).rejects.toBe(reason);
+    expect(onEvent).toHaveBeenCalledTimes(1);
   });
 
   it('invalidates an expired session for fetch-based streams as well as Axios', async () => {
@@ -51,7 +48,7 @@ describe('chat SSE', () => {
     const expired = vi.fn();
     sessionEvents.addEventListener('unauthorized', expired);
     try {
-      await expect(streamTurn('project', 'hello', new AbortController().signal, vi.fn()))
+      await expect(streamTurn(command, new AbortController().signal, vi.fn()))
         .rejects.toThrow('Authentication required.');
       expect(expired).toHaveBeenCalledTimes(1);
     } finally {
@@ -69,7 +66,7 @@ describe('chat SSE', () => {
       { headers: { 'Content-Type': 'text/event-stream' } },
     )));
 
-    await expect(streamTurn('project', 'hello', new AbortController().signal, vi.fn()))
+    await expect(streamTurn(command, new AbortController().signal, vi.fn()))
       .rejects.toMatchObject({ message: 'Insufficient Balance', details: error });
   });
 
@@ -80,7 +77,7 @@ describe('chat SSE', () => {
     const expired = vi.fn();
     sessionEvents.addEventListener('unauthorized', expired);
     try {
-      await expect(streamTurn('project', 'hello', new AbortController().signal, vi.fn()))
+      await expect(streamTurn(command, new AbortController().signal, vi.fn()))
         .rejects.toBeInstanceOf(ClientApiError);
       expect(expired).not.toHaveBeenCalled();
     } finally {

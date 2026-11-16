@@ -5,7 +5,8 @@ import { listProjects } from '../api/projects.js';
 import { getErrorMessage } from '../api/client.js';
 
 /**
- * TODO DOC
+ * Charge la liste des projets et expose son rechargement après une mutation.
+ * Annule la requête précédente au rechargement ou au démontage du composant.
  */
 export function useProjects() {
   const [projects, setProjects] = useState<Project[]>([]);

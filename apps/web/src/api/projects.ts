@@ -1,4 +1,4 @@
-import { messageSchema, projectInputSchema, projectSchema, type ProjectInput } from '@choral-writer/shared';
+import { projectInputSchema, projectSchema, type ProjectInput } from '@choral-writer/shared';
 
 import { api } from './client.js';
 
@@ -24,9 +24,4 @@ export async function updateProject(id: string, input: ProjectInput) {
 
 export async function deleteProject(id: string) {
   await api.delete(`/projects/${id}`);
-}
-
-export async function getMessages(id: string, signal?: AbortSignal) {
-  const response = await api.get<unknown>(`/projects/${id}/messages`, { signal });
-  return messageSchema.array().parse(response.data);
 }

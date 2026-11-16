@@ -5,7 +5,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { MantineProvider } from '@mantine/core';
 import { AxiosError, type AxiosAdapter, type InternalAxiosRequestConfig } from 'axios';
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
-import { projectInputSchema, type ChatEvent, type Message, type Project } from '@choral-writer/shared';
+import { projectInputSchema, type ChatBranch, type ChatEvent, type ChatHistory, type Message, type Project } from '@choral-writer/shared';
 
 import { api, ClientApiError } from './api/client.js';
 import { App } from './App.js';
@@ -26,7 +26,7 @@ function LocationProbe() {
   const navigate = useNavigate();
   return (
     <>
-      <output data-testid="location">{location.pathname}</output>
+      <output data-testid="location">{location.pathname}{location.search}</output>
       <button onClick={() => navigate(-1)}>Précédent</button>
     </>
   );
@@ -44,6 +44,9 @@ function renderApp(path: string) {
 }
 
 beforeEach(() => {
+  Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+    configurable: true, value: vi.fn(),
+  });
   vi.stubGlobal('ResizeObserver', class {
     observe() {}
     unobserve() {}
@@ -151,11 +154,67 @@ describe('routing and authentication', () => {
 describe('projects and chat screens', () => {
   const project: Project = {
     id: '019ad30c-19b0-7000-8000-000000000001',
+    defaultBranchId: '019ad30c-19b0-7000-8000-000000000005',
     name: 'Mon histoire',
     systemPrompt: 'Tu es le narrateur.',
     createdAt: '2026-11-16T08:00:00.000Z',
     updatedAt: '2026-11-16T08:00:00.000Z',
   };
+  const branch: ChatBranch = {
+    id: project.defaultBranchId!, projectId: project.id, name: 'Principale',
+    sourceBranchId: null, forkTurnId: null, headTurnId: null, createdAt: project.createdAt,
+  };
+
+  function existingChat() {
+    const user: Message = {
+      id: '019ad30c-19b0-7000-8000-000000000002', projectId: project.id,
+      role: 'user', content: 'Ouvre la porte.', createdAt: project.createdAt,
+    };
+    const assistant: Message = {
+      ...user, id: '019ad30c-19b0-7000-8000-000000000003',
+      role: 'assistant', content: 'Réponse originale.',
+    };
+    const turnId = '019ad30c-19b0-7000-8000-000000000004';
+    const original: ChatHistory = {
+      branch: { ...branch, headTurnId: turnId },
+      turns: [{
+        id: turnId, parentTurnId: null, originBranchId: branch.id,
+        retryOfTurnId: null, regeneratedFromTurnId: null, status: 'completed',
+        error: null, userMessage: user, assistantMessage: assistant,
+      }],
+    };
+    const histories = new Map([[branch.id, original]]);
+    adapter.mockImplementation(async (config) => {
+      if (config.url === '/session') return respond(config, 200, { authenticated: true });
+      if (config.url === `/projects/${project.id}`) return respond(config, 200, project);
+      if (config.url === `/projects/${project.id}/branches`) {
+        return respond(config, 200, [...histories.values()].map((item) => item.branch));
+      }
+      const selected = [...histories.values()].find((item) =>
+        config.url === `/projects/${project.id}/branches/${item.branch.id}/history`);
+      if (selected) return respond(config, 200, selected);
+      throw new Error(`Unexpected request: ${config.url}`);
+    });
+    const alternativeId = '019ad30c-19b0-7000-8000-000000000006';
+    const newTurnId = '019ad30c-19b0-7000-8000-000000000007';
+    function alternative(status: 'completed' | 'failed'): ChatHistory {
+      return {
+        branch: {
+          ...branch, id: alternativeId, headTurnId: newTurnId,
+          name: 'Alternative 1', sourceBranchId: branch.id,
+        },
+        turns: [{
+          ...original.turns[0], id: newTurnId, originBranchId: alternativeId,
+          regeneratedFromTurnId: turnId, status,
+          error: status === 'failed' ? 'La génération de ce tour a échoué.' : null,
+          assistantMessage: status === 'failed' ? null : {
+            ...assistant, id: '019ad30c-19b0-7000-8000-000000000008', content: 'Réponse alternative.',
+          },
+        }],
+      };
+    }
+    return { original, histories, alternativeId, newTurnId, alternative, user };
+  }
 
   it('creates, edits, and deletes a project through the forms', async () => {
     let saved: Project | null = null;
@@ -196,11 +255,12 @@ describe('projects and chat screens', () => {
   });
 
   it('renders streamed text before completion and reloads the persisted conversation', async () => {
-    let savedMessages: Message[] = [];
+    let savedHistory: ChatHistory = { branch, turns: [] };
     adapter.mockImplementation(async (config) => {
       if (config.url === '/session') return respond(config, 200, { authenticated: true });
       if (config.url === `/projects/${project.id}`) return respond(config, 200, project);
-      if (config.url === `/projects/${project.id}/messages`) return respond(config, 200, savedMessages);
+      if (config.url === `/projects/${project.id}/branches`) return respond(config, 200, [savedHistory.branch]);
+      if (config.url === `/projects/${project.id}/branches/${branch.id}/history`) return respond(config, 200, savedHistory);
       throw new Error(`Unexpected request: ${config.url}`);
     });
     let controller!: ReadableStreamDefaultController<Uint8Array>;
@@ -225,16 +285,23 @@ describe('projects and chat screens', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Envoyer' }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     await act(async () => {
-      emit({ type: 'chat.turn.started', turnId, message: user });
+      emit({ type: 'chat.turn.started', turnId, branchId: branch.id, operation: 'send', message: user });
       emit({ type: 'chat.message.delta', delta: 'Bonjour' });
     });
     await screen.findByText('Bonjour');
     expect(screen.getByLabelText('Votre message').hasAttribute('disabled')).toBe(true);
 
     await act(async () => {
-      savedMessages = [user, assistant];
+      savedHistory = {
+        branch: { ...branch, headTurnId: turnId },
+        turns: [{
+          id: turnId, parentTurnId: null, originBranchId: branch.id,
+          retryOfTurnId: null, regeneratedFromTurnId: null, status: 'completed',
+          error: null, userMessage: user, assistantMessage: assistant,
+        }],
+      };
       emit({ type: 'chat.message.delta', delta: ' Mara.' });
-      emit({ type: 'chat.turn.completed', turnId, message: assistant });
+      emit({ type: 'chat.turn.completed', branchId: branch.id, turnId, message: assistant });
       controller.close();
     });
     await waitFor(() => expect(screen.getByLabelText('Votre message').hasAttribute('disabled')).toBe(false));
@@ -244,5 +311,94 @@ describe('projects and chat screens', () => {
     await screen.findByText('Bonjour Mara.');
     expect(screen.getByText('Ouvre la porte.')).toBeTruthy();
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the original during regeneration, selects the successful branch and restores it from the URL', async () => {
+    const fixture = existingChat();
+    let controller!: ReadableStreamDefaultController<Uint8Array>;
+    const stream = new ReadableStream<Uint8Array>({ start(value) { controller = value; } });
+    const fetchMock = vi.fn().mockResolvedValue(new Response(stream, {
+      headers: { 'Content-Type': 'text/event-stream' },
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+    const emit = (event: ChatEvent) => controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(event)}\n\n`));
+    const view = renderApp(`/projects/${project.id}`);
+    await screen.findByText('Réponse originale.');
+    fireEvent.click(screen.getByRole('button', { name: 'Régénérer la réponse' }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      `/api/projects/${project.id}/branches/${branch.id}/turns/${fixture.original.turns[0].id}/regenerate`,
+    );
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      expectedHeadTurnId: fixture.original.turns[0].id,
+    });
+    await act(async () => {
+      emit({
+        type: 'chat.turn.started', operation: 'regenerate', branchId: fixture.alternativeId,
+        turnId: fixture.newTurnId, message: fixture.user,
+      });
+      emit({ type: 'chat.message.delta', delta: 'Une autre voie…' });
+    });
+    await screen.findByText('Une autre voie…');
+    expect(screen.getByText('Réponse originale.')).toBeTruthy();
+    expect(screen.getAllByText(fixture.user.content)).toHaveLength(1);
+    expect(screen.getByLabelText('Branche de conversation', { selector: 'input' }).hasAttribute('disabled')).toBe(true);
+
+    await act(async () => {
+      const alternative = fixture.alternative('completed');
+      fixture.histories.set(fixture.alternativeId, alternative);
+      emit({
+        type: 'chat.turn.completed', branchId: fixture.alternativeId, turnId: fixture.newTurnId,
+        message: alternative.turns[0].assistantMessage!,
+      });
+      controller.close();
+    });
+    await screen.findByText('Réponse alternative.');
+    await waitFor(() => expect(screen.getByTestId('location').textContent).toContain(`branch=${fixture.alternativeId}`));
+    expect(screen.queryByText('Réponse originale.')).toBeNull();
+    view.unmount();
+    renderApp(`/projects/${project.id}?branch=${fixture.alternativeId}`);
+    await screen.findByText('Réponse alternative.');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByLabelText('Branche de conversation', { selector: 'input' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'Principale' }));
+    await screen.findByText('Réponse originale.');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a failed alternative accessible and retries without duplicating the user message', async () => {
+    const fixture = existingChat();
+    const failure = {
+      code: 'LLM_ERROR', message: 'Échec simulé.', status: 502, source: 'llm',
+    } as const;
+    const fetchMock = vi.fn().mockImplementation(async () => {
+      fixture.histories.set(fixture.alternativeId, fixture.alternative('failed'));
+      return new Response(`data: ${JSON.stringify({
+        type: 'chat.turn.failed', branchId: fixture.alternativeId,
+        turnId: fixture.newTurnId, error: failure,
+      })}\n\n`, { headers: { 'Content-Type': 'text/event-stream' } });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    renderApp(`/projects/${project.id}`);
+    await screen.findByText('Réponse originale.');
+    fireEvent.click(screen.getByRole('button', { name: 'Régénérer la réponse' }));
+    await screen.findByText('Échec simulé.');
+    expect(screen.getByText('Réponse originale.')).toBeTruthy();
+    fireEvent.click(await screen.findByRole('button', { name: 'Ouvrir l’alternative échouée' }));
+    await screen.findByRole('button', { name: 'Réessayer la réponse' });
+    expect(screen.getAllByText(fixture.user.content)).toHaveLength(1);
+    fetchMock.mockImplementation(async () => {
+      const successful = fixture.alternative('completed');
+      fixture.histories.set(fixture.alternativeId, successful);
+      return new Response(`data: ${JSON.stringify({
+        type: 'chat.turn.completed', branchId: fixture.alternativeId,
+        turnId: fixture.newTurnId, message: successful.turns[0].assistantMessage,
+      })}\n\n`, { headers: { 'Content-Type': 'text/event-stream' } });
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Réessayer la réponse' }));
+    await screen.findByText('Réponse alternative.');
+    expect(fetchMock.mock.calls[1][0]).toContain(`/turns/${fixture.newTurnId}/retry`);
+    expect(screen.getAllByText(fixture.user.content)).toHaveLength(1);
   });
 });

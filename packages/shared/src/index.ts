@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 export * from './projects.js';
-export * from './chat.js';
+export * from './chat/index.js';
 export * from './errors.js';
 
 export const loginRequestSchema = z.object({

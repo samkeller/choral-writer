@@ -1,61 +1,73 @@
-import { desc, eq } from 'drizzle-orm';
-import { v7 as uuidv7 } from 'uuid';
 import type { Project, ProjectInput } from '@choral-writer/shared';
 
 import type { Database, Transaction } from '../../db/client.js';
-import { projects } from '../../db/entities/project.js';
 import { ApiError, isLockConflict } from '../../errors.js';
+import type { ChatBranchService } from '../chat/services/branchService.js';
+import { ProjectRepository } from './repository.js';
 
-export function projectDto(row: typeof projects.$inferSelect): Project {
-  return { ...row, createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString() };
-}
+type BranchesForTransaction = (tx: Transaction, projectId: string) => ChatBranchService;
 
-export async function lockProject(tx: Transaction, id: string) {
-  try {
-    const [project] = await tx.select().from(projects).where(eq(projects.id, id))
-      .for('update', { noWait: true });
+/** Gère la configuration des projets et initialise atomiquement leur branche principale. */
+export class ProjectsService {
+  private readonly repository: ProjectRepository;
+
+  constructor(
+    private readonly database: Database,
+    private readonly branchesForTransaction: BranchesForTransaction,
+  ) {
+    this.repository = new ProjectRepository(database);
+  }
+
+  async get(id: string): Promise<Project> {
+    const project = await this.repository.find(id);
     if (!project) throw new ApiError(404, 'PROJECT_NOT_FOUND', 'Ce projet n’existe pas.');
     return project;
-  } catch (error) {
-    if (isLockConflict(error)) {
-      throw new ApiError(409, 'PROJECT_BUSY', 'Un tour est en cours dans ce projet. Réessayez après sa fin.');
-    }
-    throw error;
-  }
-}
-
-export function createProjectsService(database: Database) {
-  async function get(id: string): Promise<Project> {
-    const [row] = await database.select().from(projects).where(eq(projects.id, id));
-    if (!row) throw new ApiError(404, 'PROJECT_NOT_FOUND', 'Ce projet n’existe pas.');
-    return projectDto(row);
   }
 
-  return {
-    get,
-    async list(): Promise<Project[]> {
-      const rows = await database.select().from(projects).orderBy(desc(projects.updatedAt), desc(projects.id));
-      return rows.map(projectDto);
-    },
-    async create(input: ProjectInput): Promise<Project> {
-      const [row] = await database.insert(projects).values({ id: uuidv7(), ...input }).returning();
-      return projectDto(row);
-    },
-    async update(id: string, input: ProjectInput): Promise<Project> {
-      return database.transaction(async (tx) => {
-        await lockProject(tx, id);
-        const [row] = await tx.update(projects).set({ ...input, updatedAt: new Date() })
-          .where(eq(projects.id, id)).returning();
-        return projectDto(row);
-      });
-    },
-    async remove(id: string): Promise<void> {
-      await database.transaction(async (tx) => {
-        await lockProject(tx, id);
-        await tx.delete(projects).where(eq(projects.id, id));
-      });
-    },
-  };
-}
+  list(): Promise<Project[]> {
+    return this.repository.list();
+  }
 
-export type ProjectsService = ReturnType<typeof createProjectsService>;
+  async create(input: ProjectInput): Promise<Project> {
+    return this.database.transaction(async (tx) => {
+      const repository = new ProjectRepository(tx);
+      const project = await repository.create(input);
+      const branch = await this.branchesForTransaction(tx, project.id).createMain();
+      return repository.setDefaultBranch(project.id, branch.id);
+    });
+  }
+
+  update(id: string, input: ProjectInput): Promise<Project> {
+    return this.withLockedProject(id, (_project, tx) => new ProjectRepository(tx).update(id, input));
+  }
+
+  remove(id: string): Promise<void> {
+    return this.withLockedProject(id, (_project, tx) => new ProjectRepository(tx).remove(id));
+  }
+
+  /**
+   * Partage le verrou avec les commandes du chat et les mutations du projet.
+   * NOWAIT refuse un concurrent plutôt que d'attendre ; le résultat suit le commit.
+   * Le callback et ses services doivent utiliser cette même transaction.
+   */
+  withLockedProject<T>(id: string, work: (project: Project, tx: Transaction) => Promise<T>): Promise<T> {
+    return this.database.transaction(async (tx) => {
+      let project: Project | null;
+      try {
+        project = await new ProjectRepository(tx).lock(id);
+      } catch (error) {
+        if (isLockConflict(error)) {
+          throw new ApiError(409, 'PROJECT_BUSY', 'Un tour est en cours dans ce projet. Réessayez après sa fin.');
+        }
+        throw error;
+      }
+      if (!project) throw new ApiError(404, 'PROJECT_NOT_FOUND', 'Ce projet n’existe pas.');
+      return work(project, tx);
+    });
+  }
+
+  /** Called inside withLockedProject so activity and chat changes commit together. */
+  recordActivity(tx: Transaction, id: string, at: Date): Promise<void> {
+    return new ProjectRepository(tx).recordActivity(id, at);
+  }
+}

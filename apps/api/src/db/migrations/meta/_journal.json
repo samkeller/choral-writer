@@ -15,6 +15,13 @@
       "when": 1794819974046,
       "tag": "0001_last_wolfpack",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794830400000,
+      "tag": "0002_chat_branching",
+      "breakpoints": true
     }
   ]
 }

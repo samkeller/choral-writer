@@ -42,4 +42,30 @@ Ne jamais committer de secrets. L'API et le frontend conservent leurs scripts et
 
 ## Instructions pour les agents
 
-Lire [`apps/web/AGENTS.md`](../apps/web/AGENTS.md) pour les consignes frontend et [`FRONTEND_CONVENTIONS.md`](./FRONTEND_CONVENTIONS.md) pour l'organisation des changements UI.
+Lire [`apps/web/AGENTS.md`](../apps/web/AGENTS.md) pour les consignes frontend et [`FRONTEND_CONVENTIONS.md`](./web/FRONTEND_CONVENTIONS.md) pour l'organisation des changements UI.
+
+## Domaines et responsabilités
+
+Le domaine conversationnel utilise le préfixe SQL `chat_` et les dossiers
+`modules/chat`, `db/entities/chat` et `packages/shared/src/chat`.
+Voir [CHAT.md](./api/CHAT.md) pour les décisions, les invariants, la migration
+M2.1 et les conséquences pour la mémoire future.
+
+Dans le chat, les routes délèguent aux contrôleurs pour la validation et le transport ;
+les services portent les cas d'usage et collaborent entre eux ;
+chaque repository encapsule la persistance de son entité.
+Les entités Drizzle décrivent les données et contraintes, pas l'orchestration.
+Le front sépare transport API, état applicatif dans les hooks et rendu des composants.
+Éviter les couches ou interfaces génériques sans besoin concret.
+
+Documenter en JSDoc les frontières et invariants non évidents : sens d'une entité,
+préconditions, mutations, transactions et distinction entre résultat provisoire
+et état persistant. Ne pas répéter les types ou commenter mécaniquement chaque
+fonction. Les décisions transversales et limites connues vont dans la documentation.
+
+## Tests PostgreSQL
+
+Les tests d'intégration sont activés uniquement avec `TEST_DATABASE_URL` vers une
+base PostgreSQL jetable, puis `pnpm test`. Ils appliquent les migrations et créent
+leurs propres projets ; ne jamais utiliser une base de production. Les appels LLM
+sont simulés. Sans cette variable, Vitest signale ces tests comme ignorés.

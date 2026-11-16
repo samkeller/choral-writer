@@ -1,0 +1,98 @@
+import { and, eq, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
+import { v7 as uuidv7 } from 'uuid';
+import type { ChatTurn } from '@choral-writer/shared';
+
+import type { Database, Transaction } from '../../../db/client.js';
+import { chatMessages } from '../../../db/entities/chat/message.js';
+import { chatTurns } from '../../../db/entities/chat/turn.js';
+import type { NewChatTurn, TurnCompletion } from '../types/turn.types.js';
+import { turnDto } from '../mappers/turnDto.js';
+
+export class ChatTurnRepository {
+  constructor(
+    private readonly database: Database | Transaction,
+    private readonly projectId: string,
+  ) {}
+
+  private selectTurns() {
+    const assistant = alias(chatMessages, 'assistant_message');
+    return this.database.select({
+      turn: chatTurns, user: chatMessages, assistant,
+    }).from(chatTurns)
+      .innerJoin(chatMessages, eq(chatMessages.id, chatTurns.userMessageId))
+      .leftJoin(assistant, eq(assistant.id, chatTurns.assistantMessageId));
+  }
+
+  async find(id: string): Promise<ChatTurn | null> {
+    const [row] = await this.selectTurns().where(and(
+      eq(chatTurns.projectId, this.projectId), eq(chatTurns.id, id),
+    ));
+    return row ? turnDto(row) : null;
+  }
+
+  /**
+   * UNION terminates even on corrupt cycles; parent links, not UUIDs or dates,
+   * define narrative order. The optional limit retains whole recent turns.
+   */
+  async path(headTurnId: string | null, limit?: number): Promise<ChatTurn[] | null> {
+    if (headTurnId === null) return [];
+    const ancestors = sql`
+      with recursive ancestry as (
+        select id, parent_turn_id from ${chatTurns}
+        where project_id = ${this.projectId} and id = ${headTurnId}
+        union
+        select parent.id, parent.parent_turn_id from ${chatTurns} parent
+        inner join ancestry child on parent.id = child.parent_turn_id
+        where parent.project_id = ${this.projectId}
+      )
+      select id from ancestry
+    `;
+    const rows = await this.selectTurns().where(and(
+      eq(chatTurns.projectId, this.projectId),
+      sql`${chatTurns.id} in (${ancestors})`,
+    ));
+    const byId = new Map(rows.map((row) => [row.turn.id, row]));
+    if (!byId.has(headTurnId)) return null;
+    const ordered: typeof rows = [];
+    const seen = new Set<string>();
+    let id: string | null = headTurnId;
+    while (id !== null) {
+      if (seen.has(id)) throw new Error('Cycle detected in chat ancestry.');
+      seen.add(id);
+      const row = byId.get(id);
+      if (!row) throw new Error('Incomplete chat ancestry.');
+      ordered.push(row);
+      id = row.turn.parentTurnId;
+    }
+    return (limit === undefined ? ordered : ordered.slice(0, limit)).reverse().map(turnDto);
+  }
+
+  async create(input: NewChatTurn): Promise<string> {
+    const id = uuidv7();
+    await this.database.insert(chatTurns).values({
+      id,
+      projectId: this.projectId,
+      originBranchId: input.branchId,
+      parentTurnId: input.parentTurnId,
+      userMessageId: input.userMessage.id,
+      retryOfTurnId: input.retryOfTurnId,
+      regeneratedFromTurnId: input.regeneratedFromTurnId,
+      status: 'running',
+    });
+    return id;
+  }
+
+  async finish(id: string, branchId: string, completion: TurnCompletion): Promise<boolean> {
+    const [row] = await this.database.update(chatTurns).set({
+      status: completion.status,
+      assistantMessageId: completion.status === 'completed' ? completion.assistantMessageId : null,
+      error: completion.status === 'failed' ? completion.error : null,
+      completedAt: completion.completedAt,
+    }).where(and(
+      eq(chatTurns.projectId, this.projectId), eq(chatTurns.id, id),
+      eq(chatTurns.originBranchId, branchId), eq(chatTurns.status, 'running'),
+    )).returning({ id: chatTurns.id });
+    return row !== undefined;
+  }
+}

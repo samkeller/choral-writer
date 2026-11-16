@@ -73,6 +73,11 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/**
+ * Single provider boundary for completion/streaming, output validation and traces.
+ * A result is returned only after its trace is saved; partial output never counts
+ * as success. Domain orchestration and retry policy remain with the caller.
+ */
 export function createCallLLM({ client, traces, model, now = Date.now, apiKey }: CallLLMDependencies) {
   return async function callLLM<T = unknown>(input: CallLLMInput<T>): Promise<LLMResult<T>> {
     const callId = uuidv7();

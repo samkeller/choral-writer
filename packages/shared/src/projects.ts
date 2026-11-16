@@ -7,6 +7,7 @@ export const projectInputSchema = z.object({
 
 export const projectSchema = projectInputSchema.extend({
   id: z.string().uuid(),
+  defaultBranchId: z.string().uuid().nullable(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });

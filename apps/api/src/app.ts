@@ -6,12 +6,11 @@ import { registerAuthRoutes } from './auth/routes.js';
 import { ApiError, toPublicError } from './errors.js';
 import { registerProjectRoutes } from './modules/projects/routes.js';
 import type { ProjectsService } from './modules/projects/service.js';
-import { registerTurnRoutes } from './modules/turns/routes.js';
-import type { TurnsService } from './modules/turns/service.js';
+import { ChatController, registerChatRoutes, type ChatService } from './modules/chat/index.js';
 
 export function buildApp(
   config: AuthConfig,
-  services?: { projects: ProjectsService; turns: TurnsService },
+  services?: { projects: ProjectsService; chat: ChatService },
 ) {
   const app = Fastify({ logger: config.nodeEnv !== 'test' });
 
@@ -31,7 +30,7 @@ export function buildApp(
   registerAuthRoutes(app, config);
   if (services) {
     registerProjectRoutes(app, services.projects);
-    registerTurnRoutes(app, services.turns);
+    registerChatRoutes(app, new ChatController(services.chat));
   }
 
   return app;

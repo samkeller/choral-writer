@@ -1,0 +1,642 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "choral_writer.chat_branch": {
+      "name": "chat_branch",
+      "schema": "choral_writer",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_branch_id": {
+          "name": "source_branch_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "fork_turn_id": {
+          "name": "fork_turn_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "head_turn_id": {
+          "name": "head_turn_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "chat_branch_project_idx": {
+          "name": "chat_branch_project_idx",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "chat_branch_project_id_projects_id_fk": {
+          "name": "chat_branch_project_id_projects_id_fk",
+          "tableFrom": "chat_branch",
+          "tableTo": "projects",
+          "schemaTo": "choral_writer",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "chat_branch_source_fk": {
+          "name": "chat_branch_source_fk",
+          "tableFrom": "chat_branch",
+          "tableTo": "chat_branch",
+          "schemaTo": "choral_writer",
+          "columnsFrom": [
+            "project_id",
+            "source_branch_id"
+          ],
+          "columnsTo": [
+            "project_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "chat_branch_fork_fk": {
+          "name": "chat_branch_fork_fk",
+          "tableFrom": "chat_branch",
+          "tableTo": "chat_turn",
+          "schemaTo": "choral_writer",
+          "columnsFrom": [
+            "project_id",
+            "fork_turn_id"
+          ],
+          "columnsTo": [
+            "project_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "chat_branch_head_fk": {
+          "name": "chat_branch_head_fk",
+          "tableFrom": "chat_branch",
+          "tableTo": "chat_turn",
+          "schemaTo": "choral_writer",
+          "columnsFrom": [
+            "project_id",
+            "head_turn_id"
+          ],
+          "columnsTo": [
+            "project_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "chat_branch_project_id_unique": {
+          "name": "chat_branch_project_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "project_id",
+            "id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "choral_writer.chat_message": {
+      "name": "chat_message",
+      "schema": "choral_writer",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "role": {
+          "name": "role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "content": {
+          "name": "content",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "chat_message_project_idx": {
+          "name": "chat_message_project_idx",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "chat_message_project_id_projects_id_fk": {
+          "name": "chat_message_project_id_projects_id_fk",
+          "tableFrom": "chat_message",
+          "tableTo": "projects",
+          "schemaTo": "choral_writer",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "chat_message_project_id_unique": {
+          "name": "chat_message_project_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "project_id",
+            "id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "choral_writer.chat_turn": {
+      "name": "chat_turn",
+      "schema": "choral_writer",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "origin_branch_id": {
+          "name": "origin_branch_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "parent_turn_id": {
+          "name": "parent_turn_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "retry_of_turn_id": {
+          "name": "retry_of_turn_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "regenerated_from_turn_id": {
+          "name": "regenerated_from_turn_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "user_message_id": {
+          "name": "user_message_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "assistant_message_id": {
+          "name": "assistant_message_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "error": {
+          "name": "error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "completed_at": {
+          "name": "completed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "chat_turn_project_idx": {
+          "name": "chat_turn_project_idx",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "chat_turn_project_id_projects_id_fk": {
+          "name": "chat_turn_project_id_projects_id_fk",
+          "tableFrom": "chat_turn",
+          "tableTo": "projects",
+          "schemaTo": "choral_writer",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "chat_turn_origin_branch_fk": {
+          "name": "chat_turn_origin_branch_fk",
+          "tableFrom": "chat_turn",
+          "tableTo": "chat_branch",
+          "schemaTo": "choral_writer",
+          "columnsFrom": [
+            "project_id",
+            "origin_branch_id"
+          ],
+          "columnsTo": [
+            "project_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "chat_turn_parent_fk": {
+          "name": "chat_turn_parent_fk",
+          "tableFrom": "chat_turn",
+          "tableTo": "chat_turn",
+          "schemaTo": "choral_writer",
+          "columnsFrom": [
+            "project_id",
+            "parent_turn_id"
+          ],
+          "columnsTo": [
+            "project_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "chat_turn_retry_fk": {
+          "name": "chat_turn_retry_fk",
+          "tableFrom": "chat_turn",
+          "tableTo": "chat_turn",
+          "schemaTo": "choral_writer",
+          "columnsFrom": [
+            "project_id",
+            "retry_of_turn_id"
+          ],
+          "columnsTo": [
+            "project_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "chat_turn_regenerated_fk": {
+          "name": "chat_turn_regenerated_fk",
+          "tableFrom": "chat_turn",
+          "tableTo": "chat_turn",
+          "schemaTo": "choral_writer",
+          "columnsFrom": [
+            "project_id",
+            "regenerated_from_turn_id"
+          ],
+          "columnsTo": [
+            "project_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "chat_turn_user_message_fk": {
+          "name": "chat_turn_user_message_fk",
+          "tableFrom": "chat_turn",
+          "tableTo": "chat_message",
+          "schemaTo": "choral_writer",
+          "columnsFrom": [
+            "project_id",
+            "user_message_id"
+          ],
+          "columnsTo": [
+            "project_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "chat_turn_assistant_message_fk": {
+          "name": "chat_turn_assistant_message_fk",
+          "tableFrom": "chat_turn",
+          "tableTo": "chat_message",
+          "schemaTo": "choral_writer",
+          "columnsFrom": [
+            "project_id",
+            "assistant_message_id"
+          ],
+          "columnsTo": [
+            "project_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "chat_turn_project_id_unique": {
+          "name": "chat_turn_project_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "project_id",
+            "id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "chat_turn_status_check": {
+          "name": "chat_turn_status_check",
+          "value": "\"choral_writer\".\"chat_turn\".\"status\" in ('running', 'completed', 'failed')"
+        },
+        "chat_turn_response_check": {
+          "name": "chat_turn_response_check",
+          "value": "(\"choral_writer\".\"chat_turn\".\"status\" = 'completed') = (\"choral_writer\".\"chat_turn\".\"assistant_message_id\" is not null)"
+        },
+        "chat_turn_parent_check": {
+          "name": "chat_turn_parent_check",
+          "value": "\"choral_writer\".\"chat_turn\".\"parent_turn_id\" is distinct from \"choral_writer\".\"chat_turn\".\"id\""
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "choral_writer.llm_call": {
+      "name": "llm_call",
+      "schema": "choral_writer",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "turn_id": {
+          "name": "turn_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "agent_id": {
+          "name": "agent_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "stage": {
+          "name": "stage",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "model": {
+          "name": "model",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "request": {
+          "name": "request",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "response": {
+          "name": "response",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "input_tokens": {
+          "name": "input_tokens",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "output_tokens": {
+          "name": "output_tokens",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "duration_ms": {
+          "name": "duration_ms",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "error": {
+          "name": "error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "choral_writer.projects": {
+      "name": "projects",
+      "schema": "choral_writer",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "system_prompt": {
+          "name": "system_prompt",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "default_branch_id": {
+          "name": "default_branch_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "projects_default_chat_branch_fk": {
+          "name": "projects_default_chat_branch_fk",
+          "tableFrom": "projects",
+          "tableTo": "chat_branch",
+          "schemaTo": "choral_writer",
+          "columnsFrom": [
+            "id",
+            "default_branch_id"
+          ],
+          "columnsTo": [
+            "project_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {},
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "schemas": {},
+    "tables": {},
+    "columns": {}
+  },
+  "id": "22e70f24-ea46-4bfd-ad9f-3b02428caee6",
+  "prevId": "71ab6d9f-8fec-42e2-b986-f72de5b04021"
+}
