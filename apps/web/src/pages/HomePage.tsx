@@ -1,5 +1,6 @@
-import { Paper, Text, Title } from '@mantine/core';
+import { Button, Text, Title } from '@mantine/core';
 import { IconFeather } from '@tabler/icons-react';
+import { Link } from 'react-router-dom';
 
 export function HomePage() {
   return (
@@ -12,10 +13,7 @@ export function HomePage() {
       <Text c="dimmed" maw={480} mt="sm" lh={1.7}>
         Créez un projet pour donner vie à un monde, ses personnages et leurs histoires.
       </Text>
-      <Paper className="empty-project" p="lg" radius="md" withBorder mt="xl">
-        <Text fw={500}>Aucun projet pour le moment</Text>
-        <Text size="sm" c="dimmed" mt={4}>La création de projets arrive à l’étape suivante.</Text>
-      </Paper>
+      <Button component={Link} to="/projects" mt="xl">Retrouver mes projets</Button>
     </section>
   );
 }

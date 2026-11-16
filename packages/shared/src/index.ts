@@ -1,5 +1,9 @@
 import { z } from 'zod';
 
+export * from './projects.js';
+export * from './chat.js';
+export * from './errors.js';
+
 export const loginRequestSchema = z.object({
   password: z.string().min(1).max(512),
 });

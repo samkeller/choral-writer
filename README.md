@@ -1,6 +1,6 @@
 # Choral Writer
 
-Socle M1 de Choral Writer : API Fastify, PostgreSQL/Drizzle, authentification par cookie signé, client LLM traçable et shell React responsive.
+Application de récit à la troisième personne : interprétation, agents d'analyse isolés, narration en streaming puis propositions de mémoire validées par le code. PostgreSQL conserve les appels, propositions, événements et projections ; les branches sont accessibles après un retour en arrière.
 
 ## Prérequis
 

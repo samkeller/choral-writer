@@ -1,0 +1,14 @@
+{
+    "mcpServers": {
+        "Context7": {
+            "type": "http",
+            "url": "https://mcp.context7.com/mcp"
+        },
+        "deepseek": {
+            "url": "https://deepseek-mcp.tahirl.com/mcp",
+            "headers": {
+                "Authorization": "Bearer ${LLM_API_KEY}"
+            }
+        }
+    }
+}

@@ -1,9 +1,8 @@
-import { jsonb, pgSchema, text, timestamp, uuid, integer } from 'drizzle-orm/pg-core';
+import { jsonb, text, timestamp, uuid, integer } from 'drizzle-orm/pg-core';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
+import { choralWriterSchema } from '../namespace.js';
 
-const pgChoralWriter = pgSchema('choral_writer');
-
-export const llmCall = pgChoralWriter.table("llm_call",{
+export const llmCall = choralWriterSchema.table("llm_call",{
   id: uuid('id').primaryKey(),
   turnId: uuid('turn_id'),
   agentId: uuid('agent_id'),

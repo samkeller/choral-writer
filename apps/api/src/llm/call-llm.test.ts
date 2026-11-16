@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { ChatCompletion, ChatCompletionCreateParamsNonStreaming } from 'openai/resources/chat/completions';
+import type { ChatCompletion, ChatCompletionChunk, ChatCompletionCreateParamsNonStreaming } from 'openai/resources/chat/completions';
 import { z } from 'zod';
 
 import { createCallLLM, type LlmCallTrace } from './call-llm.js';
@@ -22,7 +22,10 @@ function completion(content: string): ChatCompletion {
 function setup(create: (params: ChatCompletionCreateParamsNonStreaming) => Promise<ChatCompletion>) {
   const insert = vi.fn<(trace: LlmCallTrace) => Promise<void>>().mockResolvedValue(undefined);
   const callLLM = createCallLLM({
-    client: { chat: { completions: { create } } },
+    client: { chat: { completions: { create: (params) => {
+      if (params.stream) throw new Error('Unexpected streaming request.');
+      return create(params);
+    } } } },
     traces: { insert },
     model: 'test-model',
     now: vi.fn().mockReturnValueOnce(100).mockReturnValue(125),
@@ -108,5 +111,54 @@ describe('callLLM', () => {
       messages: [{ role: 'user', content: 'begin' }],
     })).rejects.toThrow('database unavailable');
     expect(insert).toHaveBeenCalledTimes(1);
+  });
+
+  it('streams deltas and traces the full response and streamed token usage', async () => {
+    async function* chunks(): AsyncGenerator<ChatCompletionChunk> {
+      for (const content of ['Bon', 'jour']) {
+        yield {
+          id: 'stream', object: 'chat.completion.chunk', created: 0, model: 'test-model',
+          choices: [{ index: 0, delta: { content }, finish_reason: null }],
+        };
+      }
+      yield {
+        id: 'stream', object: 'chat.completion.chunk', created: 0, model: 'test-model',
+        choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 10, completion_tokens: 2, total_tokens: 12 },
+      };
+    }
+    const insert = vi.fn().mockResolvedValue(undefined);
+    const callLLM = createCallLLM({
+      client: { chat: { completions: { create: async () => chunks() } } },
+      model: 'test-model', traces: { insert },
+    });
+    const onDelta = vi.fn();
+    const result = await callLLM({ stage: 'narrator', messages: [], onDelta });
+
+    expect(onDelta.mock.calls).toEqual([['Bon'], ['jour']]);
+    expect(result.content).toBe('Bonjour');
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({
+      response: 'Bonjour', status: 'success', inputTokens: 10, outputTokens: 2,
+    }));
+  });
+
+  it('traces a truncated stream as an error while preserving the partial raw response', async () => {
+    async function* chunks(): AsyncGenerator<ChatCompletionChunk> {
+      yield {
+        id: 'stream', object: 'chat.completion.chunk', created: 0, model: 'test-model',
+        choices: [{ index: 0, delta: { content: 'partial' }, finish_reason: null }],
+      };
+    }
+    const insert = vi.fn().mockResolvedValue(undefined);
+    const callLLM = createCallLLM({
+      client: { chat: { completions: { create: async () => chunks() } } },
+      model: 'test-model', traces: { insert },
+    });
+
+    await expect(callLLM({ stage: 'narrator', messages: [], onDelta: vi.fn() }))
+      .rejects.toMatchObject({ code: 'LLM_INCOMPLETE_RESPONSE', statusCode: 502 });
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({
+      response: 'partial', status: 'error',
+    }));
   });
 });

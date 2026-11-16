@@ -1,10 +1,17 @@
 import { buildApp } from './app.js';
 import { loadConfig } from './config.js';
-import { pool } from './db/client.js';
+import { db, pool } from './db/client.js';
+import { callLLM } from './llm/index.js';
+import { createProjectsService } from './modules/projects/service.js';
+import { createTurnsService } from './modules/turns/service.js';
 
 async function main(): Promise<void> {
   const config = loadConfig();
-  const app = buildApp(config);
+  const projects = createProjectsService(db);
+  const app = buildApp(config, {
+    projects,
+    turns: createTurnsService(db, projects, callLLM),
+  });
 
   try {
     await pool.query('select 1');

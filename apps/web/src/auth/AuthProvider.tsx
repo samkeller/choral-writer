@@ -1,9 +1,8 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
-import axios from 'axios';
 import type { LoginRequest } from '@choral-writer/shared';
 
 import * as authApi from '../api/auth.js';
-import { api, getErrorMessage } from '../api/client.js';
+import { ClientApiError, getErrorMessage, sessionEvents } from '../api/client.js';
 
 type Session =
   | { status: 'loading' | 'anonymous' | 'authenticated' }
@@ -24,13 +23,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let active = true;
-    const interceptor = api.interceptors.response.use(undefined, (error: unknown) => {
-      if (active && axios.isAxiosError(error) && error.response?.status === 401
-        && error.config?.url !== '/login') {
-        setSession({ status: 'anonymous' });
-      }
-      return Promise.reject(error);
-    });
+    const expireSession = () => setSession({ status: 'anonymous' });
+    sessionEvents.addEventListener('unauthorized', expireSession);
 
     async function checkSession() {
       try {
@@ -38,7 +32,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (active) setSession({ status: 'authenticated' });
       } catch (error) {
         if (!active) return;
-        if (axios.isAxiosError(error) && error.response?.status === 401) {
+        if (error instanceof ClientApiError && error.details.status === 401 && error.details.source === 'application') {
           setSession({ status: 'anonymous' });
         } else {
           setSession({ status: 'error', message: getErrorMessage(error) });
@@ -49,7 +43,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void checkSession();
     return () => {
       active = false;
-      api.interceptors.response.eject(interceptor);
+      sessionEvents.removeEventListener('unauthorized', expireSession);
     };
   }, [attempt]);
 

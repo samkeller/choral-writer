@@ -9,4 +9,5 @@ export const callLLM = createCallLLM({
   client: openai,
   traces: { insert: insertLlmCall },
   model: config.llmModel,
+  apiKey: config.llmApiKey,
 });
