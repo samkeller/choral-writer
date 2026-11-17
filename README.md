@@ -18,6 +18,7 @@ flowchart TD
 - **Analyse** : chaque agent reçoit le contexte du projet, l’historique récent et la saisie, mais pas les sorties des autres agents. Ses enveloppes JSON sont validées par Zod.
 - **Whiteboard** : vue reconstruite à partir des traces et sorties associées à un tour ; ce n’est pas une table dédiée. Les traces conservent notamment les requêtes, réponses, versions d’agents, durées et erreurs.
 - **Restitution** : le Narrateur lit le whiteboard et produit une `<resolution>` (les faits) et une `<prose>` (le texte destiné au joueur). Seule la prose est envoyée au chat en SSE.
+- **Inspection** : pendant la génération, le chat affiche l’étape active et l’avancement des agents. Chaque tour permet ensuite d’ouvrir un tiroir pour consulter le whiteboard, les appels et leurs prompts/réponses.
 - **Mémoire** : le Gardien et le Réducteur sont prévus pour M6 ; ils ne font pas encore partie du pipeline exécuté.
 
 ### Vocabulaire

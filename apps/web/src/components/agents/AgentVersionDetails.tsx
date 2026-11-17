@@ -1,5 +1,7 @@
-import { Badge, Code, Group, Stack, Text } from '@mantine/core';
+import { Badge, Group, Stack, Text } from '@mantine/core';
 import type { Agent } from '@choral-writer/shared';
+
+import { PromptDisplay } from '../llm/PromptDisplay';
 import { PhaseTag } from '../phases/PhaseTag';
 import styles from './AgentSurface.module.css';
 import { agentOutputPresentation } from './agentPresentation';
@@ -16,7 +18,7 @@ export function AgentVersionDetails({ output, version }: {
         <Badge variant="outline" color="gray">v{version.version}</Badge>
       </Group>
       <Text fw={500} className={styles.name}>{version.name}</Text>
-      <Code>{version.instructions || 'Aucune instruction supplémentaire au prompt du projet.'}</Code>
+      <PromptDisplay content={version.instructions || 'Aucune instruction supplémentaire au prompt du projet.'} />
     </Stack>
   );
 }

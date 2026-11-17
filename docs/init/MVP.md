@@ -111,54 +111,34 @@ Le parseur de flux ne transmet au client que le contenu de `<prose>`. La répons
 
 **Réducteur** : une transaction qui valide chaque proposition (schéma, mémoire existante, clé et contenu valides, règle d'écriture codée en dur), écrit les événements et met à jour `memory_entries`. Chaque rejet est journalisé avec un code (`UNKNOWN_MEMORY`, `INVALID_SCHEMA`, `FORBIDDEN`, `EMPTY_CONTENT`).
 
-## 6. Maquette du visualiseur de traces
+## 6. Progression et visualiseur de traces
 
-Écran mobile, détail d'un tour :
-```
-┌────────────────────────────┐
-│ ←  Tour 12             ⋮   │
-│ « J'ouvre la porte. »      │
-├────────────────────────────┤
-│ Pipeline│Whiteboard│Appels │
-├────────────────────────────┤
-│ ① Analyse            1,8 s │
-│   ● Cohérence   ok   0,9 s │
-│   ● Chaos       ok   1,4 s │
-│   ● Avocat      erreur  ⚠  │
-│ ② Narrateur          4,2 s │
-│   ● résolution + prose  ›  │
-│ ③ Gardien            1,1 s │
-│   ● 4 propositions      ›  │
-│ ④ Réducteur   3 ✓   1 ✗    │
-│   ✗ UNKNOWN_MEMORY      ›  │
-└────────────────────────────┘
+Pendant une génération, une vue compacte apparaît dans la conversation, juste après la saisie :
+
+```text
+┌────────────────────────────────┐
+│ ● Analyse · 2/3 agents · 1,4 s │
+│   Analyse 1,4 s · Narrateur …  │
+│   ━━━━━━━━━━━━━━━━────────     │
+└────────────────────────────────┘
 ```
 
-Onglet Whiteboard :
-```
-┌────────────────────────────┐
-│ Chaos                      │
-│ « Une clé manque. »        │
-│  ▸ recommendation  ●●●     │
-│    Faire échouer l'ouvert. │
-│  ▸ remember        ●○○     │
-│    La porte est verrouillée│
-├────────────────────────────┤
-│ Cohérence …                │
-└────────────────────────────┘
+Elle suit les étapes réellement exécutées (Analyse puis Narrateur), affiche le temps écoulé et l'avancement des agents parallèles. Elle disparaît à la fin ou à l'échec du tour ; les traces restent consultables depuis les messages persistés.
+
+L'action d'inspection sur un message ouvre un tiroir contextuel, pleine largeur sur mobile et superposé à droite sur desktop :
+
+```text
+┌────────────────────────────────┐
+│ Traces du tour                  │
+│ [Pipeline] [Whiteboard] [Appels]│
+│ Analyse                         │
+│   Chaos · OK · 0,8 s · Inspecter│
+│ Narrateur · OK · 1,5 s          │
+│   « La porte résiste. »         │
+└────────────────────────────────┘
 ```
 
-Tiroir d'un appel (au clic sur une ligne) :
-```
-┌────────────────────────────┐
-│ Chaos · analyse            │
-│ 1,4 s · 812 → 240 tokens   │
-│ [Prompt] [Réponse] [Brut]  │
-│ system: …  (copier)        │
-└────────────────────────────┘
-```
-
-Sur desktop, trois colonnes : liste des tours à gauche, pipeline au centre, détail de l'appel ou du whiteboard à droite. Chaque élément cliquable ouvre son contenu complet, et un tour en erreur est signalé dès la liste.
+Les appels sont chargés à la demande. Leur détail donne accès au prompt exact, à la réponse brute, aux tokens, à la durée et au JSON complet. Les traces passées sont accessibles depuis les tours du chemin de conversation sélectionné ; il n'y a pas de route globale `/traces`. Le Gardien et le Réducteur n'apparaîtront qu'une fois implémentés en M6.
 
 ## 7. Jalons du MVP
 
@@ -188,8 +168,9 @@ Sur desktop, trois colonnes : liste des tours à gauche, pipeline au centre, dé
 - *Démontrable* : trois agents d'analyse (par exemple Cohérence, Chaos, Avocat du diable) influencent visiblement la narration.
 
 **M5 : Visualiseur de traces**
-- Écrans de la section 6, avec accès au prompt et à la réponse brute de chaque appel, tokens et durées.
-- Accès depuis un bouton sur chaque message du chat.
+- Progression inline temporaire des étapes et agents pendant la génération, avec durée écoulée.
+- Tiroir contextuel depuis les messages, avec vues Pipeline, Whiteboard et Appels ; détail prompt/réponse brute chargé à la demande.
+- Traces passées limitées aux tours du chemin affiché ; aucune page globale `/traces`.
 - *Démontrable* : comprendre pourquoi une réponse est telle qu'elle est, en moins de trois clics.
 
 **M6 : Mémoire simple et Gardien**
@@ -200,7 +181,7 @@ Sur desktop, trois colonnes : liste des tours à gauche, pipeline au centre, dé
 
 **M7 : Finition MVP**
 - Passe UX mobile, états de chargement et d'erreur, page de démonstration avec un projet d'exemple prêt à jouer.
-- Documentation `docs/pipeline.md` à jour.
+- Documentation `docs/pipeline.md`, README à jour. On supprime toute la doc non-nécessaire ou qui représente du legacy -> clean slate.
 
 ## 8. Après le MVP
 

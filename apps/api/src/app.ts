@@ -13,10 +13,12 @@ import type { AgentsService } from './modules/agents/services/agentsService.js';
 import { ChatController, type ChatService } from './modules/chat/index.js';
 import { notfoundError } from './errors/errors.js';
 import { registerChatRoutes } from './modules/chat/routes/chatRoutes.js';
+import { registerTraceRoutes } from './modules/traces/routes/traceRoutes.js';
+import { TraceController, type TraceService } from './modules/traces/index.js';
 
 export function buildApp(
   config: AuthConfig,
-  services?: { projects: ProjectsService; agents: AgentsService; chat: ChatService },
+  services?: { projects: ProjectsService; agents: AgentsService; chat: ChatService; traces: TraceService },
 ) {
 
   const isDevelopment = config.nodeEnv === 'development';
@@ -67,6 +69,7 @@ export function buildApp(
     registerProjectRoutes(app, services.projects);
     registerAgentRoutes(app, services.agents);
     registerChatRoutes(app, new ChatController(services.chat));
+    registerTraceRoutes(app, new TraceController(services.traces));
   }
 
   return app;

@@ -1,5 +1,5 @@
 import { Route, Routes } from 'react-router-dom';
-import { IconBrain, IconRoute } from '@tabler/icons-react';
+import { IconBrain } from '@tabler/icons-react';
 
 import { AuthProvider } from './auth/AuthProvider';
 import { RequireAuth, SessionBoundary } from './auth/AuthRoutes';
@@ -25,7 +25,6 @@ export function App() {
               <Route path="projects/:projectId" element={<ChatPage />} />
               <Route path="agents" element={<AgentsPage />} />
               <Route path="memories" element={<ComingSoonPage title="Mémoires" icon={IconBrain} />} />
-              <Route path="traces" element={<ComingSoonPage title="Traces" icon={IconRoute} />} />
               <Route path="*" element={<NotFoundPage />} />
             </Route>
           </Route>

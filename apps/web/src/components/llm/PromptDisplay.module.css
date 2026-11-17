@@ -1,0 +1,19 @@
+.prompt {
+  min-width: 0;
+  max-width: 100%;
+  padding: var(--mantine-spacing-sm);
+  border: 1px solid var(--mantine-color-default-border);
+  border-inline-start: 3px solid var(--mantine-color-blue-5);
+  border-radius: var(--mantine-radius-sm);
+  background: var(--mantine-color-dark-8);
+}
+
+.label {
+  color: var(--mantine-color-blue-2);
+  font-family: var(--mantine-font-family-monospace);
+}
+
+.preview {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}

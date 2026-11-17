@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { AnalysisEnvelope, ChatBranch, Message, ProjectAgent } from '@choral-writer/shared';
+import type { AnalysisEnvelope, ChatBranch, ChatEvent, Message, ProjectAgent } from '@choral-writer/shared';
 
 import type { ChatServiceDependencies, ChatTransactionContext } from '../types/chat.types.js';
 import type { Narrator } from '../types/narrator.types.js';
@@ -52,13 +52,14 @@ function setup() {
     analyze,
     narrate,
   };
-  const emit = vi.fn(async () => {});
+  const emitted: ChatEvent[] = [];
+  const emit = vi.fn(async (event: ChatEvent) => { emitted.push(event); });
   const service = new ChatService(dependencies);
   const run = () => service.run({
     operation: 'send', projectId, branchId: branch.id,
     expectedHeadTurnId: null, content: user.content,
   }, emit, new AbortController().signal);
-  return { context, analyze, narrate, emit, run };
+  return { context, analyze, narrate, emit, emitted, run };
 }
 
 describe('chat orchestration without infrastructure', () => {
@@ -99,8 +100,40 @@ describe('chat orchestration without infrastructure', () => {
     expect(narrate).toHaveBeenCalledWith(expect.objectContaining({ whiteboard }));
   });
 
+  it('emits stage timings and per-agent progress in pipeline order', async () => {
+    const { context, analyze, narrate, emitted, run } = setup();
+    context.projectAgents.push({
+      agentId: 'analyst', versionId: 'analyst-version', phase: 'analysis', output: 'envelope',
+      version: 1, name: 'Chaos', instructions: 'Find uncertainty.',
+    });
+    analyze.mockImplementation(async ({ onAgentProgress }) => {
+      await onAgentProgress?.({ agentId: 'analyst', name: 'Chaos', status: 'started' });
+      await onAgentProgress?.({ agentId: 'analyst', name: 'Chaos', status: 'completed', durationMs: 12 });
+      return [];
+    });
+    narrate.mockResolvedValue('The door opens.');
+
+    await run();
+
+    expect(emitted.map((event) => event.type)).toEqual([
+      'chat.turn.started',
+      'chat.pipeline.stage',
+      'chat.pipeline.agent',
+      'chat.pipeline.agent',
+      'chat.pipeline.stage',
+      'chat.pipeline.stage',
+      'chat.pipeline.stage',
+    ]);
+    expect(emitted.filter((event) => event.type === 'chat.pipeline.stage')).toEqual([
+      expect.objectContaining({ stage: 'analysis', status: 'started', agentCount: 1 }),
+      expect.objectContaining({ stage: 'analysis', status: 'completed' }),
+      expect.objectContaining({ stage: 'narrator', status: 'started' }),
+      expect.objectContaining({ stage: 'narrator', status: 'completed' }),
+    ]);
+  });
+
   it('does not narrate when analysis fails', async () => {
-    const { analyze, narrate, context, run } = setup();
+    const { analyze, narrate, context, emitted, run } = setup();
     context.projectAgents.push({
       agentId: 'analyst', versionId: 'analyst-version', phase: 'analysis', output: 'envelope',
       version: 1, name: 'Chaos', instructions: 'Find uncertainty.',
@@ -111,6 +144,10 @@ describe('chat orchestration without infrastructure', () => {
 
     expect(result.status).toBe('failed');
     expect(narrate).not.toHaveBeenCalled();
+    expect(emitted.filter((event) => event.type === 'chat.pipeline.stage')).toEqual([
+      expect.objectContaining({ stage: 'analysis', status: 'started' }),
+      expect.objectContaining({ stage: 'analysis', status: 'failed' }),
+    ]);
     expect(context.turns.finish).toHaveBeenCalledWith(
       'turn', 'branch', expect.objectContaining({ status: 'failed' }), expect.any(Date),
     );

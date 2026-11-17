@@ -10,6 +10,27 @@ type ChatAction =
   | { operation: 'send'; content: string }
   | { operation: 'regenerate' | 'retry' };
 
+type PipelineStage = 'analysis' | 'narrator';
+type PipelineStepStatus = 'pending' | 'running' | 'completed' | 'failed';
+
+export type ChatPipelineProgress = {
+  turnId: string;
+  activeStage: PipelineStage | null;
+  activeStageStartedAt: number | null;
+  analysis: {
+    status: PipelineStepStatus;
+    elapsedMs: number;
+    agentCount: number;
+    agents: Record<string, {
+      name: string;
+      status: 'started' | 'completed' | 'failed';
+      startedAt: number | null;
+      durationMs: number | null;
+    }>;
+  };
+  narrator: { status: PipelineStepStatus; elapsedMs: number };
+};
+
 /**
  * Owns branch selection, provisional streaming and reconciliation with committed
  * history. Regeneration never replaces the source view until its success is
@@ -25,16 +46,30 @@ export function useChat(projectId: string) {
   const [error, setError] = useState('');
   const [pending, setPending] = useState(false);
   const [partial, setPartial] = useState('');
+  const [pipelineProgress, setPipelineProgress] = useState<ChatPipelineProgress | null>(null);
   const [optimisticUser, setOptimisticUser] = useState<Message | null>(null);
   const [failedBranchId, setFailedBranchId] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
   const activeRequest = useRef<AbortController | null>(null);
 
   useEffect(() => {
+    if (!pipelineProgress?.activeStage || pipelineProgress.activeStageStartedAt === null) return;
+    const interval = window.setInterval(() => {
+      setPipelineProgress((current) => {
+        if (!current?.activeStage || current.activeStageStartedAt === null) return current;
+        const elapsedMs = Date.now() - current.activeStageStartedAt;
+        return { ...current, [current.activeStage]: { ...current[current.activeStage], elapsedMs } };
+      });
+    }, 250);
+    return () => window.clearInterval(interval);
+  }, [pipelineProgress?.activeStage, pipelineProgress?.activeStageStartedAt]);
+
+  useEffect(() => {
     const controller = new AbortController();
     setLoading(true);
     setError('');
     setPartial('');
+    setPipelineProgress(null);
     setPending(false);
     setOptimisticUser(null);
     setHistory(null);
@@ -110,20 +145,79 @@ export function useChat(projectId: string) {
         if (event.type === 'chat.turn.started') {
           userMessageId = event.message.id;
           if (action.operation === 'send') setOptimisticUser(event.message);
+          setPipelineProgress({
+            turnId: event.turnId,
+            activeStage: null,
+            activeStageStartedAt: null,
+            analysis: { status: 'pending', elapsedMs: 0, agentCount: 0, agents: {} },
+            narrator: { status: 'pending', elapsedMs: 0 },
+          });
+        } else if (event.type === 'chat.pipeline.stage') {
+          setPipelineProgress((current) => {
+            if (!current || current.turnId !== event.turnId) return current;
+            if (event.status === 'started') {
+              return {
+                ...current,
+                activeStage: event.stage,
+                activeStageStartedAt: Date.now(),
+                [event.stage]: {
+                  ...current[event.stage],
+                  status: 'running',
+                  ...(event.stage === 'analysis' ? { agentCount: event.agentCount ?? 0 } : {}),
+                },
+              };
+            }
+            return {
+              ...current,
+              activeStage: current.activeStage === event.stage ? null : current.activeStage,
+              activeStageStartedAt: current.activeStage === event.stage ? null : current.activeStageStartedAt,
+              [event.stage]: {
+                ...current[event.stage],
+                status: event.status,
+                elapsedMs: event.elapsedMs ?? current[event.stage].elapsedMs,
+              },
+            };
+          });
+        } else if (event.type === 'chat.pipeline.agent') {
+          setPipelineProgress((current) => {
+            if (!current || current.turnId !== event.turnId) return current;
+            return {
+              ...current,
+              analysis: {
+                ...current.analysis,
+                agents: {
+                  ...current.analysis.agents,
+                  [event.agentId]: {
+                    name: event.name,
+                    status: event.status,
+                    startedAt: event.status === 'started'
+                      ? Date.now()
+                      : current.analysis.agents[event.agentId]?.startedAt ?? null,
+                    durationMs: event.durationMs
+                      ?? current.analysis.agents[event.agentId]?.durationMs
+                      ?? null,
+                  },
+                },
+              },
+            };
+          });
         } else if (event.type === 'chat.message.delta') {
           setPartial((text) => text + event.delta);
         } else if (event.type === 'chat.turn.completed') {
           completedBranchId = event.branchId;
           persisted = true;
           setPartial('');
+          setPipelineProgress(null);
         } else if (event.type === 'chat.turn.failed' && action.operation === 'regenerate') {
           failedAlternativeId = event.branchId;
           setFailedBranchId(event.branchId ?? null);
+          setPipelineProgress(null);
         }
       });
     } catch (error) {
       if (!controller.signal.aborted) setError(getErrorMessage(error));
     } finally {
+      setPipelineProgress(null);
       if (!controller.signal.aborted) {
         try {
           const targetBranchId = completedBranchId ?? history.branch.id;
@@ -161,7 +255,7 @@ export function useChat(projectId: string) {
   if (optimisticUser && !messages.some((message) => message.id === optimisticUser.id)) messages.push(optimisticUser);
 
   return {
-    project, branches, history, messages, loading, error, pending, partial, failedBranchId,
+    project, branches, history, messages, loading, error, pending, partial, pipelineProgress, failedBranchId,
     selectBranch,
     send: (content: string) => execute({ operation: 'send', content }),
     regenerate: () => execute({ operation: 'regenerate' }),

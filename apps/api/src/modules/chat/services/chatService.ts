@@ -1,5 +1,5 @@
 import type {
-  ChatBranch, ChatCommand, ChatHistory, ChatTurn,
+  AnalysisEnvelope, ChatBranch, ChatCommand, ChatHistory, ChatTurn,
 } from '@choral-writer/shared';
 
 import { prepareTurn } from './prepareTurn.js';
@@ -49,26 +49,68 @@ export class ChatService {
           type: 'chat.turn.started', turnId, branchId: input.branchId,
           operation: command.operation, message: input.userMessage,
         });
-        const whiteboard = await this.dependencies.analyze({
-          turnId,
-          agents: context.projectAgents.filter(isAnalysisAgent),
-          systemPrompt: context.project.systemPrompt,
-          history,
-          userMessage: input.userMessage,
-          signal,
+        const analysisAgents = context.projectAgents.filter(isAnalysisAgent);
+        const analysisStartedAt = performance.now();
+        await emit({
+          type: 'chat.pipeline.stage', turnId, stage: 'analysis', status: 'started',
+          agentCount: analysisAgents.length,
         });
-        const content = await this.dependencies.narrate({
-          turnId,
-          agentId: narrator.agentId,
-          agentVersionId: narrator.versionId,
-          systemPrompt: [context.project.systemPrompt, narrator.instructions]
-            .filter(Boolean)
-            .join('\n\n'),
-          whiteboard,
-          history,
-          userMessage: input.userMessage,
-          signal,
-          onDelta: (delta) => emit({ type: 'chat.message.delta', delta }),
+        let whiteboard: AnalysisEnvelope[];
+        try {
+          whiteboard = await this.dependencies.analyze({
+            turnId,
+            agents: analysisAgents,
+            systemPrompt: context.project.systemPrompt,
+            history,
+            userMessage: input.userMessage,
+            signal,
+            onAgentProgress: (progress) => emit({
+              type: 'chat.pipeline.agent', turnId, ...progress,
+            }),
+          });
+        } catch (error) {
+          if (!signal.aborted) {
+            await emit({
+              type: 'chat.pipeline.stage', turnId, stage: 'analysis', status: 'failed',
+              elapsedMs: Math.round(performance.now() - analysisStartedAt),
+            });
+          }
+          throw error;
+        }
+        await emit({
+          type: 'chat.pipeline.stage', turnId, stage: 'analysis', status: 'completed',
+          elapsedMs: Math.round(performance.now() - analysisStartedAt),
+        });
+
+        const narratorStartedAt = performance.now();
+        await emit({ type: 'chat.pipeline.stage', turnId, stage: 'narrator', status: 'started' });
+        let content: string;
+        try {
+          content = await this.dependencies.narrate({
+            turnId,
+            agentId: narrator.agentId,
+            agentVersionId: narrator.versionId,
+            systemPrompt: [context.project.systemPrompt, narrator.instructions]
+              .filter(Boolean)
+              .join('\n\n'),
+            whiteboard,
+            history,
+            userMessage: input.userMessage,
+            signal,
+            onDelta: (delta) => emit({ type: 'chat.message.delta', delta }),
+          });
+        } catch (error) {
+          if (!signal.aborted) {
+            await emit({
+              type: 'chat.pipeline.stage', turnId, stage: 'narrator', status: 'failed',
+              elapsedMs: Math.round(performance.now() - narratorStartedAt),
+            });
+          }
+          throw error;
+        }
+        await emit({
+          type: 'chat.pipeline.stage', turnId, stage: 'narrator', status: 'completed',
+          elapsedMs: Math.round(performance.now() - narratorStartedAt),
         });
         outcome = { status: 'completed', content };
       } catch (error) {

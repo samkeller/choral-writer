@@ -1,0 +1,61 @@
+.response,
+.tree {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.formatted {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.branch {
+  min-width: 0;
+}
+
+.branch > summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--mantine-spacing-xs);
+  padding: var(--mantine-spacing-xs);
+  border-radius: var(--mantine-radius-sm);
+  cursor: pointer;
+  list-style-position: inside;
+}
+
+.branchTitle {
+  font-size: var(--mantine-font-size-sm);
+  font-weight: 600;
+}
+
+.branchCount {
+  color: var(--mantine-color-dimmed);
+  font-size: var(--mantine-font-size-xs);
+}
+
+.branch > summary:hover {
+  background: var(--mantine-color-dark-7);
+}
+
+.children {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mantine-spacing-xs);
+  min-width: 0;
+  padding-inline-start: var(--mantine-spacing-sm);
+  border-inline-start: 1px solid var(--mantine-color-default-border);
+}
+
+.scalar {
+  min-width: 0;
+  padding: 0.25rem var(--mantine-spacing-xs);
+}
+
+.scalarValue {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

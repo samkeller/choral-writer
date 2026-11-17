@@ -8,7 +8,9 @@ import type { ChatTurnService } from '../services/turnService.js';
 import type { Narrator } from './narrator.types.js';
 
 /** Only progress is provisional; the transport sends terminal events after commit. */
-export type ChatProgressEvent = Extract<ChatEvent, { type: 'chat.turn.started' | 'chat.message.delta' }>;
+export type ChatProgressEvent = Extract<ChatEvent, {
+  type: 'chat.turn.started' | 'chat.message.delta' | 'chat.pipeline.stage' | 'chat.pipeline.agent'
+}>;
 
 export type ChatRunResult = { turnId: string; branchId: string } & (
   | { status: 'completed'; message: Message }

@@ -5,15 +5,18 @@ import { callLLM } from './llm/index.js';
 import { AgentsService } from './modules/agents/services/agentsService.js';
 import { ProjectsService } from './modules/projects/services/projectServices.js';
 import { createChatBranchService, createChatService } from './modules/chat/index.js';
+import { createTraceService } from './modules/traces/index.js';
 
 async function main(): Promise<void> {
   const config = loadConfig();
   const projects = new ProjectsService(db, createChatBranchService);
   const agents = new AgentsService(db, projects);
+  const chat = createChatService(db, projects, callLLM);
   const app = buildApp(config, {
     projects,
     agents,
-    chat: createChatService(db, projects, callLLM),
+    chat,
+    traces: createTraceService(db, chat),
   });
 
   try {

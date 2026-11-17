@@ -1,0 +1,111 @@
+.drawer {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.header {
+  flex-shrink: 0;
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+}
+
+.tabs {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.tabList {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--mantine-color-dark-7);
+}
+
+.callButton {
+  height: auto;
+  padding-block: var(--mantine-spacing-sm);
+  white-space: normal;
+  text-align: start;
+  overflow-wrap: anywhere;
+}
+
+.callDetail,
+.promptMessages,
+.promptMessage,
+.promptContent {
+  min-width: 0;
+}
+
+.callDetail {
+  overflow-wrap: anywhere;
+}
+
+.rawDetail {
+  min-width: 0;
+  max-width: 100%;
+  margin: 0;
+  padding: var(--mantine-spacing-sm);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-sm);
+  background: var(--mantine-color-dark-8);
+}
+
+.promptMessage {
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-sm);
+  background: var(--mantine-color-dark-8);
+}
+
+.promptMessage > summary {
+  display: flex;
+  align-items: center;
+  gap: var(--mantine-spacing-sm);
+  min-width: 0;
+  padding: var(--mantine-spacing-sm);
+  cursor: pointer;
+  list-style-position: inside;
+}
+
+.promptChevron {
+  flex: 0 0 auto;
+  color: var(--mantine-color-dimmed);
+}
+
+.promptMessage[open] .promptChevron {
+  transform: rotate(90deg);
+}
+
+.messageRole {
+  flex: 0 0 auto;
+  border-radius: var(--mantine-radius-xs);
+  background: var(--mantine-color-dark-6);
+  color: var(--mantine-color-dimmed);
+  font-size: var(--mantine-font-size-xs);
+  font-weight: 600;
+  padding: 0.15rem 0.4rem;
+  text-transform: capitalize;
+}
+
+.messagePreview {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--mantine-color-dimmed);
+  font-size: var(--mantine-font-size-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.promptContent {
+  padding: 0 var(--mantine-spacing-sm) var(--mantine-spacing-sm);
+}

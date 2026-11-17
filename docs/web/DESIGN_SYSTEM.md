@@ -41,6 +41,12 @@ Le thème définit une pile sans dépendance de police distante, avec une hiéra
 
 Les échelles `spacing`, `radius`, `shadows` et `breakpoints` Mantine sont configurées dans le thème. Utiliser leurs clés (`xs` à `xl`) dans les props Mantine ; éviter les valeurs numériques arbitraires. Les breakpoints sont exprimés en `em`; préférer les props responsives Mantine et `visibleFrom`/`hiddenFrom`. Le layout conserve une navigation latérale sur grand écran et une barre basse avec zone de sécurité sur mobile.
 
+Sur mobile, cette barre basse réunit les liens de navigation et la déconnexion :
+pas de bannière de marque supplémentaire en haut. Dans le chat, la saisie
+commence sur une ligne, avec envoi et régénération sur la même rangée pour
+privilégier la lecture. Le libellé de branche reste accessible sans prendre une
+ligne visuelle supplémentaire.
+
 ## Utilisation et personnalisation
 
 - `createTheme` centralise les palettes, la typographie, les échelles et les valeurs par défaut de composants.

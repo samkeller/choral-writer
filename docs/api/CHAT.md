@@ -113,20 +113,35 @@ par le schéma partagé ; une sortie invalide est retentée une fois. Si un agen
 agent d'analyse reste valide : l'étape est ignorée et le Narrateur reçoit un
 whiteboard vide.
 
+Le prompt d'analyse attribue un budget indicatif par agent :
+`max(3, floor(12 / nombre d'agents d'analyse))` éléments. La cible globale de
+12 n'est donc pas un plafond strict, notamment au-delà de quatre agents. Ce
+budget n'est pas un quota à remplir : un agent peut ne rien proposer et doit
+privilégier des apports distincts, utiles à la prochaine scène et propres à sa
+spécialité, sans répétition du contexte. Il n'y a ni troncature des réponses
+valides, ni rejet pour dépassement, ni redistribution après un échec.
+
 Le whiteboard est une projection, pas une table persistée. Les traces `llm_call`
 par `turn_id` conservent requête et réponse brutes, statut, étape, agent et version
 de l'agent, durée et tokens. La sortie brute du Narrateur contient résolution et
 prose ; seul le texte de la section prose est diffusé puis enregistré comme
-message assistant. Le visualiseur M5 pourra reconstruire les étapes à partir de
-ces traces sans dupliquer les sorties dans une projection mutable.
+message assistant. Le module Traces reconstruit le résumé de pipeline et le
+whiteboard depuis ces appels. Il vérifie d'abord l'appartenance du tour au projet ;
+le détail d'un appel est ensuite limité à son `turn_id`. Les prompts et réponses
+brutes ne sont renvoyés qu'à la demande, sans exposer l'erreur fournisseur stockée.
+Les routes sont `GET /api/projects/:projectId/turns/:turnId/traces` pour le résumé
+et `GET /api/projects/:projectId/turns/:turnId/traces/:callId` pour le détail.
 
 L'orchestration du tour coordonne l'analyse puis la restitution. Les services
 d'étape portent la validation des enveloppes et le parsing en flux ; le Réducteur
 transactionnel reste hors périmètre M4 et sera ajouté avec la mémoire en M6.
 
 **Conséquences et limites.** Le verrou et une connexion restent occupés pendant
-l'appel LLM. Les événements de début/delta sont provisoires ; seul le résultat
-terminal suit le commit, puis le client recharge l'état persistant.
+l'appel LLM. Les événements de début, progression d'étape/agent et delta sont
+provisoires ; seul le résultat terminal suit le commit, puis le client recharge
+l'état persistant. La progression disparaît après succès ou échec ; les traces
+persistées restent accessibles depuis les tours du chemin affiché.
+Les événements de progression sont `chat.pipeline.stage` et `chat.pipeline.agent`.
 Une déconnexion annule l'appel et tente de conserver l'échec. Un crash peut
 annuler la transaction alors que l'appel est facturé ; les traces, écrites sur
 une connexion distincte, peuvent survivre. Il n'y a pas de garantie « exactement

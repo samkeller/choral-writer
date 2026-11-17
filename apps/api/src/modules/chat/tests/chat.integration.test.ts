@@ -8,7 +8,10 @@ import type {
 } from 'openai/resources/chat/completions';
 import { APIError } from 'openai/error';
 import { v7 as uuidv7 } from 'uuid';
-import { agentSchema, projectAgentSchema, chatEventSchema, chatHistorySchema, projectSchema } from '@choral-writer/shared';
+import {
+  agentSchema, projectAgentSchema, chatEventSchema, chatHistorySchema, projectSchema,
+  traceCallDetailSchema, turnTraceSummarySchema,
+} from '@choral-writer/shared';
 
 import { buildApp } from '../../../app.js';
 import * as schema from '../../../db/schema.js';
@@ -20,6 +23,7 @@ import { ChatMessageRepository } from '../repositories/messageRepository.js';
 import { ChatTurnRepository } from '../repositories/turnRepository.js';
 import { AgentsService } from '../../agents/services/agentsService.js';
 import { ProjectsService } from '../../projects/services/projectServices.js';
+import { createTraceService } from '../../traces/index.js';
 
 // Only run against an explicitly supplied disposable PostgreSQL database.
 describe.skipIf(!process.env.TEST_DATABASE_URL)('projects and chat with PostgreSQL', () => {
@@ -60,11 +64,12 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('projects and chat with PostgreS
   });
   const projects = new ProjectsService(database, createChatBranchService);
   const agents = new AgentsService(database, projects);
+  const chat = createChatService(database, projects, callLLM);
   const app = buildApp({
     appPassword: 'test-password',
     cookieSecret: 'test-cookie-secret-with-at-least-thirty-two-characters',
     nodeEnv: 'test',
-  }, { projects, agents, chat: createChatService(database, projects, callLLM) });
+  }, { projects, agents, chat, traces: createTraceService(database, chat) });
   let cookie: string;
   let address: string;
   const createdIds: string[] = [];
@@ -308,7 +313,11 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('projects and chat with PostgreS
     expect(response.statusCode).toBe(200);
     const output = events(response.body);
     expect(output.map((event) => event.type)).toEqual([
-      'chat.turn.started', 'chat.message.delta', 'chat.message.delta', 'chat.turn.completed',
+      'chat.turn.started',
+      'chat.pipeline.stage', 'chat.pipeline.stage',
+      'chat.pipeline.stage',
+      'chat.message.delta', 'chat.message.delta',
+      'chat.pipeline.stage', 'chat.turn.completed',
     ]);
     const history = await app.inject({
       method: 'GET', url: `/api/projects/${first.id}/branches/${first.defaultBranchId}/history`, headers: { cookie },
@@ -326,6 +335,31 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('projects and chat with PostgreS
       agentId: narrator?.agentId, agentVersionId: narrator?.versionId,
       status: 'success', model: 'simulated-model', inputTokens: 20,
     });
+    const traceSummaryResponse = await app.inject({
+      method: 'GET', url: `/api/projects/${first.id}/turns/${start.turnId}/traces`, headers: { cookie },
+    });
+    expect(traceSummaryResponse.statusCode).toBe(200);
+    const traceSummary = turnTraceSummarySchema.parse(traceSummaryResponse.json());
+    expect(traceSummary).toMatchObject({
+      turnId: start.turnId,
+      analysis: [],
+      narrator: { status: 'success', resolution: 'La porte s’ouvre.', prose: 'Bonjour Mara.' },
+    });
+    const traceDetailResponse = await app.inject({
+      method: 'GET',
+      url: `/api/projects/${first.id}/turns/${start.turnId}/traces/${trace.id}`,
+      headers: { cookie },
+    });
+    expect(traceDetailResponse.statusCode).toBe(200);
+    expect(traceCallDetailSchema.parse(traceDetailResponse.json())).toMatchObject({
+      id: trace.id,
+      request: { messages: [{ role: 'system' }] },
+      response: '<resolution>La porte s’ouvre.</resolution><prose>Bonjour Mara.</prose>',
+    });
+    const foreignTrace = await app.inject({
+      method: 'GET', url: `/api/projects/${second.id}/turns/${start.turnId}/traces`, headers: { cookie },
+    });
+    expect(foreignTrace.statusCode).toBe(404);
     const [turn] = await database.select().from(schema.chatTurns).where(eq(schema.chatTurns.id, start.turnId));
     expect(turn.status).toBe('completed');
     await send(first.id, 'Elle avance.');
@@ -386,6 +420,12 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('projects and chat with PostgreS
         status: 'success',
       }),
     ]));
+    const summary = await app.inject({
+      method: 'GET', url: `/api/projects/${project.id}/turns/${start.turnId}/traces`, headers: { cookie },
+    });
+    expect(turnTraceSummarySchema.parse(summary.json()).analysis).toMatchObject([
+      { name: 'Chaos', status: 'success', envelope: { summary: 'There may be a trap.' } },
+    ]);
     const narratorCall = create.mock.calls.at(-1)?.[0];
     expect(String(narratorCall?.messages[0]?.content)).toContain('"agent":"Chaos"');
   });

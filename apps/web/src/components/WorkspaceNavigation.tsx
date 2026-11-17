@@ -1,5 +1,6 @@
+import type { ReactNode } from 'react';
 import { Button, NavLink, Stack, Text } from '@mantine/core';
-import { IconBook2, IconBrain, IconHome2, IconRoute, IconUsers } from '@tabler/icons-react';
+import { IconBook2, IconBrain, IconHome2, IconUsers } from '@tabler/icons-react';
 import { Link, useMatch, useResolvedPath } from 'react-router-dom';
 
 import styles from './WorkspaceLayout.module.css';
@@ -9,14 +10,19 @@ const navigation = [
   { path: '/projects', label: 'Projets', icon: IconBook2 },
   { path: '/agents', label: 'Agents', icon: IconUsers },
   { path: '/memories', label: 'Mémoires', icon: IconBrain },
-  { path: '/traces', label: 'Traces', icon: IconRoute },
 ];
 
-export function WorkspaceNavigation({ compact = false }: { compact?: boolean }) {
+export function WorkspaceNavigation({ compact = false, trailingAction }: {
+  compact?: boolean;
+  trailingAction?: ReactNode;
+}) {
   return (
     <nav className={compact ? styles.mobileNavigation : undefined} aria-label="Navigation principale">
       {compact
-        ? navigation.map((item) => <CompactNavButton key={item.path} item={item} />)
+        ? <>
+            {navigation.map((item) => <CompactNavButton key={item.path} item={item} />)}
+            {trailingAction}
+          </>
         : <Stack gap={4}>{navigation.map((item) => <NavButton key={item.path} item={item} />)}</Stack>}
     </nav>
   );

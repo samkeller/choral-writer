@@ -1,0 +1,13 @@
+.field {
+  flex: 1;
+  min-width: 0;
+}
+
+.send {
+  flex-shrink: 0;
+}
+
+.input {
+  max-height: max(5rem, 20dvh);
+  overflow-y: auto;
+}

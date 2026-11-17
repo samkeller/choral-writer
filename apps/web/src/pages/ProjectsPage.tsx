@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { Alert, Button, Center, Code, Group, Loader, Modal, Paper, SimpleGrid, Stack, Text, Title } from '@mantine/core';
+import { Alert, Button, Center, Group, Loader, Modal, Paper, SimpleGrid, Stack, Text, Title } from '@mantine/core';
 import type { Project, ProjectInput } from '@choral-writer/shared';
 
 import { createProject, deleteProject, updateProject } from '../api/projects/projectsApi';
 import { getErrorMessage } from '../api/client';
 import { PageHeader } from '../components/PageHeader';
+import { PromptDisplay } from '../components/llm/PromptDisplay';
 import { ProjectForm } from '../components/projects/ProjectForm';
 import { useProjects } from '../hooks/useProjects';
 import { IconEdit, IconTrash } from '@tabler/icons-react';
@@ -89,9 +90,7 @@ export function ProjectsPage() {
                 </Group>
               </Group>
 
-              <Code>
-                {project.systemPrompt || 'Aucune description.'}
-              </Code>
+              <PromptDisplay content={project.systemPrompt || 'Aucune description.'} compact lineClamp={4} />
             </Stack>
           </ClickableCard>
         ))}

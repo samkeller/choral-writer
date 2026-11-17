@@ -21,6 +21,10 @@ export function toChatEventDto(event: ChatEvent): ChatEventDto {
       };
     case 'chat.message.delta':
       return { type: event.type, delta: event.delta };
+    case 'chat.pipeline.stage':
+      return event;
+    case 'chat.pipeline.agent':
+      return event;
     case 'chat.turn.failed':
       return {
         type: event.type,

@@ -19,13 +19,24 @@ export type AnalysisInput = {
   history: readonly ChatTurn[];
   userMessage: Message;
   signal: AbortSignal;
+  onAgentProgress?: (progress: AnalysisAgentProgress) => Promise<void>;
 };
 
-function analysisContract(agentName: string): string {
+export type AnalysisAgentProgress = {
+  agentId: string;
+  name: string;
+  status: 'started' | 'completed' | 'failed';
+  durationMs?: number;
+};
+
+function analysisContract(agentName: string, itemBudget: number): string {
   return [
     'Return exactly one JSON object with this shape:',
     '{"v":1,"agent":"<your name>","summary":"<one sentence>","items":[{"kind":"<free-form string>","text":"<string>","importance":"LOW | NORMAL | HIGH"}]}',
     'Use LOW for secondary details, NORMAL for relevant information, and HIGH for information that materially changes the interpretation or action.',
+    `Aim for at most ${itemBudget} items. This is an upper guideline, not a quota: return fewer items or none when appropriate.`,
+    'Keep only distinct, actionable contributions within your specialty that can change the next scene or its interpretation. Do not restate the conversation or repeat the same point in different words.',
+    'Prefer decisive constraints, risks and opportunities over exhaustive observations. Reserve HIGH for genuinely decisive information.',
     `Set "agent" to ${JSON.stringify(agentName)}. Use an empty items array when you have nothing to contribute.`,
   ].join('\n');
 }
@@ -34,40 +45,58 @@ export class ChatAnalysisService {
   constructor(private readonly callLLM: ReturnType<typeof createCallLLM>) {}
 
   async generate(input: AnalysisInput): Promise<AnalysisEnvelope[]> {
-    const results = await Promise.allSettled(input.agents.map((agent) => this.generateForAgent(input, agent)));
+    if (input.agents.length === 0) return [];
+    const itemBudget = Math.max(3, Math.floor(12 / input.agents.length));
+    const results = await Promise.allSettled(input.agents.map((agent) => this.generateForAgent(input, agent, itemBudget)));
     const errors = results.flatMap((result) => result.status === 'rejected' ? [result.reason] : []);
-    if (errors.length > 0) {
-      throw new AggregateError(errors, 'One or more analysis agents failed.');
+    const unexpectedErrors = errors.filter((error) =>
+      !(error instanceof ApiError && error.options.source === 'llm'));
+    if (unexpectedErrors.length > 0) {
+      throw new AggregateError(unexpectedErrors, 'One or more analysis agents failed unexpectedly.');
     }
     return results.flatMap((result) => result.status === 'fulfilled' ? [result.value] : []);
   }
 
-  private async generateForAgent(input: AnalysisInput, agent: AnalysisAgent): Promise<AnalysisEnvelope> {
-    const messages = conversationMessages(
-      [input.systemPrompt, agent.instructions, analysisContract(agent.name)].filter(Boolean).join('\n\n'),
-      input.history,
-      input.userMessage,
-    );
-    const request: CallLLMInput<AnalysisEnvelope> = {
-      turnId: input.turnId,
-      agentId: agent.agentId,
-      agentVersionId: agent.versionId,
-      stage: 'analysis',
-      messages,
-      schema: analysisEnvelopeSchema.extend({ agent: z.literal(agent.name) }),
-      signal: input.signal,
-    };
-
+  private async generateForAgent(input: AnalysisInput, agent: AnalysisAgent, itemBudget: number): Promise<AnalysisEnvelope> {
+    const startedAt = Date.now();
+    await input.onAgentProgress?.({ agentId: agent.agentId, name: agent.name, status: 'started' });
     try {
-      const result = await this.callLLM(request);
-      if (!result.parsed) throw new Error('Analysis response was not validated.');
-      return result.parsed;
-    } catch (error) {
-      if (!(error instanceof ApiError) || error.code !== 'LLM_INVALID_RESPONSE') throw error;
-    }
+      const request: CallLLMInput<AnalysisEnvelope> = {
+        turnId: input.turnId,
+        agentId: agent.agentId,
+        agentVersionId: agent.versionId,
+        stage: 'analysis',
+        messages: conversationMessages(
+          [input.systemPrompt, agent.instructions, analysisContract(agent.name, itemBudget)].filter(Boolean).join('\n\n'),
+          input.history,
+          input.userMessage,
+        ),
+        schema: analysisEnvelopeSchema.extend({ agent: z.literal(agent.name) }),
+        signal: input.signal,
+      };
 
-    const retry = await this.callLLM(request);
-    if (!retry.parsed) throw new Error('Analysis retry response was not validated.');
-    return retry.parsed;
+      let parsed: AnalysisEnvelope;
+      try {
+        const result = await this.callLLM(request);
+        if (!result.parsed) throw new Error('Analysis response was not validated.');
+        parsed = result.parsed;
+      } catch (error) {
+        if (!(error instanceof ApiError)
+          || !['LLM_INVALID_RESPONSE', 'LLM_EMPTY_RESPONSE'].includes(error.code)) throw error;
+        const retry = await this.callLLM(request);
+        if (!retry.parsed) throw new Error('Analysis retry response was not validated.');
+        parsed = retry.parsed;
+      }
+
+      await input.onAgentProgress?.({
+        agentId: agent.agentId, name: agent.name, status: 'completed', durationMs: Date.now() - startedAt,
+      });
+      return parsed;
+    } catch (error) {
+      await input.onAgentProgress?.({
+        agentId: agent.agentId, name: agent.name, status: 'failed', durationMs: Date.now() - startedAt,
+      });
+      throw error;
+    }
   }
 }

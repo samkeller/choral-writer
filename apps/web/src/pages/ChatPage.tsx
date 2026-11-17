@@ -1,4 +1,5 @@
-import { Alert, Button, Center, Code, Drawer, Group, Loader, Popover, ScrollArea, Select, Stack, Text } from '@mantine/core';
+import { useEffect, useState } from 'react';
+import { Alert, Box, Button, Center, Drawer, Group, Loader, Popover, Select, Stack, Text } from '@mantine/core';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { IconAdjustmentsHorizontal, IconArrowLeft, IconInfoCircle, IconRefresh } from '@tabler/icons-react';
 import { projectParamsSchema } from '@choral-writer/shared';
@@ -6,10 +7,13 @@ import { projectParamsSchema } from '@choral-writer/shared';
 import { PageHeader } from '../components/PageHeader';
 import { MessageComposer } from '../components/chat/MessageComposer';
 import { MessageList } from '../components/chat/MessageList';
+import { TraceDrawer } from '../components/chat/TraceDrawer';
+import { PromptDisplay } from '../components/llm/PromptDisplay';
 import { ProjectAgentSetup } from '../components/agents/ProjectAgentSetup';
 import { useChat } from '../hooks/useChat';
 import { NotFoundPage } from './NotFoundPage';
 import { IconAction } from '../components/atoms/IconAction';
+import styles from './ChatPage.module.css';
 
 export function ChatPage() {
   const params = projectParamsSchema.safeParse(useParams());
@@ -22,13 +26,16 @@ function ProjectChat({ projectId }: { projectId: string }) {
   const setupOpen = search.get('setup') === 'agents';
   const chat = useChat(projectId);
   const head = chat.history?.turns.at(-1);
+  const [traceTurnId, setTraceTurnId] = useState<string | null>(null);
+
+  useEffect(() => setTraceTurnId(null), [chat.history?.branch.id]);
 
   if (chat.loading) {
     return <Center py="xl"><Loader color="choral" aria-label="Chargement de la conversation" /></Center>;
   }
 
   return (
-    <Stack gap="lg" maw={800} mx="auto" w="100%">
+    <Stack gap="xs" maw="min(100%, 72rem)" mx="auto" w="100%" className={styles.page}>
       <PageHeader
         title={chat.project?.name ?? 'Conversation'}
         actions={<Group gap="xs">
@@ -63,13 +70,14 @@ function ProjectChat({ projectId }: { projectId: string }) {
           <Group align="center" justify='space-between' gap="sm">
             <Select
               label="Branche de conversation"
+              classNames={{ label: styles.branchLabel }}
               value={chat.history?.branch.id ?? null}
               data={chat.branches.map((branch) => ({ value: branch.id, label: branch.name }))}
               onChange={(value) => { if (value) chat.selectBranch(value); }}
               disabled={chat.pending || !chat.history}
               allowDeselect={false}
             />
-            <Popover position="bottom-end" withArrow shadow="md" width={380}>
+            <Popover position="bottom-end" withArrow shadow="md" width="min(23.75rem, calc(100vw - 2rem))">
               <Popover.Target>
                 <IconAction label="Afficher le prompt système">
                   <IconInfoCircle size={18} aria-hidden="true" />
@@ -81,18 +89,26 @@ function ProjectChat({ projectId }: { projectId: string }) {
                   <Text size="sm" fw={600}>
                     Prompt système
                   </Text>
-                  <ScrollArea.Autosize mah={300} type="auto">
-                    <Code>
-                      {chat.project.systemPrompt || 'Aucun prompt système.'}
-                    </Code>
-                  </ScrollArea.Autosize>
+                  <Box mah={300} style={{ minWidth: 0, overflowY: 'auto' }}>
+                    <PromptDisplay content={chat.project.systemPrompt || 'Aucun prompt système.'} />
+                  </Box>
                 </Stack>
               </Popover.Dropdown>
             </Popover>
           </Group>
-          <MessageList messages={chat.messages} partial={chat.partial} pending={chat.pending} />
-          {head && (
-            <Group justify="flex-end" gap={4}>
+          <Box className={styles.conversation}>
+            <MessageList
+              messages={chat.messages}
+              turns={chat.history?.turns ?? []}
+              partial={chat.partial}
+              pending={chat.pending}
+              pipelineProgress={chat.pipelineProgress}
+              onInspectTurn={setTraceTurnId}
+            />
+          </Box>
+          {head?.status === 'failed' && <Text c="red" size="xs" role="alert">{head.error}</Text>}
+          <MessageComposer pending={chat.pending} onSend={chat.send} actions={head && (
+            <Group justify="flex-end" gap={4} wrap="nowrap">
               {head.status === 'completed' && (
                 <IconAction label="Régénérer la réponse" disabled={chat.pending} onClick={() => void chat.regenerate()}>
                   <IconRefresh size={18} aria-hidden="true" />
@@ -101,15 +117,13 @@ function ProjectChat({ projectId }: { projectId: string }) {
 
               {head.status === 'failed' && (
                 <>
-                  <Text c="red" size="xs">{head.error}</Text>
                   <IconAction label="Réessayer la réponse" color="red" disabled={chat.pending} onClick={() => void chat.retry()}>
                     <IconRefresh size={18} aria-hidden="true" />
                   </IconAction>
                 </>
               )}
             </Group>
-          )}
-          <MessageComposer pending={chat.pending} onSend={chat.send} />
+          )} />
           <Drawer opened={setupOpen} position="right" size="lg" title="Configuration du projet"
             overlayProps={{ backgroundOpacity: 0.35, blur: 3 }}
             onClose={() => setSearch((current) => {
@@ -120,6 +134,13 @@ function ProjectChat({ projectId }: { projectId: string }) {
             })}>
             {setupOpen && <ProjectAgentSetup projectId={projectId} suggestedVersion={search.get('agentVersion')} />}
           </Drawer>
+          {traceTurnId && (
+            <TraceDrawer
+              projectId={projectId}
+              turnId={traceTurnId}
+              onClose={() => setTraceTurnId(null)}
+            />
+          )}
         </>
       )}
     </Stack>

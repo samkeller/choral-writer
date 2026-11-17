@@ -8,6 +8,14 @@ export type Narration = {
   prose: string;
 };
 
+export class NarratorParseError extends Error {}
+
+export async function parseNarration(content: string): Promise<Narration> {
+  const parser = new NarratorStreamParser(async () => {});
+  await parser.push(content);
+  return parser.finish(content);
+}
+
 function trailingTagPrefixLength(value: string, tag: string): number {
   const maximum = Math.min(value.length, tag.length - 1);
   for (let length = maximum; length > 0; length -= 1) {
@@ -34,7 +42,7 @@ export class NarratorStreamParser {
   finish(content: string): Narration {
     if (content !== this.raw || this.phase !== 'done' || this.pending
       || !this.resolution.trim() || !this.prose.trim()) {
-      throw new Error('Narrator response must contain non-empty resolution and prose sections.');
+      throw new NarratorParseError('Narrator response must contain non-empty resolution and prose sections.');
     }
     return { resolution: this.resolution, prose: this.prose };
   }
@@ -43,8 +51,12 @@ export class NarratorStreamParser {
     while (true) {
       if (this.phase === 'resolution-open' || this.phase === 'prose-open') {
         const tag = this.phase === 'resolution-open' ? resolutionOpen : proseOpen;
+        if (this.phase === 'prose-open') {
+          this.pending = this.pending.trimStart();
+          if (!this.pending) return;
+        }
         if (this.pending.length < tag.length && tag.startsWith(this.pending)) return;
-        if (!this.pending.startsWith(tag)) throw new Error(`Narrator response is missing ${tag}.`);
+        if (!this.pending.startsWith(tag)) throw new NarratorParseError(`Narrator response is missing ${tag}.`);
         this.pending = this.pending.slice(tag.length);
         this.phase = this.phase === 'resolution-open' ? 'resolution' : 'prose';
         continue;
@@ -55,7 +67,7 @@ export class NarratorStreamParser {
         if (end !== -1) {
           this.resolution += this.pending.slice(0, end);
           this.pending = this.pending.slice(end + resolutionClose.length);
-          if (!this.resolution.trim()) throw new Error('Narrator resolution cannot be empty.');
+          if (!this.resolution.trim()) throw new NarratorParseError('Narrator resolution cannot be empty.');
           this.phase = 'prose-open';
           continue;
         }
@@ -72,7 +84,7 @@ export class NarratorStreamParser {
           await this.emitProse(delta);
           this.pending = this.pending.slice(end + proseClose.length);
           this.phase = 'done';
-          if (this.pending) throw new Error('Narrator response contains content after the prose section.');
+          if (this.pending) throw new NarratorParseError('Narrator response contains content after the prose section.');
           return;
         }
         const safeLength = this.pending.length - trailingTagPrefixLength(this.pending, proseClose);
@@ -82,7 +94,7 @@ export class NarratorStreamParser {
         return;
       }
 
-      if (this.pending) throw new Error('Narrator response contains content after the prose section.');
+      if (this.pending) throw new NarratorParseError('Narrator response contains content after the prose section.');
       return;
     }
   }

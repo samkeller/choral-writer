@@ -1,0 +1,66 @@
+.markdown {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  font-size: var(--mantine-font-size-sm);
+  line-height: 1.65;
+}
+
+.markdown > :first-child {
+  margin-top: 0;
+}
+
+.markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown :global(p),
+.markdown :global(ul),
+.markdown :global(ol),
+.markdown :global(blockquote),
+.markdown :global(pre) {
+  margin-block: var(--mantine-spacing-sm);
+}
+
+.markdown :global(ul),
+.markdown :global(ol) {
+  padding-inline-start: 1.25rem;
+}
+
+.markdown :global(p),
+.markdown :global(li) {
+  white-space: pre-wrap;
+}
+
+.markdown :global(pre) {
+  max-width: 100%;
+  padding: var(--mantine-spacing-sm);
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-sm);
+  background: var(--mantine-color-dark-9);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.markdown :global(code) {
+  font-family: var(--mantine-font-family-monospace);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.markdown :global(:not(pre) > code) {
+  padding: 0.1em 0.3em;
+  border-radius: var(--mantine-radius-xs);
+  background: var(--mantine-color-dark-7);
+}
+
+.markdown :global(blockquote) {
+  margin-inline: 0;
+  padding-inline-start: var(--mantine-spacing-sm);
+  border-inline-start: 2px solid var(--mantine-color-choral-5);
+  color: var(--mantine-color-dimmed);
+}
+
+.markdown :global(img) {
+  max-width: 100%;
+}

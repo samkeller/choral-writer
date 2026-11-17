@@ -1,8 +1,9 @@
 import { useId } from 'react';
-import { Badge, Box, Code, Group, Paper, Stack, Text, Title } from '@mantine/core';
+import { Badge, Box, Group, Paper, Stack, Text, Title } from '@mantine/core';
 import { IconChevronDown, IconChevronUp } from '@tabler/icons-react';
 import type { Agent } from '@choral-writer/shared';
 
+import { PromptDisplay } from '../llm/PromptDisplay';
 import { PhaseTag } from '../phases/PhaseTag';
 import { phasePresentation } from '../phases/phasePresentation';
 import { AgentDetails } from './AgentDetails';
@@ -45,7 +46,7 @@ function AgentCard({ agent, expanded, onToggle, onEdit, onDelete }: {
             <Text size="xs" c="dimmed">{agentOutputPresentation[agent.output].label}</Text>
           </Group>
           {!expanded && latest.instructions && (
-            <Code c="dimmed" className={styles.name}>{latest.instructions}</Code>
+            <PromptDisplay content={latest.instructions} compact />
           )}
         </Stack>
         <Stack gap="xs" align="flex-end">

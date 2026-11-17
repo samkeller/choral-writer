@@ -9,7 +9,7 @@ import {
   agentInputSchema, projectInputSchema, projectAgentsInputSchema, publishAgentVersionSchema,
   type AgentDto, type PublishAgentVersion, type ChatBranchDto,
   type ChatEventDto, type ChatHistoryDto, type ProjectAgent,
-  type MessageDto, type ProjectDto,
+  type MessageDto, type ProjectDto, type TraceCallDetail, type TurnTraceSummary,
 } from '@choral-writer/shared';
 
 import { api, ClientApiError } from './api/client';
@@ -130,16 +130,17 @@ describe('routing and authentication', () => {
     expect(screen.getByTestId('location').textContent).toBe('/agents');
   });
 
-  it('supports direct URLs and browser history, and displays logout errors', async () => {
+  it('treats the removed global traces route as not found and displays logout errors', async () => {
     adapter.mockImplementation(async (config) => respond(config, 200, { authenticated: true }));
     renderApp('/traces');
 
-    await screen.findByRole('heading', { name: 'Traces' });
+    await screen.findByRole('heading', { name: 'Page introuvable' });
+    expect(screen.queryByRole('link', { name: 'Traces' })).toBeNull();
     fireEvent.click(screen.getAllByRole('link', { name: 'Mémoires' })[0]);
     await screen.findByRole('heading', { name: 'Mémoires' });
     expect(screen.getByTestId('location').textContent).toBe('/memories');
     fireEvent.click(screen.getByRole('button', { name: 'Précédent' }));
-    await screen.findByRole('heading', { name: 'Traces' });
+    await screen.findByRole('heading', { name: 'Page introuvable' });
     expect(screen.getByTestId('location').textContent).toBe('/traces');
 
     adapter.mockImplementation(async (config) => respond(config, 500, {
@@ -559,11 +560,29 @@ describe('projects and chat screens', () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     await act(async () => {
       emit({ type: 'chat.turn.started', turnId, branchId: branch.id, operation: 'send', message: user });
+      emit({ type: 'chat.pipeline.stage', turnId, stage: 'analysis', status: 'started', agentCount: 2 });
+      emit({ type: 'chat.pipeline.agent', turnId, agentId: '019ad30c-19b0-7000-8000-000000000009',
+        name: 'Chaos', status: 'started' });
+      emit({ type: 'chat.pipeline.agent', turnId, agentId: '019ad30c-19b0-7000-8000-000000000010',
+        name: 'Cohérence', status: 'started' });
       emit({ type: 'chat.message.delta', delta: 'Bonjour' });
     });
     await screen.findByText('Bonjour');
+    await screen.findByText('Analyse en cours');
+    expect(screen.getByText(/0\/2 agents/)).toBeTruthy();
+    expect(screen.getByLabelText('Agent Chaos en cours')).toBeTruthy();
+    expect(screen.getByLabelText('Agent Cohérence en cours')).toBeTruthy();
     expect(screen.getByLabelText('Votre message').hasAttribute('disabled')).toBe(true);
 
+    await act(async () => {
+      emit({ type: 'chat.pipeline.agent', turnId, agentId: '019ad30c-19b0-7000-8000-000000000009',
+        name: 'Chaos', status: 'completed', durationMs: 1200 });
+      emit({ type: 'chat.pipeline.agent', turnId, agentId: '019ad30c-19b0-7000-8000-000000000010',
+        name: 'Cohérence', status: 'completed', durationMs: 1600 });
+      emit({ type: 'chat.pipeline.stage', turnId, stage: 'analysis', status: 'completed', elapsedMs: 1250 });
+      emit({ type: 'chat.pipeline.stage', turnId, stage: 'narrator', status: 'started' });
+    });
+    await screen.findByText('Narrateur en cours');
     await act(async () => {
       savedHistory = {
         branch: { ...branch, headTurnId: turnId },
@@ -574,16 +593,114 @@ describe('projects and chat screens', () => {
         }],
       };
       emit({ type: 'chat.message.delta', delta: ' Mara.' });
+      emit({ type: 'chat.pipeline.stage', turnId, stage: 'narrator', status: 'completed', elapsedMs: 2100 });
       emit({ type: 'chat.turn.completed', branchId: branch.id, turnId, message: assistant });
       controller.close();
     });
     await waitFor(() => expect(screen.getByLabelText('Votre message').hasAttribute('disabled')).toBe(false));
+    expect(screen.queryByText('Narrateur en cours')).toBeNull();
     expect(screen.getAllByText('Bonjour Mara.')).toHaveLength(1);
     view.unmount();
     renderApp(`/projects/${project.id}`);
     await screen.findByText('Bonjour Mara.');
     expect(screen.getByText('Ouvre la porte.')).toBeTruthy();
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens turn traces from chat, reconstructs the whiteboard and loads call details on demand', async () => {
+    const fixture = existingChat();
+    const turnId = fixture.original.turns[0]!.id;
+    const analysisCallId = '019ad30c-19b0-7000-8000-000000000301';
+    const narratorCallId = '019ad30c-19b0-7000-8000-000000000302';
+    const summary: TurnTraceSummary = {
+      turnId,
+      analysis: [{
+        agentId: '019ad30c-19b0-7000-8000-000000000303',
+        agentVersionId: '019ad30c-19b0-7000-8000-000000000304',
+        name: 'Chaos',
+        status: 'success',
+        durationMs: 800,
+        attempts: 1,
+        envelope: {
+          v: 1, agent: 'Chaos', summary: 'Une clé manque.',
+          items: [{ kind: 'recommendation', text: 'Chercher la clé.', importance: 'HIGH' }],
+        },
+      }],
+      narrator: { status: 'success', durationMs: 1500, resolution: 'Une porte est verrouillée.', prose: 'La porte résiste.' },
+      calls: [
+        {
+          id: analysisCallId, turnId, stage: 'analysis',
+          agentId: '019ad30c-19b0-7000-8000-000000000303',
+          agentVersionId: '019ad30c-19b0-7000-8000-000000000304',
+          agentName: 'Chaos', agentVersion: 1, model: 'test-model', status: 'success',
+          inputTokens: 812, outputTokens: 240, durationMs: 800,
+          createdAt: project.createdAt, error: null,
+        },
+        {
+          id: narratorCallId, turnId, stage: 'narrator',
+          agentId: null, agentVersionId: null, agentName: 'Narrateur', agentVersion: 1,
+          model: 'test-model', status: 'success', inputTokens: 900, outputTokens: 100,
+          durationMs: 1500, createdAt: project.createdAt, error: null,
+        },
+      ],
+    };
+    const callDetail: TraceCallDetail = {
+      ...summary.calls[0]!,
+      request: {
+        messages: [
+          {
+            role: 'system',
+            content: `## Instructions système\n\n${'Règle longue pour contrôler la sortie du modèle et éviter les contradictions. '.repeat(190)}`,
+          },
+          { role: 'user', content: 'Question précédente du joueur.' },
+          { role: 'assistant', content: 'Réponse précédente du narrateur.' },
+          { role: 'user', content: 'Autre question du joueur.' },
+          { role: 'assistant', content: 'Autre réponse du narrateur.' },
+          { role: 'user', content: 'Dernière question du joueur.' },
+          { role: 'assistant', content: 'Dernière réponse du narrateur.' },
+          { role: 'user', content: 'Prompt exact du narrateur.' },
+        ],
+      },
+      response: JSON.stringify(summary.analysis[0]!.envelope),
+    };
+    const chatAdapter = adapter.getMockImplementation()!;
+    adapter.mockImplementation(async (config) => {
+      if (config.url === `/projects/${project.id}/turns/${turnId}/traces`) {
+        return respond(config, 200, summary);
+      }
+      if (config.url === `/projects/${project.id}/turns/${turnId}/traces/${analysisCallId}`) {
+        return respond(config, 200, callDetail);
+      }
+      return chatAdapter(config);
+    });
+
+    renderApp(`/projects/${project.id}`);
+    await screen.findByText('Réponse originale.');
+    fireEvent.click(screen.getAllByRole('button', { name: 'Inspecter les traces de ce tour' })[0]!);
+    await screen.findByRole('heading', { name: 'Traces du tour' });
+    fireEvent.click(screen.getByRole('tab', { name: 'Whiteboard' }));
+    await screen.findByText('Chercher la clé.');
+    fireEvent.click(screen.getByRole('tab', { name: 'Appels (2)' }));
+    fireEvent.click(screen.getByRole('button', { name: /Chaos · Analyse/ }));
+    await screen.findByRole('heading', { name: 'Détail de l’appel' });
+    await screen.findByText('Une clé manque.');
+    expect(screen.getByRole('tab', { name: 'Réponse' }).getAttribute('aria-selected')).toBe('true');
+    fireEvent.click(screen.getByRole('tab', { name: 'Prompt' }));
+    await screen.findByText('Prompt exact du narrateur.', { selector: 'p' });
+    const systemPrompt = screen.getByText('system').closest('details');
+    expect(systemPrompt?.open).toBe(false);
+    if (!systemPrompt) throw new Error('Expected the system prompt disclosure.');
+    const systemPromptSummary = systemPrompt.querySelector('summary');
+    if (!systemPromptSummary) throw new Error('Expected a system prompt summary.');
+    fireEvent.click(systemPromptSummary);
+    expect(systemPrompt.open).toBe(true);
+    fireEvent.click(screen.getByRole('tab', { name: 'Réponse' }));
+    await screen.findByText('Une clé manque.');
+    fireEvent.click(screen.getByRole('radio', { name: 'JSON' }));
+    await screen.findByText(/"agent": "Chaos"/);
+    expect(adapter).toHaveBeenCalledWith(expect.objectContaining({
+      url: `/projects/${project.id}/turns/${turnId}/traces/${analysisCallId}`,
+    }));
   });
 
   it('keeps the original during regeneration, selects the successful branch and restores it from the URL', async () => {

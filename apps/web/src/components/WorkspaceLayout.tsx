@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { Alert, AppShell, Box, Container, Group, Stack } from '@mantine/core';
+import { Alert, AppShell, Box, Container, Stack } from '@mantine/core';
 import { IconLogout } from '@tabler/icons-react';
-import { Outlet } from 'react-router-dom';
+import { Outlet, useMatch } from 'react-router-dom';
 
 import { getErrorMessage } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
@@ -12,6 +12,7 @@ import styles from './WorkspaceLayout.module.css';
 
 export function WorkspaceLayout() {
   const { logout } = useAuth();
+  const chatRoute = useMatch('/projects/:projectId');
   const [error, setError] = useState('');
   const [pending, setPending] = useState(false);
 
@@ -31,20 +32,11 @@ export function WorkspaceLayout() {
     <AppShell
       withBorder
       padding={0}
-      header={{ height: 64 }}
+      header={{ height: { base: 0, sm: 64 } }}
       navbar={{ width: 256, breakpoint: 'sm', collapsed: { mobile: true } }}
       className={styles.shell}
     >
-      <AppShell.Header px="md">
-        <Group h="100%" justify="space-between" gap="sm">
-          <Box hiddenFrom="sm"><Brand /></Box>
-          <IconAction label="Déconnexion" hiddenFrom="sm"
-            loading={pending} onClick={() => void handleLogout()}
-          >
-            <IconLogout size={18} aria-hidden="true" />
-          </IconAction>
-        </Group>
-      </AppShell.Header>
+      <AppShell.Header visibleFrom="sm" />
       <AppShell.Navbar p="md" className={styles.navbar}>
         <Stack h="100%" gap="md">
           <Brand />
@@ -56,19 +48,25 @@ export function WorkspaceLayout() {
           </IconAction>
         </Stack>
       </AppShell.Navbar>
-      <AppShell.Main className={styles.main}>
+      <AppShell.Main className={chatRoute ? `${styles.main} ${styles.chatMain}` : styles.main}>
         <Container
           size="xl"
-          pt="xl"
-          pb={{ base: 'calc(5.5rem + env(safe-area-inset-bottom))', sm: 'xl' }}
-          px={{ base: 'md', sm: 'xl' }}
+          pt={chatRoute ? { base: 'xs', sm: 'xl' } : 'xl'}
+          pb={{ base: 'calc(5rem + env(safe-area-inset-bottom))', sm: 'xl' }}
+          px={{ base: chatRoute ? 'sm' : 'md', sm: 'xl' }}
+          className={chatRoute ? styles.chatContainer : undefined}
         >
           {error && <Alert color="red" mb="md" title="Déconnexion impossible" role="alert">{error}</Alert>}
           <Outlet />
         </Container>
       </AppShell.Main>
       <Box className={styles.mobileFooter} hiddenFrom="sm">
-        <WorkspaceNavigation compact />
+        <WorkspaceNavigation compact trailingAction={
+          <IconAction label="Déconnexion" className={styles.mobileLogout}
+            loading={pending} onClick={() => void handleLogout()}>
+            <IconLogout size={18} aria-hidden="true" />
+          </IconAction>
+        } />
       </Box>
     </AppShell>
   );

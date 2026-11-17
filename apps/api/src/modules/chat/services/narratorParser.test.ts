@@ -24,6 +24,25 @@ describe('NarratorStreamParser', () => {
     });
   });
 
+  it('accepts whitespace between the resolution and prose sections', async () => {
+    const deltas: string[] = [];
+    const parser = new NarratorStreamParser(async (delta) => { deltas.push(delta); });
+    const chunks = [
+      '<resolution>Facts only.</resolution>\n  ',
+      '<pro',
+      'se>Visible story.</prose>',
+    ];
+    const response = chunks.join('');
+
+    for (const chunk of chunks) await parser.push(chunk);
+
+    expect(deltas.join('')).toBe('Visible story.');
+    expect(parser.finish(response)).toEqual({
+      resolution: 'Facts only.',
+      prose: 'Visible story.',
+    });
+  });
+
   it('rejects malformed or incomplete sections', async () => {
     const parser = new NarratorStreamParser(vi.fn(async () => {}));
     const response = '<resolution>Facts only</resolution><prose>Missing close';

@@ -48,6 +48,45 @@ function setup(create: (
 }
 
 describe('ChatAnalysisService', () => {
+  it.each([
+    { agentCount: 1, itemBudget: 12 },
+    { agentCount: 4, itemBudget: 3 },
+    { agentCount: 6, itemBudget: 3 },
+  ])('adapts the advisory item budget for $agentCount agents without truncating valid output', async ({ agentCount, itemBudget }) => {
+    const requests: string[] = [];
+    const agents = Array.from({ length: agentCount }, (_, index) => agent(`Analyst ${index}`));
+    const { service } = setup(async (params) => {
+      const prompt = params.messages[0]?.content;
+      if (typeof prompt !== 'string') throw new Error('Expected analysis instructions.');
+      requests.push(prompt);
+      const currentAgent = agents.find((entry) => prompt.includes(entry.instructions));
+      if (!currentAgent) throw new Error('Expected isolated agent instructions.');
+      return completion(JSON.stringify({
+        v: 1, agent: currentAgent.name, summary: 'Distinct contributions.',
+        items: Array.from({ length: itemBudget + 1 }, (_, index) => ({
+          kind: 'observation', text: `Contribution ${index}.`, importance: 'NORMAL',
+        })),
+      }));
+    });
+
+    const result = await service.generate({
+      turnId: 'turn', agents, systemPrompt: 'Project prompt.', history: [],
+      userMessage: {
+        id: 'user', projectId: 'project', role: 'user', content: 'Open the door.', createdAt: new Date(),
+      },
+      signal: new AbortController().signal,
+    });
+
+    expect(requests).toHaveLength(agentCount);
+    for (const prompt of requests) {
+      expect(prompt).toContain(`Aim for at most ${itemBudget} items.`);
+      expect(prompt).toContain('not a quota: return fewer items or none');
+      expect(prompt).toContain('Do not restate the conversation');
+    }
+    expect(result).toHaveLength(agentCount);
+    expect(result.every((entry) => entry.items.length === itemBudget + 1)).toBe(true);
+  });
+
   it('runs configured agents in parallel with isolated instructions and versioned traces', async () => {
     let active = 0;
     let peak = 0;
@@ -68,6 +107,7 @@ describe('ChatAnalysisService', () => {
       }));
     });
 
+    const progress: Array<{ agentId: string; status: string }> = [];
     const result = await service.generate({
       turnId: 'turn',
       agents: [agent('Chaos'), agent('Coherence')],
@@ -77,6 +117,7 @@ describe('ChatAnalysisService', () => {
         id: 'user', projectId: 'project', role: 'user', content: 'Open the door.', createdAt: new Date(),
       },
       signal: new AbortController().signal,
+      onAgentProgress: async ({ agentId, status }) => { progress.push({ agentId, status }); },
     });
 
     expect(peak).toBe(2);
@@ -87,6 +128,11 @@ describe('ChatAnalysisService', () => {
       { agentId: 'Chaos-id', agentVersionId: 'Chaos-version-id', stage: 'analysis' },
       { agentId: 'Coherence-id', agentVersionId: 'Coherence-version-id', stage: 'analysis' },
       ].sort((left, right) => left.agentId.localeCompare(right.agentId)));
+    expect(progress).toHaveLength(4);
+    for (const name of ['Chaos', 'Coherence']) {
+      expect(progress.filter((event) => event.agentId === `${name}-id`).map((event) => event.status))
+        .toEqual(['started', 'completed']);
+    }
   });
 
   it('retries an invalid envelope exactly once', async () => {
@@ -118,15 +164,18 @@ describe('ChatAnalysisService', () => {
     expect(traces.map((trace) => trace.status)).toEqual(['error', 'success']);
   });
 
-  it('fails the whole analysis set when an agent remains invalid after its retry', async () => {
+  it('retries an empty response once and continues with successful analysis agents', async () => {
+    let chaosCalls = 0;
     const { service, traces } = setup(async (params) => {
       const systemPrompt = params.messages[0]?.content;
       if (typeof systemPrompt === 'string' && systemPrompt.includes('Instructions for Chaos.')) {
-        return completion('{"v":2}');
+        chaosCalls += 1;
+        return completion('');
       }
       return completion(JSON.stringify({ v: 1, agent: 'Coherence', summary: 'Valid.', items: [] }));
     });
 
+    const progress: Array<{ agentId: string; status: string }> = [];
     await expect(service.generate({
       turnId: 'turn',
       agents: [agent('Chaos'), agent('Coherence')],
@@ -136,10 +185,19 @@ describe('ChatAnalysisService', () => {
         id: 'user', projectId: 'project', role: 'user', content: 'Open the door.', createdAt: new Date(),
       },
       signal: new AbortController().signal,
-    })).rejects.toBeInstanceOf(AggregateError);
+      onAgentProgress: async ({ agentId, status }) => { progress.push({ agentId, status }); },
+    })).resolves.toEqual([{
+      v: 1, agent: 'Coherence', summary: 'Valid.', items: [],
+    }]);
 
-    expect(traces.filter((trace) => trace.agentId === 'Chaos-id')).toHaveLength(2);
+    expect(chaosCalls).toBe(2);
+    expect(traces.filter((trace) => trace.agentId === 'Chaos-id').map((trace) => trace.status))
+      .toEqual(['error', 'error']);
     expect(traces.filter((trace) => trace.agentId === 'Coherence-id')).toHaveLength(1);
+    expect(progress.filter((event) => event.agentId === 'Chaos-id').map((event) => event.status))
+      .toEqual(['started', 'failed']);
+    expect(progress.filter((event) => event.agentId === 'Coherence-id').map((event) => event.status))
+      .toEqual(['started', 'completed']);
   });
 
   it('skips analysis cleanly when no analysis agents are configured', async () => {
