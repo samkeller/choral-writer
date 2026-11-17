@@ -1,24 +1,33 @@
 import type { FastifyInstance } from 'fastify';
-import { projectInputSchema, projectParamsSchema } from '@choral-writer/shared';
+import { projectDtoSchema, projectInputSchema, projectParamsSchema } from '@choral-writer/shared';
 
+import { parseResponseDto } from '../../../http/responseDto.js';
 import { requireAuth } from '../../../auth/routes.js';
 import type { ProjectsService } from '../services/projectServices.js';
+import { toProjectDto } from '../mappers/projectDto.js';
 
-export function registerProjectRoutes(app: FastifyInstance, service: ProjectsService): void {
-  app.get('/api/projects', { preHandler: requireAuth }, () => service.list());
+export function registerProjectRoutes(
+  app: FastifyInstance,
+  service: Pick<ProjectsService, 'list' | 'create' | 'get' | 'update' | 'remove'>,
+): void {
+  app.get('/api/projects', { preHandler: requireAuth }, async () =>
+    parseResponseDto(projectDtoSchema.array(), (await service.list()).map(toProjectDto)));
 
   app.post('/api/projects', { preHandler: requireAuth }, async (request, reply) => {
     const input = projectInputSchema.parse(request.body);
-    return reply.code(201).send(await service.create(input));
+    const project = await service.create(input);
+    return reply.code(201).send(parseResponseDto(projectDtoSchema, toProjectDto(project)));
   });
 
-  app.get('/api/projects/:projectId', { preHandler: requireAuth }, (request) => {
-    return service.get(projectParamsSchema.parse(request.params).projectId);
+  app.get('/api/projects/:projectId', { preHandler: requireAuth }, async (request) => {
+    const project = await service.get(projectParamsSchema.parse(request.params).projectId);
+    return parseResponseDto(projectDtoSchema, toProjectDto(project));
   });
 
-  app.put('/api/projects/:projectId', { preHandler: requireAuth }, (request) => {
+  app.put('/api/projects/:projectId', { preHandler: requireAuth }, async (request) => {
     const { projectId } = projectParamsSchema.parse(request.params);
-    return service.update(projectId, projectInputSchema.parse(request.body));
+    const project = await service.update(projectId, projectInputSchema.parse(request.body));
+    return parseResponseDto(projectDtoSchema, toProjectDto(project));
   });
 
   app.delete('/api/projects/:projectId', { preHandler: requireAuth }, async (request, reply) => {

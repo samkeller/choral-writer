@@ -7,7 +7,22 @@ import type { Database, Transaction } from '../../../db/client.js';
 import { chatMessages } from '../../../db/entities/chat/message.js';
 import { chatTurns } from '../../../db/entities/chat/turn.js';
 import type { NewChatTurn, TurnCompletion } from '../types/turn.types.js';
-import { turnDto } from '../mappers/turnDto.js';
+import type { TurnRow } from '../types/turn-row.types.js';
+
+function toChatTurn({ turn, user, assistant }: TurnRow): ChatTurn {
+  if (turn.assistantMessageId && !assistant) throw new Error('Missing chat assistant message.');
+  return {
+    id: turn.id,
+    parentTurnId: turn.parentTurnId,
+    originBranchId: turn.originBranchId,
+    retryOfTurnId: turn.retryOfTurnId,
+    regeneratedFromTurnId: turn.regeneratedFromTurnId,
+    status: turn.status,
+    error: turn.error,
+    userMessage: user,
+    assistantMessage: assistant,
+  };
+}
 
 export class ChatTurnRepository {
   constructor(
@@ -28,7 +43,7 @@ export class ChatTurnRepository {
     const [row] = await this.selectTurns().where(and(
       eq(chatTurns.projectId, this.projectId), eq(chatTurns.id, id),
     ));
-    return row ? turnDto(row) : null;
+    return row ? toChatTurn(row) : null;
   }
 
   /**
@@ -65,7 +80,7 @@ export class ChatTurnRepository {
       ordered.push(row);
       id = row.turn.parentTurnId;
     }
-    return (limit === undefined ? ordered : ordered.slice(0, limit)).reverse().map(turnDto);
+    return (limit === undefined ? ordered : ordered.slice(0, limit)).reverse().map(toChatTurn);
   }
 
   async create(input: NewChatTurn): Promise<string> {

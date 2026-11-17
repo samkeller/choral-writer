@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { Alert, Button, Group, Modal, Stack, Text } from '@mantine/core';
 import type { Agent } from '@choral-writer/shared';
 
-import { deleteAgent } from '../../api/agents.js';
-import { getErrorMessage } from '../../api/client.js';
+import { deleteAgent } from '../../api/agents/agentsApi';
+import { getErrorMessage } from '../../api/client';
 
 export function AgentDeleteDialog({ agent, onClose, onDeleted }: {
   agent: Agent;

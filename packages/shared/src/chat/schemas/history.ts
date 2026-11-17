@@ -1,9 +1,14 @@
 import { z } from 'zod';
 
-import { chatBranchSchema } from './branch.js';
-import { chatTurnSchema } from './turn.js';
+import { chatBranchDtoSchema, chatBranchSchema } from './branch.js';
+import { chatTurnDtoSchema, chatTurnSchema } from './turn.js';
 
-export const chatHistorySchema = z.object({
+export const chatHistoryDtoSchema = z.object({
+  branch: chatBranchDtoSchema,
+  turns: z.array(chatTurnDtoSchema),
+});
+
+export const chatHistorySchema = chatHistoryDtoSchema.extend({
   branch: chatBranchSchema,
   turns: z.array(chatTurnSchema),
 });

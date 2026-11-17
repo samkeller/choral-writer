@@ -1,28 +1,35 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import type { ChatHistory } from '@choral-writer/shared';
 import {
   chatBranchParamsSchema, chatExecutionParamsSchema, chatTurnParamsSchema,
+  chatBranchDtoSchema, chatHistoryDtoSchema, chatTurnDtoSchema,
   headInputSchema, projectParamsSchema, sendMessageSchema,
 } from '@choral-writer/shared';
 
+import { parseResponseDto } from '../../../http/responseDto.js';
 import type { ChatService } from '../services/chatService.js';
-import { streamChatCommand } from './chat.stream.js';
+import { streamChatCommand } from './chatStream.js';
+import { toChatBranchDto } from '../mappers/branchDto.js';
+import { toChatHistoryDto } from '../mappers/historyDto.js';
+import { toChatTurnDto } from '../mappers/turnDto.js';
 
 export class ChatController {
-  constructor(private readonly service: ChatService) {}
+  constructor(private readonly service: Pick<ChatService, 'branches' | 'history' | 'turn' | 'run'>) {}
 
-  getChatBranches(request: FastifyRequest) {
-    return this.service.branches(projectParamsSchema.parse(request.params).projectId);
+  async getChatBranches(request: FastifyRequest) {
+    const branches = await this.service.branches(projectParamsSchema.parse(request.params).projectId);
+    return parseResponseDto(chatBranchDtoSchema.array(), branches.map(toChatBranchDto));
   }
 
-  getChatHistory(request: FastifyRequest): Promise<ChatHistory> {
+  async getChatHistory(request: FastifyRequest) {
     const { projectId, branchId } = chatBranchParamsSchema.parse(request.params);
-    return this.service.history(projectId, branchId);
+    const history = await this.service.history(projectId, branchId);
+    return parseResponseDto(chatHistoryDtoSchema, toChatHistoryDto(history));
   }
 
-  getChatTurn(request: FastifyRequest) {
+  async getChatTurn(request: FastifyRequest) {
     const { projectId, turnId } = chatExecutionParamsSchema.parse(request.params);
-    return this.service.turn(projectId, turnId);
+    const turn = await this.service.turn(projectId, turnId);
+    return parseResponseDto(chatTurnDtoSchema, toChatTurnDto(turn));
   }
 
   sendChat(request: FastifyRequest, reply: FastifyReply): Promise<void> {

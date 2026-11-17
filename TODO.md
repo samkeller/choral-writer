@@ -12,5 +12,6 @@ Project Description
 
 ### Done ✓
 
+- [x] [MID][Web+Back] Typer strictement les retours de back (/shared) et parser tous les objets que le back envoie en types TS stricts. Eg: parse des strings http en dates quand ce sont des dates pour que le front puisse les utiliser out of the box. /web/api devrait reprendre la même structure de fichiers que les controllers back pour que ce soit le plus clair possible. Vérifier également que le back envoie toujours des DTO et pas des objets directs.
 - [x] [MID][Web] Identité des phases harmonisée : tag partagé, icône et couleur propres à Analyse/Restitution, bibliothèque et configuration projet.
 

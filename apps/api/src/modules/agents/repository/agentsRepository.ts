@@ -21,12 +21,9 @@ export class AgentRepository {
         .orderBy(asc(projects.name)),
     ]);
     return identities.map((agent) => ({
-      ...agent, createdAt: agent.createdAt.toISOString(),
-      versions: versions.filter((version) => version.agentId === agent.id).map((version) => ({
-        id: version.id, name: version.name, instructions: version.instructions,
-        version: version.version, createdAt: version.createdAt.toISOString(),
-      })),
-      projects: usages.filter((usage) => usage.agentId === agent.id).map(({ agentId: _id, ...usage }) => usage),
+      ...agent,
+      versions: versions.filter((version) => version.agentId === agent.id),
+      projects: usages.filter((usage) => usage.agentId === agent.id),
     }));
   }
 

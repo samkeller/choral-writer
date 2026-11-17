@@ -1,8 +1,8 @@
 import { Badge, Code, Group, Stack, Text } from '@mantine/core';
 import type { Agent } from '@choral-writer/shared';
-import { PhaseTag } from '../phases/PhaseTag.js';
+import { PhaseTag } from '../phases/PhaseTag';
 import styles from './AgentSurface.module.css';
-import { agentOutputPresentation } from './agentPresentation.js';
+import { agentOutputPresentation } from './agentPresentation';
 
 export function AgentVersionDetails({ output, version }: {
   output: Agent['output'];

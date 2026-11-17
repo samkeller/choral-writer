@@ -1,7 +1,7 @@
 import { Combobox, InputBase, useCombobox } from '@mantine/core';
 import { agentPhaseSchema, type AgentPhase } from '@choral-writer/shared';
 
-import { PhaseTag } from './PhaseTag.js';
+import { PhaseTag } from './PhaseTag';
 
 export type PhaseFilter = AgentPhase | 'all';
 

@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import type { Project } from '@choral-writer/shared';
 
-import { listProjects } from '../api/projects.js';
-import { getErrorMessage } from '../api/client.js';
+import { listProjects } from '../api/projects/projectsApi';
+import { getErrorMessage } from '../api/client';
 
 /**
  * Charge la liste des projets et expose son rechargement après une mutation.

@@ -1,4 +1,4 @@
-import type { AgentInput, ProjectAgentsInput, PublishAgentVersion } from '@choral-writer/shared';
+import type { Agent, AgentInput, ProjectAgent, ProjectAgentsInput, PublishAgentVersion } from '@choral-writer/shared';
 
 import { ApiError, notfoundError } from '../../../errors/errors.js';
 import type { Database } from '../../../db/client.js';
@@ -9,13 +9,13 @@ import { DEFAULT_GUARDIAN_ID, DEFAULT_NARRATOR_ID } from '../repository/defaultN
 export class AgentsService {
   constructor(private readonly database: Database, private readonly projects: ProjectsService) {}
 
-  list() {
+  list(): Promise<Agent[]> {
     return this.database.transaction((tx) => new AgentRepository(tx).list(), {
       isolationLevel: 'repeatable read', accessMode: 'read only',
     });
   }
 
-  async create(input: AgentInput) {
+  async create(input: AgentInput): Promise<Agent> {
     return this.database.transaction(async (tx) => {
       const repository = new AgentRepository(tx);
       const id = await repository.create(input);
@@ -25,7 +25,7 @@ export class AgentsService {
     });
   }
 
-  async publish(agentId: string, input: PublishAgentVersion) {
+  async publish(agentId: string, input: PublishAgentVersion): Promise<Agent> {
     return this.database.transaction(async (tx) => {
       const repository = new AgentRepository(tx);
       if (!await repository.lock(agentId)) throw notfoundError('Cet agent n’existe pas.');
@@ -51,12 +51,12 @@ export class AgentsService {
     });
   }
 
-  async listForProject(projectId: string) {
+  async listForProject(projectId: string): Promise<ProjectAgent[]> {
     await this.projects.get(projectId);
     return new AgentRepository(this.database).listForProject(projectId);
   }
 
-  async configure(projectId: string, input: ProjectAgentsInput) {
+  async configure(projectId: string, input: ProjectAgentsInput): Promise<ProjectAgent[]> {
     return this.projects.withLockedProject(projectId, async (_project, tx) => {
       const repository = new AgentRepository(tx);
       const resolved = await repository.resolveSelections(input.agents);

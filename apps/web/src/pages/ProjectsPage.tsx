@@ -2,14 +2,14 @@ import { useState } from 'react';
 import { Alert, Button, Center, Code, Group, Loader, Modal, Paper, SimpleGrid, Stack, Text, Title } from '@mantine/core';
 import type { Project, ProjectInput } from '@choral-writer/shared';
 
-import { createProject, deleteProject, updateProject } from '../api/projects.js';
-import { getErrorMessage } from '../api/client.js';
-import { PageHeader } from '../components/PageHeader.js';
-import { ProjectForm } from '../components/projects/ProjectForm.js';
-import { useProjects } from '../hooks/useProjects.js';
+import { createProject, deleteProject, updateProject } from '../api/projects/projectsApi';
+import { getErrorMessage } from '../api/client';
+import { PageHeader } from '../components/PageHeader';
+import { ProjectForm } from '../components/projects/ProjectForm';
+import { useProjects } from '../hooks/useProjects';
 import { IconEdit, IconTrash } from '@tabler/icons-react';
-import { ClickableCard } from '../components/atoms/clickableCard/ClickableCard.js';
-import { IconAction } from '../components/atoms/IconAction.js';
+import { ClickableCard } from '../components/atoms/clickableCard/ClickableCard';
+import { IconAction } from '../components/atoms/IconAction';
 
 export function ProjectsPage() {
   const { projects, loading, error, reload } = useProjects();

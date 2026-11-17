@@ -3,12 +3,12 @@ import { Alert, Button, Center, Group, Loader, Paper, Stack, Text, TextInput } f
 import { IconPlus, IconSearch } from '@tabler/icons-react';
 import type { Agent } from '@choral-writer/shared';
 
-import { AgentDeleteDialog } from '../components/agents/AgentDeleteDialog.js';
-import { AgentEditor } from '../components/agents/AgentEditor.js';
-import { AgentList } from '../components/agents/AgentList.js';
-import { PageHeader } from '../components/PageHeader.js';
-import { PhaseSelect, type PhaseFilter } from '../components/phases/PhaseSelect.js';
-import { useAgentLibrary } from '../hooks/useAgentLibrary.js';
+import { AgentDeleteDialog } from '../components/agents/AgentDeleteDialog';
+import { AgentEditor } from '../components/agents/AgentEditor';
+import { AgentList } from '../components/agents/AgentList';
+import { PageHeader } from '../components/PageHeader';
+import { PhaseSelect, type PhaseFilter } from '../components/phases/PhaseSelect';
+import { useAgentLibrary } from '../hooks/useAgentLibrary';
 
 export function AgentsPage() {
   const library = useAgentLibrary();

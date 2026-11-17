@@ -1,6 +1,8 @@
 import cookie from '@fastify/cookie';
 import Fastify, { FastifyServerOptions, LogController } from 'fastify';
+import { apiErrorSchema, healthSchema } from '@choral-writer/shared';
 
+import { parseResponseDto } from './http/responseDto.js';
 import type { AuthConfig } from './config.js';
 import { registerAuthRoutes } from './auth/routes.js';
 import { toPublicError } from './errors/errors.js';
@@ -52,14 +54,14 @@ export function buildApp(
       { err: error, code: publicError.code, statusCode: publicError.status },
       'Request failed',
     );
-    return reply.code(publicError.status).send({ error: publicError });
+    return reply.code(publicError.status).send(parseResponseDto(apiErrorSchema, { error: publicError }));
   });
 
   app.setNotFoundHandler((_request, reply) => {
     notfoundError('Route not found.');
   });
 
-  app.get('/healthz', async () => ({ status: 'ok' }));
+  app.get('/healthz', async () => parseResponseDto(healthSchema, { status: 'ok' }));
   registerAuthRoutes(app, config);
   if (services) {
     registerProjectRoutes(app, services.projects);

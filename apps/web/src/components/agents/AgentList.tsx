@@ -3,11 +3,11 @@ import { Badge, Box, Code, Group, Paper, Stack, Text, Title } from '@mantine/cor
 import { IconChevronDown, IconChevronUp } from '@tabler/icons-react';
 import type { Agent } from '@choral-writer/shared';
 
-import { PhaseTag } from '../phases/PhaseTag.js';
-import { phasePresentation } from '../phases/phasePresentation.js';
-import { AgentDetails } from './AgentDetails.js';
-import { agentOutputPresentation } from './agentPresentation.js';
-import { IconAction } from '../atoms/IconAction.js';
+import { PhaseTag } from '../phases/PhaseTag';
+import { phasePresentation } from '../phases/phasePresentation';
+import { AgentDetails } from './AgentDetails';
+import { agentOutputPresentation } from './agentPresentation';
+import { IconAction } from '../atoms/IconAction';
 import styles from './AgentSurface.module.css';
 
 interface AgentListProps {

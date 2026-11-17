@@ -7,13 +7,14 @@ import { AxiosError, type AxiosAdapter, type InternalAxiosRequestConfig } from '
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import {
   agentInputSchema, projectInputSchema, projectAgentsInputSchema, publishAgentVersionSchema,
-  type Agent, type PublishAgentVersion, type ChatBranch, type ChatEvent, type ChatHistory, type ProjectAgent,
-  type Message, type Project,
+  type AgentDto, type PublishAgentVersion, type ChatBranchDto,
+  type ChatEventDto, type ChatHistoryDto, type ProjectAgent,
+  type MessageDto, type ProjectDto,
 } from '@choral-writer/shared';
 
-import { api, ClientApiError } from './api/client.js';
-import { App } from './App.js';
-import { cssVariablesResolver, theme } from './theme/theme.js';
+import { api, ClientApiError } from './api/client';
+import { App } from './App';
+import { cssVariablesResolver, theme } from './theme/theme';
 
 const originalAdapter = api.defaults.adapter;
 const adapter = vi.fn<AxiosAdapter>();
@@ -158,7 +159,7 @@ describe('routing and authentication', () => {
 
 describe('agent configuration', () => {
   it('publishes a new immutable version from the global library', async () => {
-    const project: Project = {
+    const project: ProjectDto = {
       id: '019ad30c-19b0-7000-8000-000000000101',
       defaultBranchId: null,
       name: 'Mon histoire',
@@ -166,7 +167,7 @@ describe('agent configuration', () => {
       createdAt: '2026-11-16T08:00:00.000Z',
       updatedAt: '2026-11-16T08:00:00.000Z',
     };
-    let saved: Agent = {
+    let saved: AgentDto = {
       id: '019ad30c-19b0-7000-8000-000000000102',
       phase: 'restitution',
       output: 'narrative',
@@ -212,7 +213,7 @@ describe('agent configuration', () => {
   });
 
   const createdAt = '2026-11-16T08:00:00.000Z';
-  const narrator: Agent = {
+  const narrator: AgentDto = {
     id: '019ad30c-19b0-7000-8000-000000000301', phase: 'restitution', output: 'narrative', createdAt,
     versions: [{
       id: '019ad30c-19b0-7000-8000-000000000302', version: 2, name: 'Narrateur',
@@ -226,13 +227,13 @@ describe('agent configuration', () => {
       versionId: '019ad30c-19b0-7000-8000-000000000303',
     }],
   };
-  const observer: Agent = {
+  const observer: AgentDto = {
     ...narrator, id: '019ad30c-19b0-7000-8000-000000000305', phase: 'analysis', output: 'envelope',
     versions: [{ ...narrator.versions[0]!, id: '019ad30c-19b0-7000-8000-000000000306', name: 'Observateur' }],
     projects: [],
   };
 
-  function mockLibrary(agents: Agent[]) {
+  function mockLibrary(agents: AgentDto[]) {
     adapter.mockImplementation(async (config) => {
       if (config.url === '/session') return respond(config, 200, { authenticated: true });
       if (config.url === '/agents') return respond(config, 200, agents);
@@ -363,7 +364,7 @@ describe('agent configuration', () => {
 });
 
 describe('projects and chat screens', () => {
-  const project: Project = {
+  const project: ProjectDto = {
     id: '019ad30c-19b0-7000-8000-000000000001',
     defaultBranchId: '019ad30c-19b0-7000-8000-000000000005',
     name: 'Mon histoire',
@@ -371,22 +372,22 @@ describe('projects and chat screens', () => {
     createdAt: '2026-11-16T08:00:00.000Z',
     updatedAt: '2026-11-16T08:00:00.000Z',
   };
-  const branch: ChatBranch = {
+  const branch: ChatBranchDto = {
     id: project.defaultBranchId!, projectId: project.id, name: 'Principale',
     sourceBranchId: null, forkTurnId: null, headTurnId: null, createdAt: project.createdAt,
   };
 
   function existingChat() {
-    const user: Message = {
+    const user: MessageDto = {
       id: '019ad30c-19b0-7000-8000-000000000002', projectId: project.id,
       role: 'user', content: 'Ouvre la porte.', createdAt: project.createdAt,
     };
-    const assistant: Message = {
+    const assistant: MessageDto = {
       ...user, id: '019ad30c-19b0-7000-8000-000000000003',
       role: 'assistant', content: 'Réponse originale.',
     };
     const turnId = '019ad30c-19b0-7000-8000-000000000004';
-    const original: ChatHistory = {
+    const original: ChatHistoryDto = {
       branch: { ...branch, headTurnId: turnId },
       turns: [{
         id: turnId, parentTurnId: null, originBranchId: branch.id,
@@ -408,7 +409,7 @@ describe('projects and chat screens', () => {
     });
     const alternativeId = '019ad30c-19b0-7000-8000-000000000006';
     const newTurnId = '019ad30c-19b0-7000-8000-000000000007';
-    function alternative(status: 'completed' | 'failed'): ChatHistory {
+    function alternative(status: 'completed' | 'failed'): ChatHistoryDto {
       return {
         branch: {
           ...branch, id: alternativeId, headTurnId: newTurnId,
@@ -430,7 +431,7 @@ describe('projects and chat screens', () => {
   it('shows pinned agents in project setup and explicitly upgrades only the chosen version', async () => {
     const { original } = existingChat();
     const chatAdapter = adapter.getMockImplementation()!;
-    const narrative: Agent = {
+    const narrative: AgentDto = {
       id: '019ad30c-19b0-7000-8000-000000000201', phase: 'restitution', output: 'narrative',
       createdAt: project.createdAt, projects: [{ id: project.id, name: project.name,
         versionId: '019ad30c-19b0-7000-8000-000000000202' }],
@@ -439,7 +440,7 @@ describe('projects and chat screens', () => {
         version, name: 'Narrateur', instructions: `Ton v${version}`, createdAt: project.createdAt,
       })),
     };
-    const guardian: Agent = {
+    const guardian: AgentDto = {
       id: '019ad30c-19b0-7000-8000-000000000204', phase: 'restitution', output: 'memory_proposals',
       createdAt: project.createdAt, projects: [],
       versions: [{ id: '019ad30c-19b0-7000-8000-000000000205', version: 1,
@@ -489,7 +490,7 @@ describe('projects and chat screens', () => {
   });
 
   it('creates, edits, and deletes a project through the forms', async () => {
-    let saved: Project | null = null;
+    let saved: ProjectDto | null = null;
     adapter.mockImplementation(async (config) => {
       if (config.url === '/session') return respond(config, 200, { authenticated: true });
       if (config.url === '/projects' && config.method === 'get') {
@@ -527,7 +528,7 @@ describe('projects and chat screens', () => {
   });
 
   it('renders streamed text before completion and reloads the persisted conversation', async () => {
-    let savedHistory: ChatHistory = { branch, turns: [] };
+    let savedHistory: ChatHistoryDto = { branch, turns: [] };
     adapter.mockImplementation(async (config) => {
       if (config.url === '/session') return respond(config, 200, { authenticated: true });
       if (config.url === `/projects/${project.id}`) return respond(config, 200, project);
@@ -541,15 +542,15 @@ describe('projects and chat screens', () => {
       headers: { 'Content-Type': 'text/event-stream' },
     }));
     vi.stubGlobal('fetch', fetchMock);
-    const user: Message = {
+    const user: MessageDto = {
       id: '019ad30c-19b0-7000-8000-000000000002', projectId: project.id,
       role: 'user', content: 'Ouvre la porte.', createdAt: project.createdAt,
     };
-    const assistant: Message = {
+    const assistant: MessageDto = {
       ...user, id: '019ad30c-19b0-7000-8000-000000000003', role: 'assistant', content: 'Bonjour Mara.',
     };
     const turnId = '019ad30c-19b0-7000-8000-000000000004';
-    const emit = (event: ChatEvent) => controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(event)}\n\n`));
+    const emit = (event: ChatEventDto) => controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(event)}\n\n`));
     const view = renderApp(`/projects/${project.id}`);
 
     await screen.findByRole('heading', { name: project.name });
@@ -593,7 +594,7 @@ describe('projects and chat screens', () => {
       headers: { 'Content-Type': 'text/event-stream' },
     }));
     vi.stubGlobal('fetch', fetchMock);
-    const emit = (event: ChatEvent) => controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(event)}\n\n`));
+    const emit = (event: ChatEventDto) => controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(event)}\n\n`));
     const view = renderApp(`/projects/${project.id}`);
     await screen.findByText('Réponse originale.');
     fireEvent.click(screen.getByRole('button', { name: 'Afficher le prompt système' }));

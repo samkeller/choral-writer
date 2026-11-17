@@ -2,12 +2,12 @@ import { Alert, Button, Checkbox, Divider, Group, Loader, Paper, Select, Stack, 
 import { Link } from 'react-router-dom';
 import type { Agent } from '@choral-writer/shared';
 
-import { useProjectSetup } from '../../hooks/useProjectSetup.js';
-import { AgentVersionDetails } from './AgentVersionDetails.js';
+import { useProjectSetup } from '../../hooks/useProjectSetup';
+import { AgentVersionDetails } from './AgentVersionDetails';
 import styles from './AgentSurface.module.css';
 import { IconLibrary } from '@tabler/icons-react';
-import { PhaseTag } from '../phases/PhaseTag.js';
-import { IconAction } from '../atoms/IconAction.js';
+import { PhaseTag } from '../phases/PhaseTag';
+import { IconAction } from '../atoms/IconAction';
 
 export function ProjectAgentSetup({ projectId, suggestedVersion }: {
   projectId: string;

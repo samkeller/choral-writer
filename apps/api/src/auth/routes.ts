@@ -1,11 +1,12 @@
 import { timingSafeEqual } from 'node:crypto';
 
-import { loginRequestSchema } from '@choral-writer/shared';
+import { authenticatedSessionSchema, loggedOutSessionSchema, loginRequestSchema } from '@choral-writer/shared';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 
 import type { AuthConfig } from '../config.js';
 import { ApiError } from '../errors/errors.js';
 import { unauthorizedError } from '../errors/errors.js';
+import { parseResponseDto } from '../http/responseDto.js';
 
 const AUTH_COOKIE = 'cw_auth';
 const AUTH_COOKIE_VALUE = 'authenticated';
@@ -44,14 +45,15 @@ export function registerAuthRoutes(app: FastifyInstance, config: AuthConfig): vo
         path: '/',
         maxAge: 60 * 60 * 24 * 7,
       })
-      .send({ authenticated: true });
+      .send(parseResponseDto(authenticatedSessionSchema, { authenticated: true }));
   });
 
-  app.get('/api/session', { preHandler: requireAuth }, async () => ({ authenticated: true }));
+  app.get('/api/session', { preHandler: requireAuth }, async () =>
+    parseResponseDto(authenticatedSessionSchema, { authenticated: true }));
 
   app.post('/api/logout', async (_request, reply) => {
     return reply
       .clearCookie(AUTH_COOKIE, { path: '/' })
-      .send({ authenticated: false });
+      .send(parseResponseDto(loggedOutSessionSchema, { authenticated: false }));
   });
 }

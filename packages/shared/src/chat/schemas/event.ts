@@ -2,15 +2,15 @@ import { z } from 'zod';
 
 import { publicErrorSchema } from '../../errors.js';
 import { chatOperationSchema } from './command.js';
-import { messageSchema } from './message.js';
+import { messageDtoSchema, messageSchema } from './message.js';
 
-export const chatEventSchema = z.discriminatedUnion('type', [
+export const chatEventDtoSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('chat.turn.started'),
     turnId: z.string().uuid(),
     branchId: z.string().uuid(),
     operation: chatOperationSchema,
-    message: messageSchema,
+    message: messageDtoSchema,
   }),
   z.object({
     type: z.literal('chat.message.delta'),
@@ -20,7 +20,7 @@ export const chatEventSchema = z.discriminatedUnion('type', [
     type: z.literal('chat.turn.completed'),
     branchId: z.string().uuid(),
     turnId: z.string().uuid(),
-    message: messageSchema,
+    message: messageDtoSchema,
   }),
   z.object({
     type: z.literal('chat.turn.failed'),
@@ -29,3 +29,13 @@ export const chatEventSchema = z.discriminatedUnion('type', [
     error: publicErrorSchema,
   }),
 ]);
+
+export const chatEventSchema = chatEventDtoSchema.transform((event) => {
+  switch (event.type) {
+    case 'chat.turn.started':
+    case 'chat.turn.completed':
+      return { ...event, message: messageSchema.parse(event.message) };
+    default:
+      return event;
+  }
+});

@@ -16,3 +16,12 @@ export const authenticatedSessionSchema = z.object({
 });
 
 export type AuthenticatedSession = z.infer<typeof authenticatedSessionSchema>;
+
+export const loggedOutSessionSchema = z.object({
+  authenticated: z.literal(false),
+});
+
+export type LoggedOutSession = z.infer<typeof loggedOutSessionSchema>;
+
+export const healthSchema = z.object({ status: z.literal('ok') });
+export type Health = z.infer<typeof healthSchema>;

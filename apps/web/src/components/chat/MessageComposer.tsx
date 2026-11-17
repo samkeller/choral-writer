@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { Alert, Button, Group, Stack, Textarea } from '@mantine/core';
 import { messageInputSchema } from '@choral-writer/shared';
 
-import { getErrorMessage } from '../../api/client.js';
+import { getErrorMessage } from '../../api/client';
 
 export function MessageComposer({ pending, onSend }: {
   pending: boolean;

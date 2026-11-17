@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { ChatBranch, ChatCommand, ChatHistory, Message, Project } from '@choral-writer/shared';
 
-import { getErrorMessage } from '../api/client.js';
-import { getProject } from '../api/projects.js';
-import { getBranches, getChatHistory, streamTurn } from '../api/chat/index.js';
+import { getErrorMessage } from '../api/client';
+import { getProject } from '../api/projects/projectsApi';
+import { getBranches, getChatHistory, streamTurn } from '../api/chat/chatApi';
 
 type ChatAction =
   | { operation: 'send'; content: string }

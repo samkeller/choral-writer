@@ -1,6 +1,6 @@
 import { projectInputSchema, projectSchema, type ProjectInput } from '@choral-writer/shared';
 
-import { api } from './client.js';
+import { api } from '../client';
 
 export async function listProjects(signal?: AbortSignal) {
   const response = await api.get<unknown>('/projects', { signal });
@@ -23,5 +23,5 @@ export async function updateProject(id: string, input: ProjectInput) {
 }
 
 export async function deleteProject(id: string) {
-  await api.delete(`/projects/${id}`);
+  await api.delete<void>(`/projects/${id}`);
 }

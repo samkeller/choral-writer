@@ -1,4 +1,6 @@
-import type { ChatBranch, ChatCommand, ChatHistory, ChatTurn } from '@choral-writer/shared';
+import type {
+  ChatBranch, ChatCommand, ChatHistory, ChatTurn,
+} from '@choral-writer/shared';
 
 import { prepareTurn } from './prepareTurn.js';
 import type {

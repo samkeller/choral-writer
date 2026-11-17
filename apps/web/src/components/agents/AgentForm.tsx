@@ -4,9 +4,9 @@ import {
   agentInputSchema, agentOutputSchema, type Agent, type AgentInput, type AgentVersionInput,
 } from '@choral-writer/shared';
 
-import { getErrorMessage } from '../../api/client.js';
-import { agentOutputPresentation } from './agentPresentation.js';
-import { PhaseTag } from '../phases/PhaseTag.js';
+import { getErrorMessage } from '../../api/client';
+import { agentOutputPresentation } from './agentPresentation';
+import { PhaseTag } from '../phases/PhaseTag';
 
 type Props = {
   onCancel: () => void;

@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { ClientApiError, sessionEvents } from '../client.js';
-import { streamTurn } from './commands.js';
-import { bytesStream } from './testing/streams.js';
+import { ClientApiError, sessionEvents } from '../client';
+import { streamTurn } from './chatStream';
+import { bytesStream } from './testing/streams';
 
 afterEach(() => vi.unstubAllGlobals());
 

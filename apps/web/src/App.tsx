@@ -1,16 +1,16 @@
 import { Route, Routes } from 'react-router-dom';
 import { IconBrain, IconRoute } from '@tabler/icons-react';
 
-import { AuthProvider } from './auth/AuthProvider.js';
-import { RequireAuth, SessionBoundary } from './auth/AuthRoutes.js';
-import { WorkspaceLayout } from './components/WorkspaceLayout.js';
-import { ComingSoonPage } from './pages/ComingSoonPage.js';
-import { HomePage } from './pages/HomePage.js';
-import { LoginPage } from './pages/LoginPage.js';
-import { NotFoundPage } from './pages/NotFoundPage.js';
-import { ProjectsPage } from './pages/ProjectsPage.js';
-import { ChatPage } from './pages/ChatPage.js';
-import { AgentsPage } from './pages/AgentsPage.js';
+import { AuthProvider } from './auth/AuthProvider';
+import { RequireAuth, SessionBoundary } from './auth/AuthRoutes';
+import { WorkspaceLayout } from './components/WorkspaceLayout';
+import { ComingSoonPage } from './pages/ComingSoonPage';
+import { HomePage } from './pages/HomePage';
+import { LoginPage } from './pages/LoginPage';
+import { NotFoundPage } from './pages/NotFoundPage';
+import { ProjectsPage } from './pages/ProjectsPage';
+import { ChatPage } from './pages/ChatPage';
+import { AgentsPage } from './pages/AgentsPage';
 
 export function App() {
   return (

@@ -5,10 +5,6 @@ import type { ChatBranch } from '@choral-writer/shared';
 import type { Database, Transaction } from '../../../db/client.js';
 import { chatBranches } from '../../../db/entities/chat/branch.js';
 
-function branchDto(row: typeof chatBranches.$inferSelect): ChatBranch {
-  return { ...row, createdAt: row.createdAt.toISOString() };
-}
-
 export class ChatBranchRepository {
   constructor(
     private readonly database: Database | Transaction,
@@ -19,21 +15,21 @@ export class ChatBranchRepository {
     const rows = await this.database.select().from(chatBranches)
       .where(eq(chatBranches.projectId, this.projectId))
       .orderBy(asc(chatBranches.createdAt), asc(chatBranches.id));
-    return rows.map(branchDto);
+    return rows;
   }
 
   async find(id: string): Promise<ChatBranch | null> {
     const [row] = await this.database.select().from(chatBranches).where(and(
       eq(chatBranches.projectId, this.projectId), eq(chatBranches.id, id),
     ));
-    return row ? branchDto(row) : null;
+    return row ?? null;
   }
 
   async create(input: Pick<ChatBranch, 'name' | 'sourceBranchId' | 'forkTurnId'>): Promise<ChatBranch> {
     const [row] = await this.database.insert(chatBranches).values({
       ...input, id: uuidv7(), projectId: this.projectId, headTurnId: input.forkTurnId,
     }).returning();
-    return branchDto(row);
+    return row;
   }
 
   async setHead(id: string, headTurnId: string): Promise<void> {

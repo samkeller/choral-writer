@@ -2,7 +2,7 @@ import {
   agentInputSchema, agentSchema, projectAgentSchema, projectAgentsInputSchema, publishAgentVersionSchema,
   type AgentInput, type ProjectAgentsInput, type PublishAgentVersion,
 } from '@choral-writer/shared';
-import { api } from './client.js';
+import { api } from '../client';
 
 export async function listAgents(signal?: AbortSignal) {
   const response = await api.get<unknown>('/agents', { signal });
@@ -20,7 +20,7 @@ export async function publishAgentVersion(agentId: string, input: PublishAgentVe
 }
 
 export async function deleteAgent(agentId: string) {
-  await api.delete(`/agents/${agentId}`);
+  await api.delete<void>(`/agents/${agentId}`);
 }
 
 export async function listProjectAgents(projectId: string, signal?: AbortSignal) {

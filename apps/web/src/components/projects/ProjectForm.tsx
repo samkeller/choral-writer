@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { Alert, Button, Group, Stack, Textarea, TextInput } from '@mantine/core';
 import { projectInputSchema, type ProjectInput } from '@choral-writer/shared';
 
-import { getErrorMessage } from '../../api/client.js';
+import { getErrorMessage } from '../../api/client';
 
 interface ProjectFormProps {
   initial?: ProjectInput;

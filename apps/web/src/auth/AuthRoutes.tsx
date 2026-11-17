@@ -1,8 +1,8 @@
 import { Alert, Button, Center, Loader, Paper, Stack } from '@mantine/core';
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 
-import { Brand } from '../components/Brand.js';
-import { useAuth } from './AuthProvider.js';
+import { Brand } from '../components/Brand';
+import { useAuth } from './AuthProvider';
 
 export function SessionBoundary() {
   const { session, retry } = useAuth();

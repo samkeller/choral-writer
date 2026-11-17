@@ -1,7 +1,7 @@
 import { Alert, Button, Loader, Select, Stack, Text } from '@mantine/core';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useProjects } from '../../hooks/useProjects.js';
+import { useProjects } from '../../hooks/useProjects';
 
 export function AgentProjectLink({ versionId }: { versionId: string }) {
   const projects = useProjects();

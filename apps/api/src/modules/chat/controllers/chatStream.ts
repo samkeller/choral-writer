@@ -1,7 +1,9 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import type { ChatEvent } from '@choral-writer/shared';
+import { chatEventDtoSchema, type ChatEvent } from '@choral-writer/shared';
+import { parseResponseDto } from '../../../http/responseDto.js';
 import { toPublicError } from '../../../errors/errors.js';
 import type { ChatProgressEvent, ChatRunResult } from '../types/chat.types.js';
+import { toChatEventDto } from '../mappers/eventDto.js';
 
 /** SSE lifecycle shared by all chat commands; terminal success follows DB commit. */
 export async function streamChatCommand(
@@ -19,6 +21,7 @@ export async function streamChatCommand(
   let streaming = false;
 
   async function emit(event: ChatEvent): Promise<void> {
+    const dto = parseResponseDto(chatEventDtoSchema, toChatEventDto(event));
     if (reply.raw.destroyed) throw new Error('The client disconnected.');
     if (controller.signal.aborted && event.type !== 'chat.turn.failed') throw controller.signal.reason;
     if (!streaming) {
@@ -31,7 +34,7 @@ export async function streamChatCommand(
       });
       streaming = true;
     }
-    const ready = reply.raw.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
+    const ready = reply.raw.write(`event: ${dto.type}\ndata: ${JSON.stringify(dto)}\n\n`);
     if (!ready) {
       await new Promise<void>((resolve, reject) => {
         const cleanup = () => {

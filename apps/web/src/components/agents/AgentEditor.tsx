@@ -1,8 +1,8 @@
 import { Modal } from '@mantine/core';
 import type { Agent, AgentInput, AgentVersionInput } from '@choral-writer/shared';
 
-import { createAgent, publishAgentVersion } from '../../api/agents.js';
-import { AgentForm } from './AgentForm.js';
+import { createAgent, publishAgentVersion } from '../../api/agents/agentsApi';
+import { AgentForm } from './AgentForm';
 
 export function AgentEditor({ agent, onClose, onSaved }: {
   agent: Agent | null;

@@ -1,5 +1,7 @@
 # Chat : décisions et invariants
 
+Chat est un flagship d'un domaine de l'application. Il illustre les principes de séparation des responsabilités, d'immuabilité des exécutions et de gestion des branches dans les conversations.
+
 ## Frontières et responsabilités
 
 Le domaine possède `chat_message`, `chat_turn` et `chat_branch`, regroupés dans
@@ -14,10 +16,10 @@ Le rangement reste plat par responsabilité, sans couche abstraite par classe.
 | Frontière | Responsabilité |
 | --- | --- |
 | `routes/` | URL, méthodes et authentification ; délégation au contrôleur |
-| `controllers/` | Validation des requêtes, adaptation au service, cycle de vie SSE |
+| `controllers/` | Validation des requêtes, adaptation au service, conversion des modèles en DTO et cycle de vie SSE |
 | `services/` | Cas d'usage et services message, tour, branche ; adaptation narrateur à `callLLM` |
-| `repositories/` | Un repository par entité ; SQL, sans règle de branchement ni dépendance entre repositories |
-| `mappers/` | Conversion des lignes SQL en DTO, partagée lorsque les projections font des jointures |
+| `repositories/` | Un repository par entité ; SQL et assemblage des jointures en modèles avec `Date`, sans règle de branchement ni DTO HTTP |
+| `mappers/` | Conversion des modèles en DTO JSON à la frontière HTTP : fonctions `toChatBranchDto`, `toMessageDto`, `toChatTurnDto`, etc. |
 | `types/` | Données et signatures internes ; pas d'interface miroir pour chaque classe |
 
 `ChatService` orchestre les services d'entité, chacun utilisant uniquement son
@@ -34,8 +36,11 @@ pas dans `ChatService`.
 
 Les [schémas Zod](../../packages/shared/src/chat/schemas) sont séparés par entité
 ou protocole, et leurs [types](../../packages/shared/src/chat/types.ts) restent
-inférés : aucune deuxième définition des DTO. L'API frontend sépare lectures,
-commandes et parseur SSE ; les hooks et composants gardent leurs responsabilités.
+inférés : aucune deuxième définition des DTO. Les services manipulent les modèles
+avec `Date` ; seuls les mappers de sortie convertissent leurs dates en chaînes ISO.
+Les diagnostics internes des tours ne sont masqués qu'à cette frontière.
+L'API frontend expose `chatApi.ts`, avec `chatStream.ts` pour le transport et
+`chatEvents.ts` pour le parsing SSE ; les hooks et composants gardent leurs responsabilités.
 
 ## Pourquoi des exécutions immuables et des parents partagés ?
 

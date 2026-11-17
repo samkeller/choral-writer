@@ -1,8 +1,8 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import type { LoginRequest } from '@choral-writer/shared';
 
-import * as authApi from '../api/auth.js';
-import { ClientApiError, getErrorMessage, sessionEvents } from '../api/client.js';
+import * as authApi from '../api/auth/authApi';
+import { ClientApiError, getErrorMessage, sessionEvents } from '../api/client';
 
 type Session =
   | { status: 'loading' | 'anonymous' | 'authenticated' }

@@ -3,13 +3,13 @@ import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { IconAdjustmentsHorizontal, IconArrowLeft, IconInfoCircle, IconRefresh } from '@tabler/icons-react';
 import { projectParamsSchema } from '@choral-writer/shared';
 
-import { PageHeader } from '../components/PageHeader.js';
-import { MessageComposer } from '../components/chat/MessageComposer.js';
-import { MessageList } from '../components/chat/MessageList.js';
-import { ProjectAgentSetup } from '../components/agents/ProjectAgentSetup.js';
-import { useChat } from '../hooks/useChat.js';
-import { NotFoundPage } from './NotFoundPage.js';
-import { IconAction } from '../components/atoms/IconAction.js';
+import { PageHeader } from '../components/PageHeader';
+import { MessageComposer } from '../components/chat/MessageComposer';
+import { MessageList } from '../components/chat/MessageList';
+import { ProjectAgentSetup } from '../components/agents/ProjectAgentSetup';
+import { useChat } from '../hooks/useChat';
+import { NotFoundPage } from './NotFoundPage';
+import { IconAction } from '../components/atoms/IconAction';
 
 export function ChatPage() {
   const params = projectParamsSchema.safeParse(useParams());

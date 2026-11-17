@@ -10,11 +10,11 @@ function setup() {
   const branch: ChatBranch = {
     id: 'branch', projectId, name: 'Principale',
     sourceBranchId: null, forkTurnId: null, headTurnId: null,
-    createdAt: new Date().toISOString(),
+    createdAt: new Date(),
   };
   const user: Message = {
     id: 'user', projectId, role: 'user', content: 'Open the door.',
-    createdAt: new Date().toISOString(),
+    createdAt: new Date(),
   };
   const context = {
     project: { id: projectId, systemPrompt: 'Current prompt.' },

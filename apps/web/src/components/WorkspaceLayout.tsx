@@ -3,11 +3,11 @@ import { Alert, AppShell, Box, Container, Group, Stack } from '@mantine/core';
 import { IconLogout } from '@tabler/icons-react';
 import { Outlet } from 'react-router-dom';
 
-import { getErrorMessage } from '../api/client.js';
-import { useAuth } from '../auth/AuthProvider.js';
-import { Brand } from './Brand.js';
-import { WorkspaceNavigation } from './WorkspaceNavigation.js';
-import { IconAction } from './atoms/IconAction.js';
+import { getErrorMessage } from '../api/client';
+import { useAuth } from '../auth/AuthProvider';
+import { Brand } from './Brand';
+import { WorkspaceNavigation } from './WorkspaceNavigation';
+import { IconAction } from './atoms/IconAction';
 import styles from './WorkspaceLayout.module.css';
 
 export function WorkspaceLayout() {

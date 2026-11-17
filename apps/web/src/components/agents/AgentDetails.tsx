@@ -4,9 +4,9 @@ import { IconArrowUpRight, IconPlus, IconTrash } from '@tabler/icons-react';
 import { Link } from 'react-router-dom';
 import type { Agent } from '@choral-writer/shared';
 
-import { AgentProjectLink } from './AgentProjectLink.js';
-import { AgentVersionDetails } from './AgentVersionDetails.js';
-import { IconAction } from '../atoms/IconAction.js';
+import { AgentProjectLink } from './AgentProjectLink';
+import { AgentVersionDetails } from './AgentVersionDetails';
+import { IconAction } from '../atoms/IconAction';
 
 export function AgentDetails({ agent, onEdit, onDelete }: {
   agent: Agent;

@@ -3,9 +3,9 @@ import { Alert, Button, Center, Paper, PasswordInput, Stack, Text } from '@manti
 import { Navigate, useLocation } from 'react-router-dom';
 import { loginRequestSchema } from '@choral-writer/shared';
 
-import { getErrorMessage } from '../api/client.js';
-import { useAuth } from '../auth/AuthProvider.js';
-import { Brand } from '../components/Brand.js';
+import { getErrorMessage } from '../api/client';
+import { useAuth } from '../auth/AuthProvider';
+import { Brand } from '../components/Brand';
 
 function getReturnPath(state: unknown): string {
   if (typeof state === 'object' && state !== null && 'from' in state

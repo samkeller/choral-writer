@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { Agent } from '@choral-writer/shared';
-import { configureProjectAgents, listAgents, listProjectAgents } from '../api/agents.js';
-import { getErrorMessage } from '../api/client.js';
+import { configureProjectAgents, listAgents, listProjectAgents } from '../api/agents/agentsApi';
+import { getErrorMessage } from '../api/client';
 
 export function useProjectSetup(projectId: string, suggestedVersion?: string | null) {
   const [agents, setAgents] = useState<Agent[]>([]);

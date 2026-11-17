@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { Agent } from '@choral-writer/shared';
-import { listAgents } from '../api/agents.js';
-import { getErrorMessage } from '../api/client.js';
+import { listAgents } from '../api/agents/agentsApi';
+import { getErrorMessage } from '../api/client';
 
 export function useAgentLibrary() {
   const [agents, setAgents] = useState<Agent[]>([]);

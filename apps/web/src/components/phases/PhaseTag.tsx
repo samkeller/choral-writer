@@ -1,7 +1,7 @@
 import { Badge } from '@mantine/core';
 import type { AgentPhase } from '@choral-writer/shared';
 
-import { phasePresentation } from './phasePresentation.js';
+import { phasePresentation } from './phasePresentation';
 
 export function PhaseTag({ phase }: { phase: AgentPhase }) {
   const { label, color, icon: Icon } = phasePresentation[phase];

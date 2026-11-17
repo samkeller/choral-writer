@@ -3,7 +3,6 @@ import type { Message } from '@choral-writer/shared';
 
 import type { Database, Transaction } from '../../../db/client.js';
 import { chatMessages } from '../../../db/entities/chat/message.js';
-import { messageDto } from '../mappers/messageDto.js';
 
 export class ChatMessageRepository {
   constructor(
@@ -15,6 +14,6 @@ export class ChatMessageRepository {
     const [row] = await this.database.insert(chatMessages).values({
       id: uuidv7(), projectId: this.projectId, role, content, createdAt,
     }).returning();
-    return messageDto(row);
+    return row;
   }
 }

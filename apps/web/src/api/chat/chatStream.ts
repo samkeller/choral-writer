@@ -1,7 +1,7 @@
 import { headInputSchema, sendMessageSchema, type ChatCommand, type ChatEvent } from '@choral-writer/shared';
 
-import { checkUnauthorized, ClientApiError, createClientApiError } from '../client.js';
-import { readChatEvents } from './events.js';
+import { checkUnauthorized, ClientApiError, createClientApiError } from '../client';
+import { readChatEvents } from './chatEvents';
 
 /** Dispatches progress until a terminal event, never forwarding buffered events after cancellation. */
 export async function streamTurn(
