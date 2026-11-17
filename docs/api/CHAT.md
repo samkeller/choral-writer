@@ -103,6 +103,27 @@ de génération conservent la saisie et le tour échoué, jamais une réponse
 assistant partielle. L'historique expose une erreur générique ; le diagnostic
 fournisseur reste dans la trace.
 
+## Pipeline M4 et reconstruction du whiteboard
+
+L'analyse utilise toutes les versions d'agents épinglées au projet et les exécute
+en parallèle sur le même contexte de conversation. Chaque agent reçoit ses propres
+instructions, sans les sorties des autres agents. Ses enveloppes sont validées
+par le schéma partagé ; une sortie invalide est retentée une fois. Si un agent
+échoue encore, le tour échoue et le Narrateur n'est pas appelé. Un projet sans
+agent d'analyse reste valide : l'étape est ignorée et le Narrateur reçoit un
+whiteboard vide.
+
+Le whiteboard est une projection, pas une table persistée. Les traces `llm_call`
+par `turn_id` conservent requête et réponse brutes, statut, étape, agent et version
+de l'agent, durée et tokens. La sortie brute du Narrateur contient résolution et
+prose ; seul le texte de la section prose est diffusé puis enregistré comme
+message assistant. Le visualiseur M5 pourra reconstruire les étapes à partir de
+ces traces sans dupliquer les sorties dans une projection mutable.
+
+L'orchestration du tour coordonne l'analyse puis la restitution. Les services
+d'étape portent la validation des enveloppes et le parsing en flux ; le Réducteur
+transactionnel reste hors périmètre M4 et sera ajouté avec la mémoire en M6.
+
 **Conséquences et limites.** Le verrou et une connexion restent occupés pendant
 l'appel LLM. Les événements de début/delta sont provisoires ; seul le résultat
 terminal suit le commit, puis le client recharge l'état persistant.

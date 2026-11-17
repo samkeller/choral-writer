@@ -12,7 +12,7 @@ export class ChatTransactionService {
   run<T>(projectId: string, work: (context: ChatTransactionContext) => Promise<T>): Promise<T> {
     return this.projects.withLockedProject(projectId, async (project, tx) => work({
       project,
-      narratorInstructions: await new AgentRepository(tx).narratorInstructions(projectId),
+      projectAgents: await new AgentRepository(tx).listForProject(projectId),
       ...this.servicesForTransaction(tx, projectId),
       recordActivity: (at) => this.projects.recordActivity(tx, projectId, at),
     }));

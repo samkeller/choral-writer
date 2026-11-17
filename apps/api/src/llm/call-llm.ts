@@ -15,9 +15,11 @@ import { normalizeLlmError } from '../errors/llmErrors.js';
 export interface CallLLMInput<T = unknown> {
   turnId?: string;
   agentId?: string;
+  agentVersionId?: string;
   stage: string;
   messages: ChatCompletionMessageParam[];
   schema?: z.ZodType<T>;
+  validateResponse?: (content: string) => void;
   onDelta?: (delta: string) => void | Promise<void>;
   signal?: AbortSignal;
 }
@@ -26,6 +28,7 @@ export interface LlmCallTrace {
   id: string;
   turnId: string | null;
   agentId: string | null;
+  agentVersionId: string | null;
   stage: string;
   model: string;
   messages: ChatCompletionMessageParam[];
@@ -156,11 +159,13 @@ export function createCallLLM({ client, traces, model, now = Date.now, apiKey }:
           });
         }
       }
+      input.validateResponse?.(content);
     } catch (error) {
       const trace: LlmCallTrace = {
         id: callId,
         turnId: input.turnId ?? null,
         agentId: input.agentId ?? null,
+        agentVersionId: input.agentVersionId ?? null,
         stage: input.stage,
         model,
         messages: input.messages,
@@ -192,6 +197,7 @@ export function createCallLLM({ client, traces, model, now = Date.now, apiKey }:
       id: callId,
       turnId: input.turnId ?? null,
       agentId: input.agentId ?? null,
+      agentVersionId: input.agentVersionId ?? null,
       stage: input.stage,
       model,
       messages: input.messages,

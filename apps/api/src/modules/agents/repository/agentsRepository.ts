@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray } from 'drizzle-orm';
+import { asc, desc, eq, inArray } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
 import type { Agent, AgentInput, AgentVersionInput, ProjectAgent, ProjectAgentsInput } from '@choral-writer/shared';
 
@@ -100,11 +100,4 @@ export class AgentRepository {
     await this.replace(projectId, versions);
   }
 
-  async narratorInstructions(projectId: string): Promise<string> {
-    const [row] = await this.database.select({ instructions: agentVersions.instructions })
-      .from(projectAgents).innerJoin(agentVersions, eq(agentVersions.id, projectAgents.versionId))
-      .where(and(eq(projectAgents.projectId, projectId), eq(projectAgents.output, 'narrative')));
-    if (!row) throw new Error('Project has no narrator assignment.');
-    return row.instructions;
-  }
 }

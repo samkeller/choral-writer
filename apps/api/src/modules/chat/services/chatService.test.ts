@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { ChatBranch, Message } from '@choral-writer/shared';
+import type { AnalysisEnvelope, ChatBranch, Message, ProjectAgent } from '@choral-writer/shared';
 
 import type { ChatServiceDependencies, ChatTransactionContext } from '../types/chat.types.js';
 import type { Narrator } from '../types/narrator.types.js';
@@ -16,9 +16,13 @@ function setup() {
     id: 'user', projectId, role: 'user', content: 'Open the door.',
     createdAt: new Date(),
   };
+  const narrator: ProjectAgent = {
+    agentId: 'narrator', versionId: 'narrator-version', phase: 'restitution', output: 'narrative',
+    version: 1, name: 'Narrator', instructions: '',
+  };
   const context = {
     project: { id: projectId, systemPrompt: 'Current prompt.' },
-    narratorInstructions: null as string | null,
+    projectAgents: [narrator],
     branches: {
       list: vi.fn<ChatTransactionContext['branches']['list']>(),
       get: vi.fn<ChatTransactionContext['branches']['get']>().mockResolvedValue(branch),
@@ -40,10 +44,12 @@ function setup() {
     recordActivity: vi.fn<ChatTransactionContext['recordActivity']>(),
   } satisfies ChatTransactionContext;
   const narrate = vi.fn<Narrator>();
+  const analyze = vi.fn<ChatServiceDependencies['analyze']>().mockResolvedValue([]);
   const dependencies: ChatServiceDependencies = {
     projects: { get: vi.fn<ChatServiceDependencies['projects']['get']>() },
     servicesForProject: () => context,
     withProjectTransaction: async (_projectId, work) => work(context),
+    analyze,
     narrate,
   };
   const emit = vi.fn(async () => {});
@@ -52,20 +58,62 @@ function setup() {
     operation: 'send', projectId, branchId: branch.id,
     expectedHeadTurnId: null, content: user.content,
   }, emit, new AbortController().signal);
-  return { context, narrate, emit, run };
+  return { context, analyze, narrate, emit, run };
 }
 
 describe('chat orchestration without infrastructure', () => {
   it('adds enabled narrator instructions to the project prompt', async () => {
     const { context, narrate, run } = setup();
-    context.narratorInstructions = 'Write in a concise, playful tone.';
+    context.projectAgents[0]!.instructions = 'Write in a concise, playful tone.';
     narrate.mockResolvedValue('The door opens.');
 
     await run();
 
     expect(narrate).toHaveBeenCalledWith(expect.objectContaining({
+      agentId: 'narrator',
+      agentVersionId: 'narrator-version',
       systemPrompt: 'Current prompt.\n\nWrite in a concise, playful tone.',
+      whiteboard: [],
     }));
+  });
+
+  it('passes validated analysis results to the narrator', async () => {
+    const { context, analyze, narrate, run } = setup();
+    context.projectAgents.push({
+      agentId: 'analyst', versionId: 'analyst-version', phase: 'analysis', output: 'envelope',
+      version: 1, name: 'Chaos', instructions: 'Find uncertainty.',
+    });
+    const whiteboard: AnalysisEnvelope[] = [{
+      v: 1, agent: 'Chaos', summary: 'The door may be trapped.',
+      items: [{ kind: 'observation', text: 'A wire is visible.', importance: 'NORMAL' }],
+    }];
+    analyze.mockResolvedValue(whiteboard);
+    narrate.mockResolvedValue('The door opens carefully.');
+
+    await run();
+
+    expect(analyze).toHaveBeenCalledWith(expect.objectContaining({
+      turnId: 'turn',
+      agents: [expect.objectContaining({ name: 'Chaos', versionId: 'analyst-version' })],
+    }));
+    expect(narrate).toHaveBeenCalledWith(expect.objectContaining({ whiteboard }));
+  });
+
+  it('does not narrate when analysis fails', async () => {
+    const { analyze, narrate, context, run } = setup();
+    context.projectAgents.push({
+      agentId: 'analyst', versionId: 'analyst-version', phase: 'analysis', output: 'envelope',
+      version: 1, name: 'Chaos', instructions: 'Find uncertainty.',
+    });
+    analyze.mockRejectedValue(new AggregateError([new Error('Invalid analysis.')]));
+
+    const result = await run();
+
+    expect(result.status).toBe('failed');
+    expect(narrate).not.toHaveBeenCalled();
+    expect(context.turns.finish).toHaveBeenCalledWith(
+      'turn', 'branch', expect.objectContaining({ status: 'failed' }), expect.any(Date),
+    );
   });
 
   it('does not reclassify a persistence failure as a generation failure', async () => {

@@ -1,41 +1,51 @@
 # Choral Writer
 
-Application de récit à la troisième personne : interprétation, agents d'analyse isolés, narration en streaming puis propositions de mémoire validées par le code. PostgreSQL conserve les appels, propositions, événements et projections ; les branches sont accessibles après un retour en arrière.
+Choral Writer est une application de narration interactive à la troisième personne. Chaque projet définit un univers et une équipe d’agents spécialisés, dont les versions sont épinglées au projet. À chaque tour, le chat fait analyser la situation par l’équipe avant de diffuser la réponse du Narrateur.
 
-## Prérequis
+## Comment fonctionne le pipeline ?
 
-- Node.js LTS
-- pnpm 12
-- Docker Desktop (pour le PostgreSQL local)
+```mermaid
+flowchart TD
+    U["Saisie utilisateur + contexte"] --> A["Analyse · 0 à N agents en parallèle"]
+    A --> W["Whiteboard · vue des enveloppes et des traces du tour"]
+    W --> N["Narrateur · résolution + prose"]
+    N -->|Prose seule, en streaming| C["Message assistant et historique"]
+    W -.->|prévu M6| G["Gardien · propositions mémoire"]
+    N -.->|prévu M6| G
+    G -.->|prévu M6| R["Réducteur · validation et application"]
+```
+
+- **Analyse** : chaque agent reçoit le contexte du projet, l’historique récent et la saisie, mais pas les sorties des autres agents. Ses enveloppes JSON sont validées par Zod.
+- **Whiteboard** : vue reconstruite à partir des traces et sorties associées à un tour ; ce n’est pas une table dédiée. Les traces conservent notamment les requêtes, réponses, versions d’agents, durées et erreurs.
+- **Restitution** : le Narrateur lit le whiteboard et produit une `<resolution>` (les faits) et une `<prose>` (le texte destiné au joueur). Seule la prose est envoyée au chat en SSE.
+- **Mémoire** : le Gardien et le Réducteur sont prévus pour M6 ; ils ne font pas encore partie du pipeline exécuté.
+
+### Vocabulaire
+
+| Terme | Sens |
+|---|---|
+| **Projet** | Univers, prompt système et configuration d’agents. |
+| **Agent** | Rôle spécialisé avec des versions d’instructions immuables. |
+| **Phase** | `analysis` produit une enveloppe ; `restitution` produit une narration ou, à terme, des propositions mémoire. |
+| **Tour** | Une exécution du pipeline pour une saisie. Réessayer ou régénérer crée une nouvelle exécution traçable. |
+| **Branche** | Un chemin de conversation ; les branches alternatives partagent leur historique antérieur. |
 
 ## Démarrage local
 
-1. Copier `.env.example` vers `.env`, puis renseigner le mot de passe, un secret de cookie d'au moins 32 caractères et les identifiants du fournisseur LLM.
-2. (facultatif) Démarrer PostgreSQL avec `docker compose up -d`.
-3. Installer les dépendances avec `pnpm install`.
-4. Appliquer les migrations avec `pnpm db:migrate`.
-5. Démarrer l'API et le front avec `pnpm dev`, puis ouvrir l'URL Vite affichée dans le terminal.
+Prérequis : Node.js LTS, pnpm 12 et Docker Desktop pour PostgreSQL.
 
-## Base de données et déploiement Railway
-
-Pour le développement local, le service Postgres est défini dans `docker-compose.yml`. Sur Railway, créer un service PostgreSQL et configurer `DATABASE_URL` sur le service API à partir de la variable de connexion fournie par Railway. Définir aussi `APP_PASSWORD`, `COOKIE_SECRET`, `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL` et `NODE_ENV=production`.
-
-Avant le démarrage du service, lancer `pnpm db:migrate`. Les commandes de build et de démarrage de l'API sont `pnpm build` et `pnpm --filter @choral-writer/api start`. Le cookie est alors marqué `Secure`; l'application doit être servie en HTTPS.
+1. Copier `.env.example` vers `.env`, puis renseigner `APP_PASSWORD`, `COOKIE_SECRET` (32 caractères minimum) et les paramètres du fournisseur LLM.
+2. Démarrer PostgreSQL avec `docker compose up -d`.
+3. Installer les dépendances : `pnpm install`.
+4. Appliquer les migrations : `pnpm db:migrate`.
+5. Lancer l’API et le front : `pnpm dev`, puis ouvrir l’URL affichée.
 
 ## Commandes
 
-- `pnpm dev` : API et front en mode développement
-- `pnpm build` : build des packages et de l'application web
-- `pnpm typecheck` : vérification TypeScript stricte
-- `pnpm test` : tests Vitest de l'API et du front
-- `pnpm db:generate` : générer une migration Drizzle depuis le schéma
-- `pnpm db:migrate` : appliquer les migrations PostgreSQL
+- `pnpm dev` : API et front en développement
+- `pnpm build` : build de tous les workspaces
+- `pnpm typecheck` : vérification TypeScript
+- `pnpm test` : tests Vitest
+- `pnpm db:generate` / `pnpm db:migrate` : générer / appliquer les migrations
 
-## Organisation du front
-
-- pages/` contient les écrans et `components/` les éléments du workspace et des domaines métier.
-- `auth/` gère la session et protège les routes. Un 401 redirige vers `/login`, puis la connexion ramène à la page demandée. Une erreur serveur reste affichée avec une possibilité de réessayer.
-- `api/` centralise Axios et les appels REST ; l'intercepteur invalide la session sur un 401, sauf lors d'une tentative de connexion.
-- `theme/` contient le thème Mantine. Les conventions, le design system et les commandes de développement sont documentés dans [`docs/`](./docs/DEVELOPMENT.md). Les routes ont leurs propres URL : `/`, `/projects`, `/agents`, `/memories`, `/traces`.
-
-En production, le serveur hébergeant le front doit servir `index.html` pour les routes de l'application, et acheminer `/api` vers Fastify.
+Pour les conventions de développement, les tests PostgreSQL et la configuration, voir [`docs/DEVELOPMENT.md`](./docs/DEVELOPMENT.md). Les décisions du domaine chat sont dans [`docs/api/CHAT.md`](./docs/api/CHAT.md) et le plan MVP dans [`docs/init/MVP.md`](./docs/init/MVP.md).

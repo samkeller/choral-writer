@@ -42,6 +42,8 @@ describe('callLLM', () => {
 
     const result = await callLLM({
       stage: 'narrator',
+      agentId: 'narrator',
+      agentVersionId: 'narrator-v2',
       messages: [{ role: 'user', content: 'begin' }],
     });
 
@@ -49,6 +51,8 @@ describe('callLLM', () => {
     expect(insert).toHaveBeenCalledWith(expect.objectContaining({
       id: result.callId,
       stage: 'narrator',
+      agentId: 'narrator',
+      agentVersionId: 'narrator-v2',
       response: 'hello',
       inputTokens: 8,
       outputTokens: 2,
@@ -82,6 +86,22 @@ describe('callLLM', () => {
     expect(insert).toHaveBeenCalledWith(expect.objectContaining({
       response: '{"count":"not a number"}',
       status: 'error',
+    }));
+  });
+
+  it('traces custom response validation failures as errors', async () => {
+    const { callLLM, insert } = setup(async () => completion('untagged'));
+
+    await expect(callLLM({
+      stage: 'narrator',
+      messages: [{ role: 'user', content: 'begin' }],
+      validateResponse: () => { throw new Error('Missing narrator sections.'); },
+    })).rejects.toThrow('Missing narrator sections.');
+
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({
+      response: 'untagged',
+      status: 'error',
+      error: 'Missing narrator sections.',
     }));
   });
 

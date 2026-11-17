@@ -2,6 +2,7 @@ import type { Database, Transaction } from '../../db/client.js';
 import type { createCallLLM } from '../../llm/call-llm.js';
 import type { ProjectsService } from '../projects/services/projectServices.js';
 import { ChatService } from './services/chatService.js';
+import { ChatAnalysisService } from './services/analysisService.js';
 import { ChatBranchService } from './services/branchService.js';
 import { ChatMessageService } from './services/messageService.js';
 import { ChatTurnService } from './services/turnService.js';
@@ -32,11 +33,13 @@ export function createChatService(
   database: Database, projects: ProjectsService, callLLM: ReturnType<typeof createCallLLM>,
 ): ChatService {
   const transaction = new ChatTransactionService(projects, createEntityServices);
+  const analysis = new ChatAnalysisService(callLLM);
   const narrator = new ChatNarratorService(callLLM);
   return new ChatService({
     projects,
     servicesForProject: (projectId) => createEntityServices(database, projectId),
     withProjectTransaction: (projectId, work) => transaction.run(projectId, work),
+    analyze: (input) => analysis.generate(input),
     narrate: (input) => narrator.generate(input),
   });
 }

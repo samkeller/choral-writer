@@ -1,6 +1,7 @@
-import type { ChatEvent, Message, Project } from '@choral-writer/shared';
+import type { AnalysisEnvelope, ChatEvent, Message, Project, ProjectAgent } from '@choral-writer/shared';
 
 import type { ProjectsService } from '../../projects/services/projectServices.js';
+import type { AnalysisInput } from '../services/analysisService.js';
 import type { ChatBranchService } from '../services/branchService.js';
 import type { ChatMessageService } from '../services/messageService.js';
 import type { ChatTurnService } from '../services/turnService.js';
@@ -27,7 +28,7 @@ export type ChatEntityServices = {
 /** Services are bound to one locked project and must not escape the callback. */
 export type ChatTransactionContext = ChatEntityServices & {
   project: Pick<Project, 'id' | 'systemPrompt'>;
-  narratorInstructions: string | null;
+  projectAgents: ProjectAgent[];
   recordActivity(at: Date): Promise<void>;
 };
 
@@ -39,5 +40,6 @@ export type ChatServiceDependencies = {
     projectId: string,
     work: (context: ChatTransactionContext) => Promise<T>,
   ): Promise<T>;
+  analyze(input: AnalysisInput): Promise<AnalysisEnvelope[]>;
   narrate: Narrator;
 };

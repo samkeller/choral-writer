@@ -3,7 +3,9 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { eq } from 'drizzle-orm';
 import { Pool } from 'pg';
-import type { ChatCompletionChunk } from 'openai/resources/chat/completions';
+import type {
+  ChatCompletion, ChatCompletionChunk, ChatCompletionCreateParamsNonStreaming, ChatCompletionCreateParamsStreaming,
+} from 'openai/resources/chat/completions';
 import { APIError } from 'openai/error';
 import { v7 as uuidv7 } from 'uuid';
 import { agentSchema, projectAgentSchema, chatEventSchema, chatHistorySchema, projectSchema } from '@choral-writer/shared';
@@ -23,12 +25,30 @@ import { ProjectsService } from '../../projects/services/projectServices.js';
 describe.skipIf(!process.env.TEST_DATABASE_URL)('projects and chat with PostgreSQL', () => {
   const pool = new Pool({ connectionString: process.env.TEST_DATABASE_URL });
   const database = drizzle(pool, { schema });
+  const analysisContent = JSON.stringify({
+    v: 1, agent: 'Chaos', summary: 'There may be a trap.', items: [
+      { kind: 'observation', text: 'A wire is visible.', importance: 'HIGH' },
+    ],
+  });
   let generate: (signal?: AbortSignal) => AsyncGenerator<ChatCompletionChunk> = async function* () {
-    yield chunk('Bonjour ');
-    yield chunk('Mara.');
+    yield chunk('<resolution>La porte s’ouvre.</resolution><prose>Bonjour ');
+    yield chunk('Mara.</prose>');
     yield chunk('', 'stop');
   };
-  const create = vi.fn(async (_params: unknown, options?: { signal?: AbortSignal }) => generate(options?.signal));
+  const create = vi.fn(async (
+    params: ChatCompletionCreateParamsNonStreaming | ChatCompletionCreateParamsStreaming,
+    options?: { signal?: AbortSignal },
+  ): Promise<ChatCompletion | AsyncIterable<ChatCompletionChunk>> => {
+    if (params.stream) return generate(options?.signal);
+    return {
+      id: 'analysis', object: 'chat.completion', created: 0, model: 'simulated-model',
+      choices: [{
+        index: 0, finish_reason: 'stop', logprobs: null,
+        message: { role: 'assistant', content: analysisContent, refusal: null, annotations: [] },
+      }],
+      usage: { prompt_tokens: 18, completion_tokens: 8, total_tokens: 26 },
+    };
+  });
   const callLLM = createCallLLM({
     client: { chat: { completions: { create } } },
     model: 'simulated-model',
@@ -83,7 +103,11 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('projects and chat with PostgreS
     const project = await projects.get(projectId);
     const narrator = (await agents.listForProject(projectId)).find((agent) => agent.output === 'narrative');
     if (!narrator) throw new Error('Missing narrator assignment.');
-    return [project.systemPrompt, narrator.instructions].filter(Boolean).join('\n\n');
+    return [
+      [project.systemPrompt, narrator.instructions].filter(Boolean).join('\n\n'),
+      'Use the validated analysis envelopes below as context. Return exactly one <resolution> section followed by one <prose> section, with no text outside those tags.',
+      '[]',
+    ].filter(Boolean).join('\n\n');
   }
 
   async function sendOnBranch(projectId: string, branchId: string, content: string) {
@@ -296,8 +320,11 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('projects and chat with PostgreS
     const start = output[0];
     if (start.type !== 'chat.turn.started') throw new Error('Missing start event.');
     const [trace] = await database.select().from(schema.llmCall).where(eq(schema.llmCall.turnId, start.turnId));
+    const narrator = (await agents.listForProject(first.id)).find((agent) => agent.output === 'narrative');
     expect(trace).toMatchObject({
-      response: 'Bonjour Mara.', status: 'success', model: 'simulated-model', inputTokens: 20,
+      response: '<resolution>La porte s’ouvre.</resolution><prose>Bonjour Mara.</prose>',
+      agentId: narrator?.agentId, agentVersionId: narrator?.versionId,
+      status: 'success', model: 'simulated-model', inputTokens: 20,
     });
     const [turn] = await database.select().from(schema.chatTurns).where(eq(schema.chatTurns.id, start.turnId));
     expect(turn.status).toBe('completed');
@@ -323,11 +350,51 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('projects and chat with PostgreS
     expect(await database.select().from(schema.chatTurns).where(eq(schema.chatTurns.projectId, first.id))).toEqual([]);
   });
 
+  it('runs configured analysis agents and traces the pinned versions before narration', async () => {
+    const project = await createProject('Analyse');
+    const defaults = await agents.listForProject(project.id);
+    const analyst = await agents.create({
+      name: 'Chaos', instructions: 'Find uncertainty.', phase: 'analysis', output: 'envelope',
+    });
+    const analysisVersion = analyst.versions[0];
+    if (!analysisVersion) throw new Error('Missing analysis agent version.');
+    await agents.configure(project.id, {
+      agents: [
+        ...defaults.map(({ agentId, versionId }) => ({ agentId, versionId })),
+        { agentId: analyst.id, versionId: analysisVersion.id },
+      ],
+    });
+
+    const response = await send(project.id, 'J’ouvre la porte.');
+    const output = events(response.body);
+    const start = output.find((event) => event.type === 'chat.turn.started');
+    if (start?.type !== 'chat.turn.started') throw new Error('Missing started turn.');
+    const traces = await database.select().from(schema.llmCall).where(eq(schema.llmCall.turnId, start.turnId));
+    expect(traces).toHaveLength(2);
+    expect(traces).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        agentId: analyst.id,
+        agentVersionId: analysisVersion.id,
+        stage: 'analysis',
+        status: 'success',
+        response: analysisContent,
+      }),
+      expect.objectContaining({
+        agentId: expect.any(String),
+        agentVersionId: expect.any(String),
+        stage: 'narrator',
+        status: 'success',
+      }),
+    ]));
+    const narratorCall = create.mock.calls.at(-1)?.[0];
+    expect(String(narratorCall?.messages[0]?.content)).toContain('"agent":"Chaos"');
+  });
+
   it('retains the user message and failure trace but never persists a partial assistant reply', async () => {
     const project = await createProject('Erreur fournisseur');
     const normal = generate;
     generate = async function* () {
-      yield chunk('Réponse partielle');
+      yield chunk('<resolution>Faits.</resolution><prose>Réponse partielle');
       throw APIError.generate(402, { error: { message: 'Insufficient Balance' } }, undefined, new Headers({
         'x-request-id': 'simulated-provider-request',
       }));
@@ -346,7 +413,10 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('projects and chat with PostgreS
       const [turn] = await database.select().from(schema.chatTurns).where(eq(schema.chatTurns.projectId, project.id));
       expect(turn.status).toBe('failed');
       const [trace] = await database.select().from(schema.llmCall).where(eq(schema.llmCall.turnId, turn.id));
-      expect(trace).toMatchObject({ status: 'error', response: 'Réponse partielle' });
+      expect(trace).toMatchObject({
+        status: 'error',
+        response: '<resolution>Faits.</resolution><prose>Réponse partielle',
+      });
     } finally {
       generate = normal;
     }
@@ -388,7 +458,8 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('projects and chat with PostgreS
       const previousCalls = create.mock.calls.length;
       await projects.update(project.id, { name: project.name, systemPrompt: 'Prompt modifié.' });
       generate = async function* () {
-        yield chunk('Réponse alternative.');
+        yield chunk('<resolution>Alternative.</resolution><prose>Réponse alternative.');
+        yield chunk('</prose>');
         yield chunk('', 'stop');
       };
       const regenerated = events((await repeat(
@@ -449,7 +520,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('projects and chat with PostgreS
     let failedTurnId: string;
     let alternativeId: string;
     generate = async function* () {
-      yield chunk('Partiel.');
+      yield chunk('<resolution>Faits.</resolution><prose>Partiel.');
       throw new Error('simulated failure');
     };
     try {
@@ -592,9 +663,9 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('projects and chat with PostgreS
     let release!: () => void;
     const gate = new Promise<void>((resolve) => { release = resolve; });
     generate = async function* () {
-      yield chunk('Début');
+      yield chunk('<resolution>Faits.</resolution><prose>Début');
       await gate;
-      yield chunk(' de la réponse.');
+      yield chunk(' de la réponse.</prose>');
       yield chunk('', 'stop');
     };
     try {
@@ -638,7 +709,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('projects and chat with PostgreS
     const normal = generate;
     const controller = new AbortController();
     generate = async function* (signal) {
-      yield chunk('Début de réponse');
+      yield chunk('<resolution>Faits.</resolution><prose>Début de réponse');
       if (!signal) throw new Error('Missing LLM abort signal.');
       await new Promise<void>((resolve) => {
         signal.addEventListener('abort', () => resolve(), { once: true });

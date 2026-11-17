@@ -7,6 +7,7 @@ export async function insertLlmCall(trace: LlmCallTrace): Promise<void> {
     id: trace.id,
     turnId: trace.turnId,
     agentId: trace.agentId,
+    agentVersionId: trace.agentVersionId,
     stage: trace.stage,
     model: trace.model,
     request: { messages: trace.messages },

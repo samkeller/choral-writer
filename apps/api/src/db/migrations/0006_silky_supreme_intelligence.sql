@@ -1,0 +1,2 @@
+ALTER TABLE "choral_writer"."llm_call" ADD COLUMN "agent_version_id" uuid;--> statement-breakpoint
+CREATE INDEX "llm_call_turn_stage_created_idx" ON "choral_writer"."llm_call" USING btree ("turn_id","stage","created_at");

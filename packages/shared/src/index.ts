@@ -4,6 +4,7 @@ export * from './projects.js';
 export * from './agents.js';
 export * from './chat/index.js';
 export * from './errors.js';
+export * from './pipeline.js';
 
 export const loginRequestSchema = z.object({
   password: z.string().min(1).max(512),

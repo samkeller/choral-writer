@@ -43,6 +43,13 @@
       "when": 1794862921821,
       "tag": "0005_default_agent_prompts",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1794914899022,
+      "tag": "0006_silky_supreme_intelligence",
+      "breakpoints": true
     }
   ]
 }

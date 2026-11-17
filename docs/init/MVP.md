@@ -41,7 +41,7 @@ choral-writer/
 ## 3. Standards de code et de données
 
 - **Zod est la source de vérité.** Un schéma dans `packages/shared` sert à valider l'API, à typer le front et à parser les sorties JSON des LLM.
-- **Un seul point d'appel LLM** : `callLLM({ turnId, agentId, stage, messages, schema? })`. Il écrit systématiquement la trace (prompt, réponse, tokens, durée, erreur). Une sortie JSON invalide est retentée une fois, puis l'entrée du whiteboard est marquée `error` et le pipeline continue.
+- **Un seul point d'appel LLM** : `callLLM({ turnId, agentId, agentVersionId, stage, messages, schema? })`. Il écrit systématiquement la trace (prompt, réponse, tokens, durée, erreur). Une sortie JSON invalide d'un agent d'analyse est retentée une fois ; si l'appel échoue encore, le tour échoue sans lancer la restitution.
 - **Base** : ids UUID v7, `timestamptz`, `snake_case` en base et `camelCase` en TypeScript. Les champs évolutifs sont des `jsonb` versionnés (`v: 1`).
 - **Erreurs API** : format unique `{ error: { code, message } }`.
 - **Événements** : nommage `domaine.objet.action` (ex. `memory.entry.upserted`) avec un payload `jsonb`.
@@ -57,8 +57,7 @@ choral-writer/
 | `project_agent` | association many-to-many, version épinglée par projet |
 | `messages` | `project_id`, `role` (user ou assistant), contenu |
 | `turns` | `project_id`, `user_message_id`, statut, timestamps |
-| `whiteboard_entries` | `turn_id`, `agent_id`, `envelope` jsonb, statut |
-| `llm_calls` | trace : `turn_id`, `agent_id`, étage, requête, réponse, tokens, durée, erreur |
+| `llm_calls` | trace : `turn_id`, `agent_id`, `agent_version_id`, étage, requête, réponse, tokens, durée, erreur |
 | `memories` | `project_id`, nom, `kind` (texte libre), `config` jsonb |
 | `memory_entries` | `memory_id`, `key`, `content`, `version`, `deleted_at` (c'est la **projection**) |
 | `events` | journal append-only : `project_id`, `turn_id`, `type`, `payload`, `seq` |
@@ -84,22 +83,22 @@ Saisie → [0] Prompt utilisateur
   "agent": "Chaos",
   "summary": "Une phrase de synthèse.",
   "items": [
-    { "kind": "observation",    "text": "...", "importance": 2 },
-    { "kind": "recommendation", "text": "...", "importance": 3 },
-    { "kind": "constraint",     "text": "...", "importance": 3 },
-    { "kind": "remember",       "text": "...", "importance": 1 }
+    { "kind": "observation",    "text": "...", "importance": "NORMAL" },
+    { "kind": "recommendation", "text": "...", "importance": "HIGH" },
+    { "kind": "constraint",     "text": "...", "importance": "HIGH" },
+    { "kind": "remember",       "text": "...", "importance": "LOW" }
   ]
 }
 ```
 
-Le champ `kind` est une chaîne libre. Les quatre valeurs ci-dessus sont les conventions de départ, et un nouveau type d'agent peut en inventer d'autres sans toucher au code. Le whiteboard est simplement la liste des enveloppes du tour.
+Le champ `kind` est une chaîne libre. Les quatre valeurs ci-dessus sont les conventions de départ, et un nouveau type d'agent peut en inventer d'autres sans toucher au code. `importance` vaut `LOW` (détail secondaire), `NORMAL` (information pertinente) ou `HIGH` (information qui change sensiblement l'interprétation ou l'action). Le whiteboard n'est pas une table : c'est une vue reconstruite à partir des traces et résultats des étapes pour un tour.
 
 **Narrateur** : un appel en streaming qui lit tout le whiteboard. Sa sortie est délimitée par des balises :
 ```
 <resolution>ce qui se passe réellement, en faits</resolution>
 <prose>le texte lu par le joueur</prose>
 ```
-Le parseur de flux ne transmet au client que le contenu de `<prose>`. La résolution est stockée comme événement.
+Le parseur de flux ne transmet au client que le contenu de `<prose>`. La réponse brute tracée du Narrateur conserve les deux sections, ce qui permet de reconstruire la résolution sans la dupliquer dans une table d'événements.
 
 **Gardien (contrat 4.2)** : un appel unique qui lit le whiteboard, la résolution et la prose. Il retourne des propositions typées :
 ```json
@@ -183,7 +182,8 @@ Sur desktop, trois colonnes : liste des tours à gauche, pipeline au centre, dé
 - *Démontrable* : modifier les instructions du Narrateur change le ton de la réponse.
 
 **M4 : Pipeline whiteboard**
-- Étage Analyse en parallèle, enveloppes validées par Zod et stockées sur le whiteboard.
+- Étage Analyse en parallèle, enveloppes validées par Zod et conservées dans les traces LLM par tour.
+- Whiteboard reconstruit comme une vue des traces ; pas de table de projection dédiée.
 - Narrateur lisant le whiteboard, parseur de balises et streaming de la prose seule.
 - *Démontrable* : trois agents d'analyse (par exemple Cohérence, Chaos, Avocat du diable) influencent visiblement la narration.
 

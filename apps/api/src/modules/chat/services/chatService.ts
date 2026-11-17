@@ -6,10 +6,11 @@ import { prepareTurn } from './prepareTurn.js';
 import type {
   ChatProgressEvent, ChatRunResult, ChatServiceDependencies, ChatTransactionContext, GenerationOutcome,
 } from '../types/chat.types.js';
+import { isAnalysisAgent } from './analysisService.js';
 
 const NARRATOR_CONTEXT_TURN_LIMIT = 20;
 
-/** Coordinates entity services; every send, retry or regeneration is a new execution. */
+/** Coordinates each pipeline stage; every send, retry or regeneration is a new execution. */
 export class ChatService {
   constructor(private readonly dependencies: ChatServiceDependencies) {}
 
@@ -38,6 +39,8 @@ export class ChatService {
     return this.dependencies.withProjectTransaction(command.projectId, async (context) => {
       const input = await prepareTurn(context, command);
       const history = await context.turns.path(input.parentTurnId, NARRATOR_CONTEXT_TURN_LIMIT);
+      const narrator = context.projectAgents.find((agent) => agent.output === 'narrative');
+      if (!narrator) throw new Error('Project has no narrator assignment.');
       const turnId = await context.turns.start(input);
 
       let outcome: GenerationOutcome;
@@ -46,11 +49,22 @@ export class ChatService {
           type: 'chat.turn.started', turnId, branchId: input.branchId,
           operation: command.operation, message: input.userMessage,
         });
+        const whiteboard = await this.dependencies.analyze({
+          turnId,
+          agents: context.projectAgents.filter(isAnalysisAgent),
+          systemPrompt: context.project.systemPrompt,
+          history,
+          userMessage: input.userMessage,
+          signal,
+        });
         const content = await this.dependencies.narrate({
           turnId,
-          systemPrompt: [context.project.systemPrompt, context.narratorInstructions]
-            .filter((instruction): instruction is string => Boolean(instruction))
+          agentId: narrator.agentId,
+          agentVersionId: narrator.versionId,
+          systemPrompt: [context.project.systemPrompt, narrator.instructions]
+            .filter(Boolean)
             .join('\n\n'),
+          whiteboard,
           history,
           userMessage: input.userMessage,
           signal,
