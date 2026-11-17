@@ -30,6 +30,7 @@ export function MessageComposer({ pending, onSend }: {
     <form onSubmit={submit}>
       <Stack gap="sm">
         <Textarea
+          aria-label="Votre message"
           onChange={(event) => setContent(event.currentTarget.value)}
           minRows={3} autosize maxRows={8} maxLength={20_000} disabled={pending}
         />

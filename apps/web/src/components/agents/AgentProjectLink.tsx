@@ -15,14 +15,14 @@ export function AgentProjectLink({ versionId }: { versionId: string }) {
       )}
       {!projects.loading && !projects.error && (
         <>
-          <Select aria-label="Projet à configurer" searchable placeholder="Choisir un projet"
+          {projects.projects.length > 0 && <Select aria-label="Projet à configurer" searchable placeholder="Choisir un projet"
             value={projectId} onChange={setProjectId}
-            data={projects.projects.map((project) => ({ value: project.id, label: project.name }))} />
+            data={projects.projects.map((project) => ({ value: project.id, label: project.name }))} />}
           {projectId && (
             <Button component={Link} variant="light"
               to={`/projects/${projectId}?setup=agents&agentVersion=${versionId}`}>Configurer ce projet</Button>
           )}
-          {projects.projects.length === 0 && <Text size="sm" c="dimmed">Créez d’abord un projet.</Text>}
+          {projects.projects.length === 0 && <Text size="sm" c="dimmed">Aucun projet disponible.</Text>}
         </>
       )}
     </Stack>

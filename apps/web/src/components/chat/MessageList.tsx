@@ -43,7 +43,12 @@ export function MessageList({ messages, partial, pending }: MessageListProps) {
             </Text>
           </Paper>
         ))}
-        {(pending || partial) &&  <Loader size="sm" color="choral.3" />}
+        {partial && (
+          <Paper p="md" className={styles.assistantMessage}>
+            <Text className={styles.assistantContent}>{partial}</Text>
+          </Paper>
+        )}
+        {pending && <Loader size="sm" color="choral.3" aria-label="Génération en cours" />}
       </Stack>
     </ScrollArea.Autosize>
   );

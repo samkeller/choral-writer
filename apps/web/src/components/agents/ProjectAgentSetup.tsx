@@ -1,11 +1,13 @@
-import { ActionIcon, Alert, Button, Checkbox, Divider, Group, Loader, Paper, Select, Stack, Text, Title, Tooltip } from '@mantine/core';
+import { Alert, Button, Checkbox, Divider, Group, Loader, Paper, Select, Stack, Text, Title } from '@mantine/core';
 import { Link } from 'react-router-dom';
 import type { Agent } from '@choral-writer/shared';
 
 import { useProjectSetup } from '../../hooks/useProjectSetup.js';
 import { AgentVersionDetails } from './AgentVersionDetails.js';
 import styles from './AgentSurface.module.css';
-import { IconCircle1, IconCircle2, IconLibrary } from '@tabler/icons-react';
+import { IconLibrary } from '@tabler/icons-react';
+import { PhaseTag } from '../phases/PhaseTag.js';
+import { IconAction } from '../atoms/IconAction.js';
 
 export function ProjectAgentSetup({ projectId, suggestedVersion }: {
   projectId: string;
@@ -25,11 +27,9 @@ export function ProjectAgentSetup({ projectId, suggestedVersion }: {
       <Stack gap="xs">
         <Group justify='space-between'>
           <Text fw={600}>Agents</Text>
-          <Tooltip label="Voir la bibliothèque" position="left" withArrow>
-            <ActionIcon component={Link} to="/agents">
-              <IconLibrary size={16} />
-            </ActionIcon>
-          </Tooltip>
+          <IconAction component={Link} to="/agents" label="Voir la bibliothèque">
+            <IconLibrary size={18} aria-hidden="true" />
+          </IconAction>
         </Group>
       </Stack>
       {setup.loading && <Loader aria-label="Chargement de la configuration" />}
@@ -42,9 +42,8 @@ export function ProjectAgentSetup({ projectId, suggestedVersion }: {
         <>
 
           <Stack gap="md">
-            <Group>
-              <IconCircle1 size={24} />
-              <Title order={4}>Analyse</Title>
+            <Group gap="sm">
+              <Title order={4} size="sm"><PhaseTag phase="analysis" /></Title>
             </Group>
             {setup.agents.filter((agent) => agent.output === 'envelope').map((agent) => {
               const selected = agent.versions.find((version) => setup.versionIds.includes(version.id));
@@ -77,9 +76,8 @@ export function ProjectAgentSetup({ projectId, suggestedVersion }: {
           </Stack>
           <Divider />
           <Stack gap="lg">
-            <Group>
-              <IconCircle2 size={24} />
-              <Title order={4}>Restitution</Title>
+            <Group gap="sm">
+              <Title order={4} size="sm"><PhaseTag phase="restitution" /></Title>
             </Group>
             {(['narrative', 'memory_proposals'] as const).map((output) => {
               const eligible = setup.agents.filter((agent) => agent.output === output);

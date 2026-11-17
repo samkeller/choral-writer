@@ -6,11 +6,11 @@ import { BrowserRouter } from 'react-router-dom';
 import '@mantine/core/styles.css';
 import './styles.css';
 import { App } from './App.js';
-import { theme } from './theme/theme.js';
+import { cssVariablesResolver, theme } from './theme/theme.js';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <MantineProvider defaultColorScheme="dark" theme={theme}>
+    <MantineProvider forceColorScheme="dark" theme={theme} cssVariablesResolver={cssVariablesResolver}>
       <BrowserRouter>
         <App />
       </BrowserRouter>

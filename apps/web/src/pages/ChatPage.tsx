@@ -1,6 +1,6 @@
-import { ActionIcon, Alert, Button, Center, Code, Drawer, Group, Loader, Popover, ScrollArea, Select, Stack, Text, Tooltip } from '@mantine/core';
+import { Alert, Button, Center, Code, Drawer, Group, Loader, Popover, ScrollArea, Select, Stack, Text } from '@mantine/core';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { IconAdjustmentsHorizontal, IconInfoCircle, IconRefresh } from '@tabler/icons-react';
+import { IconAdjustmentsHorizontal, IconArrowLeft, IconInfoCircle, IconRefresh } from '@tabler/icons-react';
 import { projectParamsSchema } from '@choral-writer/shared';
 
 import { PageHeader } from '../components/PageHeader.js';
@@ -9,6 +9,7 @@ import { MessageList } from '../components/chat/MessageList.js';
 import { ProjectAgentSetup } from '../components/agents/ProjectAgentSetup.js';
 import { useChat } from '../hooks/useChat.js';
 import { NotFoundPage } from './NotFoundPage.js';
+import { IconAction } from '../components/atoms/IconAction.js';
 
 export function ChatPage() {
   const params = projectParamsSchema.safeParse(useParams());
@@ -31,11 +32,13 @@ function ProjectChat({ projectId }: { projectId: string }) {
       <PageHeader
         title={chat.project?.name ?? 'Conversation'}
         actions={<Group gap="xs">
-          <Button variant="light" leftSection={<IconAdjustmentsHorizontal size={16} />} disabled={chat.pending}
+          <IconAction label="Configuration" disabled={chat.pending}
             onClick={() => setSearch((current) => { current.set('setup', 'agents'); return current; })}>
-            Configuration
-          </Button>
-          <Button component={Link} to="/projects" variant="subtle">Tous les projets</Button>
+            <IconAdjustmentsHorizontal size={18} aria-hidden="true" />
+          </IconAction>
+          <IconAction component={Link} to="/projects" label="Tous les projets">
+            <IconArrowLeft size={18} aria-hidden="true" />
+          </IconAction>
         </Group>}
       />
       {chat.error && (
@@ -68,20 +71,9 @@ function ProjectChat({ projectId }: { projectId: string }) {
             />
             <Popover position="bottom-end" withArrow shadow="md" width={380}>
               <Popover.Target>
-                <Tooltip
-                  label="Voir le prompt système du projet"
-                  withArrow
-                >
-                  <ActionIcon
-                    variant="subtle"
-                    color="gray"
-                    size="lg"
-                    radius="xl"
-                    aria-label="Afficher le prompt système"
-                  >
-                    <IconInfoCircle size={19} />
-                  </ActionIcon>
-                </Tooltip>
+                <IconAction label="Afficher le prompt système">
+                  <IconInfoCircle size={18} aria-hidden="true" />
+                </IconAction>
               </Popover.Target>
 
               <Popover.Dropdown>
@@ -102,33 +94,17 @@ function ProjectChat({ projectId }: { projectId: string }) {
           {head && (
             <Group justify="flex-end" gap={4}>
               {head.status === 'completed' && (
-                <Tooltip label="Régénérer la réponse" withArrow>
-                  <ActionIcon
-                    variant="subtle"
-                    color="gray"
-                    disabled={chat.pending}
-                    aria-label="Régénérer la réponse"
-                    onClick={() => void chat.regenerate()}
-                  >
-                    <IconRefresh size={18} />
-                  </ActionIcon>
-                </Tooltip>
+                <IconAction label="Régénérer la réponse" disabled={chat.pending} onClick={() => void chat.regenerate()}>
+                  <IconRefresh size={18} aria-hidden="true" />
+                </IconAction>
               )}
 
               {head.status === 'failed' && (
                 <>
                   <Text c="red" size="xs">{head.error}</Text>
-                  <Tooltip label="Réessayer la réponse" withArrow>
-                    <ActionIcon
-                      variant="subtle"
-                      color="red"
-                      disabled={chat.pending}
-                      aria-label="Réessayer la réponse"
-                      onClick={() => void chat.retry()}
-                    >
-                      <IconRefresh size={18} />
-                    </ActionIcon>
-                  </Tooltip>
+                  <IconAction label="Réessayer la réponse" color="red" disabled={chat.pending} onClick={() => void chat.retry()}>
+                    <IconRefresh size={18} aria-hidden="true" />
+                  </IconAction>
                 </>
               )}
             </Group>

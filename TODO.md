@@ -6,11 +6,11 @@ Project Description
 
 ### Todo
 - [ ] [MID][Back] repenser fonctions accessoires api/src/App.ts:buildApp(), api/src/server.ts:main (plein de fonctions de ce genre - semblent accessoires) 
-- [ ] [MID][Web] Donner aux "phases" une véritable identité graphique (icon spécifique, couleur) réutilisée et harmonisée partout. Tag pour afficher les phases ?
 
 ### In Progress
 
 
 ### Done ✓
 
+- [x] [MID][Web] Identité des phases harmonisée : tag partagé, icône et couleur propres à Analyse/Restitution, bibliothèque et configuration projet.
 

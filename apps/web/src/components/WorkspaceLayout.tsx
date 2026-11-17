@@ -1,11 +1,13 @@
 import { useState } from 'react';
-import { Alert, AppShell, Box, Button, Container, Group, Stack, Text } from '@mantine/core';
+import { Alert, AppShell, Box, Container, Group, Stack } from '@mantine/core';
+import { IconLogout } from '@tabler/icons-react';
 import { Outlet } from 'react-router-dom';
 
 import { getErrorMessage } from '../api/client.js';
 import { useAuth } from '../auth/AuthProvider.js';
 import { Brand } from './Brand.js';
 import { WorkspaceNavigation } from './WorkspaceNavigation.js';
+import { IconAction } from './atoms/IconAction.js';
 import styles from './WorkspaceLayout.module.css';
 
 export function WorkspaceLayout() {
@@ -36,24 +38,22 @@ export function WorkspaceLayout() {
       <AppShell.Header px="md">
         <Group h="100%" justify="space-between" gap="sm">
           <Box hiddenFrom="sm"><Brand /></Box>
-          <Button
-            variant="subtle" color="gray" size="xs" hiddenFrom="sm"
+          <IconAction label="Déconnexion" hiddenFrom="sm"
             loading={pending} onClick={() => void handleLogout()}
           >
-            Déconnexion
-          </Button>
+            <IconLogout size={18} aria-hidden="true" />
+          </IconAction>
         </Group>
       </AppShell.Header>
       <AppShell.Navbar p="md" className={styles.navbar}>
         <Stack h="100%" gap="md">
           <Brand />
           <WorkspaceNavigation />
-          <Button
-            variant="subtle" color="gray" mt="auto"
+          <IconAction label="Se déconnecter" mt="auto"
             loading={pending} onClick={() => void handleLogout()}
           >
-            Se déconnecter
-          </Button>
+            <IconLogout size={18} aria-hidden="true" />
+          </IconAction>
         </Stack>
       </AppShell.Navbar>
       <AppShell.Main className={styles.main}>

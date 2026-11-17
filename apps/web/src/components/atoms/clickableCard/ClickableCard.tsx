@@ -6,14 +6,11 @@ import styles from './ClickableCard.module.css';
 
 interface ClickableCardProps {
     to: string;
+    label: string;
     children: ReactNode;
 }
 
-/**
- * Card clickable
- * @returns 
- */
-export function ClickableCard({ to, children }: ClickableCardProps) {
+export function ClickableCard({ to, label, children }: ClickableCardProps) {
     return (
         <Paper
             withBorder
@@ -25,8 +22,7 @@ export function ClickableCard({ to, children }: ClickableCardProps) {
                 component={Link}
                 to={to}
                 className={styles.link}
-                aria-label="Ouvrir"
-                tabIndex={-1}
+                aria-label={label}
             />
 
             <div className={styles.content}>

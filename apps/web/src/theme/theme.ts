@@ -1,9 +1,28 @@
-import { Code, createTheme } from '@mantine/core';
-import { ThemeCode } from './mantine/ThemeCode';
+import { createTheme, defaultVariantColorsResolver, parseThemeColor, type CSSVariablesResolver } from '@mantine/core';
+import { ThemeCode } from './mantine/ThemeCode.js';
+
+export const cssVariablesResolver: CSSVariablesResolver = (theme) => ({
+  variables: {},
+  light: {},
+  dark: {
+    '--mantine-color-dimmed': theme.colors.dark[2],
+    '--mantine-color-placeholder': theme.colors.dark[3],
+  },
+});
 
 export const theme = createTheme({
   primaryColor: 'choral',
-  primaryShade: { light: 6, dark: 5 },
+  primaryShade: 5,
+  autoContrast: true,
+  variantColorResolver: (input) => {
+    const resolved = defaultVariantColorsResolver(input);
+    const parsed = parseThemeColor({ color: input.color || input.theme.primaryColor, theme: input.theme });
+    if (!parsed.isThemeColor || !['light', 'subtle', 'outline'].includes(input.variant)) return resolved;
+    return {
+      ...resolved,
+      color: `var(--mantine-color-${parsed.color}-2)`,
+    };
+  },
   colors: {
     choral: [
       '#e7fff5',
@@ -83,7 +102,8 @@ export const theme = createTheme({
     PasswordInput: { defaultProps: { radius: 'md' } },
     Textarea: { defaultProps: { radius: 'md' } },
     Paper: { defaultProps: { radius: 'md' } },
-    Modal: { defaultProps: { centered: true } },
+    Modal: { defaultProps: { centered: true, closeButtonProps: { 'aria-label': 'Fermer' } } },
+    Drawer: { defaultProps: { closeButtonProps: { 'aria-label': 'Fermer' } } },
     Code: ThemeCode
   },
 });

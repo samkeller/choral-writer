@@ -1,18 +1,19 @@
 // @vitest-environment jsdom
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 import { AxiosError, type AxiosAdapter, type InternalAxiosRequestConfig } from 'axios';
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import {
-  projectInputSchema, projectAgentsInputSchema, publishAgentVersionSchema,
+  agentInputSchema, projectInputSchema, projectAgentsInputSchema, publishAgentVersionSchema,
   type Agent, type PublishAgentVersion, type ChatBranch, type ChatEvent, type ChatHistory, type ProjectAgent,
   type Message, type Project,
 } from '@choral-writer/shared';
 
 import { api, ClientApiError } from './api/client.js';
 import { App } from './App.js';
+import { cssVariablesResolver, theme } from './theme/theme.js';
 
 const originalAdapter = api.defaults.adapter;
 const adapter = vi.fn<AxiosAdapter>();
@@ -38,7 +39,7 @@ function LocationProbe() {
 
 function renderApp(path: string) {
   return render(
-    <MantineProvider env="test">
+    <MantineProvider env="test" forceColorScheme="dark" theme={theme} cssVariablesResolver={cssVariablesResolver}>
       <MemoryRouter initialEntries={[path]}>
         <App />
         <LocationProbe />
@@ -196,7 +197,7 @@ describe('agent configuration', () => {
 
     renderApp('/agents');
     await screen.findByRole('heading', { name: 'Narrateur' });
-    fireEvent.click(screen.getByRole('button', { name: /Narrateur.*v1/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Consulter Narrateur' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Nouvelle version' }));
     fireEvent.change(screen.getByLabelText('Instructions'), {
       target: { value: 'Raconte avec un ton léger.' },
@@ -206,6 +207,158 @@ describe('agent configuration', () => {
     await waitFor(() => expect(savedInput?.instructions).toBe('Raconte avec un ton léger.'));
     expect(savedInput).toMatchObject({ expectedVersion: 1 });
     expect(saved.versions[1]?.instructions).toBe('');
+    await screen.findByText('Raconte avec un ton léger.');
+    expect(screen.getByRole('button', { name: 'Réduire Narrateur' }).getAttribute('aria-expanded')).toBe('true');
+  });
+
+  const createdAt = '2026-11-16T08:00:00.000Z';
+  const narrator: Agent = {
+    id: '019ad30c-19b0-7000-8000-000000000301', phase: 'restitution', output: 'narrative', createdAt,
+    versions: [{
+      id: '019ad30c-19b0-7000-8000-000000000302', version: 2, name: 'Narrateur',
+      instructions: 'Instructions actuelles.', createdAt,
+    }, {
+      id: '019ad30c-19b0-7000-8000-000000000303', version: 1, name: 'Ancienne voix',
+      instructions: 'Instructions historiques.', createdAt,
+    }],
+    projects: [{
+      id: '019ad30c-19b0-7000-8000-000000000304', name: 'Récit historique',
+      versionId: '019ad30c-19b0-7000-8000-000000000303',
+    }],
+  };
+  const observer: Agent = {
+    ...narrator, id: '019ad30c-19b0-7000-8000-000000000305', phase: 'analysis', output: 'envelope',
+    versions: [{ ...narrator.versions[0]!, id: '019ad30c-19b0-7000-8000-000000000306', name: 'Observateur' }],
+    projects: [],
+  };
+
+  function mockLibrary(agents: Agent[]) {
+    adapter.mockImplementation(async (config) => {
+      if (config.url === '/session') return respond(config, 200, { authenticated: true });
+      if (config.url === '/agents') return respond(config, 200, agents);
+      if (config.url === '/projects') return respond(config, 200, []);
+      throw new Error(`Unexpected request: ${config.method} ${config.url}`);
+    });
+  }
+
+  it('consults historical versions inline and keeps agent sections independent', async () => {
+    mockLibrary([narrator, observer]);
+    renderApp('/agents');
+    const consult = await screen.findByRole('button', { name: 'Consulter Narrateur' });
+    expect(consult.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.focus(consult);
+    await screen.findByRole('tooltip', { name: 'Consulter Narrateur' });
+    fireEvent.blur(consult);
+    fireEvent.click(consult);
+
+    const details = screen.getByRole('region', { name: 'Narrateur' });
+    expect(details.id).toBe(consult.getAttribute('aria-controls'));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(within(details).getByText('Cette version n’est liée à aucun projet.')).toBeTruthy();
+    fireEvent.click(within(details).getByLabelText('Version consultée', { selector: 'input' }));
+    fireEvent.click(await screen.findByRole('option', { name: /v1 · Ancienne voix/ }));
+    expect(within(details).getByText('Instructions historiques.')).toBeTruthy();
+    expect(within(details).getByRole('link', { name: 'Configurer Récit historique' }).getAttribute('href'))
+      .toContain(`/projects/${narrator.projects[0]!.id}?setup=agents`);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Consulter Observateur' }));
+    expect(screen.getByRole('region', { name: 'Narrateur' })).toBeTruthy();
+    expect(within(details).getByText('Instructions historiques.')).toBeTruthy();
+    expect(screen.getByRole('region', { name: 'Observateur' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Réduire Observateur' }));
+    expect(screen.queryByRole('region', { name: 'Observateur' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Consulter Observateur' }).getAttribute('aria-expanded')).toBe('false');
+    expect(screen.getByRole('region', { name: 'Narrateur' })).toBeTruthy();
+  });
+
+  it('combines phase and historical-name filters and offers a reset', async () => {
+    mockLibrary([narrator, observer]);
+    renderApp('/agents');
+    await screen.findByRole('heading', { name: 'Narrateur' });
+    fireEvent.change(screen.getByLabelText('Rechercher un agent'), { target: { value: 'ancienne' } });
+    expect(screen.getByRole('heading', { name: 'Narrateur' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Observateur' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Filtrer par phase' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'Analyse' }));
+    expect(within(screen.getByRole('button', { name: 'Filtrer par phase' })).getByText('Analyse')).toBeTruthy();
+    expect(screen.getByText('Aucun agent ne correspond à cette recherche.')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Réinitialiser les filtres' }));
+    expect(screen.getByRole('heading', { name: 'Narrateur' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Observateur' })).toBeTruthy();
+  });
+
+  it('reveals a newly created agent even when the previous filters would hide it', async () => {
+    let agents = [narrator];
+    adapter.mockImplementation(async (config) => {
+      if (config.url === '/session') return respond(config, 200, { authenticated: true });
+      if (config.url === '/projects') return respond(config, 200, []);
+      if (config.url === '/agents' && config.method === 'get') return respond(config, 200, agents);
+      if (config.url === '/agents' && config.method === 'post') {
+        const input = agentInputSchema.parse(JSON.parse(String(config.data)));
+        agents = [...agents, { ...observer, ...input, versions: [{
+          ...observer.versions[0]!, name: input.name, instructions: input.instructions,
+        }] }];
+        return respond(config, 201, agents[1]);
+      }
+      throw new Error(`Unexpected request: ${config.method} ${config.url}`);
+    });
+
+    renderApp('/agents');
+    await screen.findByRole('heading', { name: 'Narrateur' });
+    fireEvent.change(screen.getByLabelText('Rechercher un agent'), { target: { value: 'introuvable' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Nouvel agent' }));
+    fireEvent.change(screen.getByLabelText('Nom', { exact: false, selector: 'input' }), { target: { value: 'Observateur' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Créer l’agent' }));
+    await screen.findByRole('region', { name: 'Observateur' });
+    expect(screen.getByLabelText('Rechercher un agent').getAttribute('value')).toBe('');
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('uses phase tags in output choices and updates the selected agent phase', async () => {
+    mockLibrary([]);
+    renderApp('/agents');
+    fireEvent.click(await screen.findByRole('button', { name: 'Nouvel agent' }));
+    const dialog = screen.getByRole('dialog');
+    const phase = within(dialog).getByRole('status', { name: 'Phase de l’agent' });
+    expect(phase.textContent).toBe('Analyse');
+    fireEvent.click(within(dialog).getByLabelText('Contrat de sortie', { selector: 'input' }));
+    const narrative = await screen.findByRole('option', { name: /Restitution Réponse utilisateur/ });
+    expect(within(narrative).getByText('Restitution')).toBeTruthy();
+    fireEvent.click(narrative);
+    expect(phase.textContent).toBe('Restitution');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Fermer' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('keeps deletion errors visible and removes the agent only after success', async () => {
+    let agents = [narrator];
+    let attempts = 0;
+    adapter.mockImplementation(async (config) => {
+      if (config.url === '/session') return respond(config, 200, { authenticated: true });
+      if (config.url === '/projects') return respond(config, 200, []);
+      if (config.url === '/agents') return respond(config, 200, agents);
+      if (config.url === `/agents/${narrator.id}` && config.method === 'delete') {
+        attempts++;
+        if (attempts === 1) return respond(config, 409, {
+          error: { code: 'AGENT_IN_USE', message: 'Cet agent est utilisé par un projet.', status: 409, source: 'application' },
+        });
+        agents = [];
+        return respond(config, 204, undefined);
+      }
+      throw new Error(`Unexpected request: ${config.method} ${config.url}`);
+    });
+    renderApp('/agents');
+    fireEvent.click(await screen.findByRole('button', { name: 'Consulter Narrateur' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Supprimer l’agent' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmer la suppression' }));
+    await screen.findByText('Cet agent est utilisé par un projet.');
+    fireEvent.click(screen.getByRole('button', { name: 'Annuler' }));
+    expect(screen.getByRole('region', { name: 'Narrateur' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Supprimer l’agent' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmer la suppression' }));
+    await screen.findByText('Votre bibliothèque est encore vide.');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(attempts).toBe(2);
   });
 });
 
@@ -443,6 +596,9 @@ describe('projects and chat screens', () => {
     const emit = (event: ChatEvent) => controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(event)}\n\n`));
     const view = renderApp(`/projects/${project.id}`);
     await screen.findByText('Réponse originale.');
+    fireEvent.click(screen.getByRole('button', { name: 'Afficher le prompt système' }));
+    await screen.findByText(project.systemPrompt);
+    fireEvent.click(screen.getByRole('button', { name: 'Afficher le prompt système' }));
     fireEvent.click(screen.getByRole('button', { name: 'Régénérer la réponse' }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     expect(fetchMock.mock.calls[0][0]).toBe(

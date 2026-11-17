@@ -1,6 +1,5 @@
 import { useState } from 'react';
-import { ActionIcon, Alert, Button, Center, Code, Group, Loader, Modal, Paper, SimpleGrid, Stack, Text, Title, Tooltip } from '@mantine/core';
-import { Link } from 'react-router-dom';
+import { Alert, Button, Center, Code, Group, Loader, Modal, Paper, SimpleGrid, Stack, Text, Title } from '@mantine/core';
 import type { Project, ProjectInput } from '@choral-writer/shared';
 
 import { createProject, deleteProject, updateProject } from '../api/projects.js';
@@ -8,8 +7,9 @@ import { getErrorMessage } from '../api/client.js';
 import { PageHeader } from '../components/PageHeader.js';
 import { ProjectForm } from '../components/projects/ProjectForm.js';
 import { useProjects } from '../hooks/useProjects.js';
-import { IconEdit, IconMessageCircle, IconTrash, IconUsers } from '@tabler/icons-react';
+import { IconEdit, IconTrash } from '@tabler/icons-react';
 import { ClickableCard } from '../components/atoms/clickableCard/ClickableCard.js';
+import { IconAction } from '../components/atoms/IconAction.js';
 
 export function ProjectsPage() {
   const { projects, loading, error, reload } = useProjects();
@@ -44,7 +44,6 @@ export function ProjectsPage() {
     <Stack gap="lg">
       <PageHeader
         title="Projets"
-        description="Un monde, un prompt système et une conversation indépendante par projet."
         actions={<Button onClick={() => setEditing(null)}>Nouveau projet</Button>}
       />
       {loading && <Center py="xl"><Loader color="choral" aria-label="Chargement des projets" /></Center>}
@@ -69,6 +68,7 @@ export function ProjectsPage() {
           <ClickableCard
             key={project.id}
             to={`/projects/${project.id}`}
+            label={`Ouvrir ${project.name}`}
           >
             <Stack gap="sm">
               <Group justify="space-between" align="center">
@@ -77,28 +77,15 @@ export function ProjectsPage() {
                 </Title>
 
                 <Group gap={4}>
-                  <Tooltip label="Modifier">
-                    <ActionIcon
-                      variant="subtle"
-                      color="gray"
-                      onClick={() => setEditing(project)}
-                    >
-                      <IconEdit size={18} />
-                    </ActionIcon>
-                  </Tooltip>
-
-                  <Tooltip label="Supprimer">
-                    <ActionIcon
-                      variant="subtle"
-                      color="red"
-                      onClick={() => {
-                        setDeleteError('');
-                        setDeleting(project);
-                      }}
-                    >
-                      <IconTrash size={18} />
-                    </ActionIcon>
-                  </Tooltip>
+                  <IconAction label="Modifier" onClick={() => setEditing(project)}>
+                    <IconEdit size={18} aria-hidden="true" />
+                  </IconAction>
+                  <IconAction label="Supprimer" color="red" onClick={() => {
+                    setDeleteError('');
+                    setDeleting(project);
+                  }}>
+                    <IconTrash size={18} aria-hidden="true" />
+                  </IconAction>
                 </Group>
               </Group>
 

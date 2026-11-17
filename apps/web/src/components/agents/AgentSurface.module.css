@@ -1,4 +1,22 @@
 .surface {
-  background: light-dark(var(--mantine-color-white), var(--mantine-color-dark-8));
-  border-color: light-dark(var(--mantine-color-gray-3), var(--mantine-color-dark-6));
+  background: var(--mantine-color-dark-8);
+  border-color: var(--mantine-color-dark-6);
+}
+
+.agentCard {
+  border-inline-start: 3px solid var(--agent-phase-color);
+}
+
+.agentCard[data-expanded] {
+  border-color: var(--agent-phase-color);
+  box-shadow: var(--mantine-shadow-xs);
+}
+
+.summary {
+  flex: 1;
+  min-width: 0;
+}
+
+.name {
+  overflow-wrap: anywhere;
 }
