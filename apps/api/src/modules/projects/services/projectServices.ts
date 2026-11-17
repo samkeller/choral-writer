@@ -1,9 +1,9 @@
 import type { Project, ProjectInput } from '@choral-writer/shared';
-
-import type { Database, Transaction } from '../../db/client.js';
-import { ApiError, isLockConflict } from '../../errors.js';
-import type { ChatBranchService } from '../chat/services/branchService.js';
-import { ProjectRepository } from './repository.js';
+import type { Database, Transaction } from '../../../db/client.js';
+import { ApiError, isLockConflict } from '../../../errors/errors.js';
+import type { ChatBranchService } from '../../chat/services/branchService.js';
+import { AgentRepository } from '../../agents/repository/agentsRepository.js';
+import { ProjectRepository } from '../repositories/projectRepository.js';
 
 type BranchesForTransaction = (tx: Transaction, projectId: string) => ChatBranchService;
 
@@ -32,6 +32,7 @@ export class ProjectsService {
     return this.database.transaction(async (tx) => {
       const repository = new ProjectRepository(tx);
       const project = await repository.create(input);
+      await new AgentRepository(tx).createDefaults(project.id);
       const branch = await this.branchesForTransaction(tx, project.id).createMain();
       return repository.setDefaultBranch(project.id, branch.id);
     });

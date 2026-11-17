@@ -5,7 +5,11 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { MantineProvider } from '@mantine/core';
 import { AxiosError, type AxiosAdapter, type InternalAxiosRequestConfig } from 'axios';
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
-import { projectInputSchema, type ChatBranch, type ChatEvent, type ChatHistory, type Message, type Project } from '@choral-writer/shared';
+import {
+  projectInputSchema, projectAgentsInputSchema, publishAgentVersionSchema,
+  type Agent, type PublishAgentVersion, type ChatBranch, type ChatEvent, type ChatHistory, type ProjectAgent,
+  type Message, type Project,
+} from '@choral-writer/shared';
 
 import { api, ClientApiError } from './api/client.js';
 import { App } from './App.js';
@@ -151,6 +155,60 @@ describe('routing and authentication', () => {
   });
 });
 
+describe('agent configuration', () => {
+  it('publishes a new immutable version from the global library', async () => {
+    const project: Project = {
+      id: '019ad30c-19b0-7000-8000-000000000101',
+      defaultBranchId: null,
+      name: 'Mon histoire',
+      systemPrompt: 'Tu es le narrateur.',
+      createdAt: '2026-11-16T08:00:00.000Z',
+      updatedAt: '2026-11-16T08:00:00.000Z',
+    };
+    let saved: Agent = {
+      id: '019ad30c-19b0-7000-8000-000000000102',
+      phase: 'restitution',
+      output: 'narrative',
+      createdAt: project.createdAt,
+      versions: [{
+        id: '019ad30c-19b0-7000-8000-000000000103', version: 1, name: 'Narrateur',
+        instructions: '', createdAt: project.createdAt,
+      }],
+      projects: [],
+    };
+    let savedInput: PublishAgentVersion | null = null;
+    adapter.mockImplementation(async (config) => {
+      if (config.url === '/session') return respond(config, 200, { authenticated: true });
+      if (config.url === '/projects') return respond(config, 200, [project]);
+      if (config.url === '/agents' && config.method === 'get') {
+        return respond(config, 200, [saved]);
+      }
+      if (config.url === `/agents/${saved.id}/versions` && config.method === 'post') {
+        savedInput = publishAgentVersionSchema.parse(JSON.parse(String(config.data)));
+        saved = { ...saved, versions: [{
+          ...saved.versions[0]!, id: '019ad30c-19b0-7000-8000-000000000104',
+          name: savedInput.name, instructions: savedInput.instructions, version: 2,
+        }, ...saved.versions] };
+        return respond(config, 200, saved);
+      }
+      throw new Error(`Unexpected request: ${config.method} ${config.url}`);
+    });
+
+    renderApp('/agents');
+    await screen.findByRole('heading', { name: 'Narrateur' });
+    fireEvent.click(screen.getByRole('button', { name: /Narrateur.*v1/ }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Nouvelle version' }));
+    fireEvent.change(screen.getByLabelText('Instructions'), {
+      target: { value: 'Raconte avec un ton léger.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Publier la version' }));
+
+    await waitFor(() => expect(savedInput?.instructions).toBe('Raconte avec un ton léger.'));
+    expect(savedInput).toMatchObject({ expectedVersion: 1 });
+    expect(saved.versions[1]?.instructions).toBe('');
+  });
+});
+
 describe('projects and chat screens', () => {
   const project: Project = {
     id: '019ad30c-19b0-7000-8000-000000000001',
@@ -215,6 +273,67 @@ describe('projects and chat screens', () => {
     }
     return { original, histories, alternativeId, newTurnId, alternative, user };
   }
+
+  it('shows pinned agents in project setup and explicitly upgrades only the chosen version', async () => {
+    const { original } = existingChat();
+    const chatAdapter = adapter.getMockImplementation()!;
+    const narrative: Agent = {
+      id: '019ad30c-19b0-7000-8000-000000000201', phase: 'restitution', output: 'narrative',
+      createdAt: project.createdAt, projects: [{ id: project.id, name: project.name,
+        versionId: '019ad30c-19b0-7000-8000-000000000202' }],
+      versions: [2, 1].map((version) => ({
+        id: `019ad30c-19b0-7000-8000-00000000020${version + 1}`,
+        version, name: 'Narrateur', instructions: `Ton v${version}`, createdAt: project.createdAt,
+      })),
+    };
+    const guardian: Agent = {
+      id: '019ad30c-19b0-7000-8000-000000000204', phase: 'restitution', output: 'memory_proposals',
+      createdAt: project.createdAt, projects: [],
+      versions: [{ id: '019ad30c-19b0-7000-8000-000000000205', version: 1,
+        name: 'Gardien', instructions: '', createdAt: project.createdAt }],
+    };
+    const oldVersion = narrative.versions[1]!;
+    const memoryVersion = guardian.versions[0]!;
+    let assignments: ProjectAgent[] = [
+      { agentId: narrative.id, versionId: oldVersion.id, phase: narrative.phase, output: narrative.output,
+        name: oldVersion.name, instructions: oldVersion.instructions, version: 1 },
+      { agentId: guardian.id, versionId: memoryVersion.id, phase: guardian.phase, output: guardian.output,
+        name: memoryVersion.name, instructions: memoryVersion.instructions, version: 1 },
+    ];
+    let writes = 0;
+    adapter.mockImplementation(async (config) => {
+      if (config.url === '/agents') return respond(config, 200, [narrative, guardian]);
+      if (config.url === `/projects/${project.id}/branches/${branch.id}/history`) {
+        return respond(config, 200, { branch: { ...original.branch, headTurnId: null }, turns: [] });
+      }
+      if (config.url === `/projects/${project.id}/agents`) {
+        if (config.method === 'put') {
+          writes++;
+          const input = projectAgentsInputSchema.parse(JSON.parse(String(config.data)));
+          assignments = input.agents.map((selection) => {
+            const agent = [narrative, guardian].find((entry) => entry.id === selection.agentId)!;
+            const version = agent.versions.find((entry) => entry.id === selection.versionId)!;
+            return { ...selection, phase: agent.phase, output: agent.output, version: version.version,
+              name: version.name, instructions: version.instructions };
+          });
+        }
+        return respond(config, 200, assignments);
+      }
+      return chatAdapter(config);
+    });
+
+    renderApp(`/projects/${project.id}?setup=agents`);
+    const responseSelect = await screen.findByLabelText('Réponse utilisateur · Narrateur', { selector: 'input' });
+    await waitFor(() => expect(responseSelect.getAttribute('value')).toBe('Narrateur · v1'));
+    expect(writes).toBe(0);
+    fireEvent.click(responseSelect);
+    fireEvent.click(await screen.findByRole('option', { name: 'Narrateur · v2' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Enregistrer la configuration' }));
+    await screen.findByText('Configuration enregistrée. Elle sera utilisée au prochain tour.');
+    expect(writes).toBe(1);
+    expect(assignments.find((entry) => entry.output === 'narrative')?.version).toBe(2);
+    expect(assignments.find((entry) => entry.output === 'memory_proposals')?.versionId).toBe(memoryVersion.id);
+  });
 
   it('creates, edits, and deletes a project through the forms', async () => {
     let saved: Project | null = null;

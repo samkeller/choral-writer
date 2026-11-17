@@ -1,11 +1,12 @@
-import { Alert, Button, Center, Group, Loader, Select, Stack, Text } from '@mantine/core';
-import { Link, useParams } from 'react-router-dom';
+import { ActionIcon, Alert, Button, Center, Code, Drawer, Group, Loader, Popover, ScrollArea, Select, Stack, Text, Tooltip } from '@mantine/core';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { IconAdjustmentsHorizontal, IconInfoCircle, IconRefresh } from '@tabler/icons-react';
 import { projectParamsSchema } from '@choral-writer/shared';
 
 import { PageHeader } from '../components/PageHeader.js';
 import { MessageComposer } from '../components/chat/MessageComposer.js';
 import { MessageList } from '../components/chat/MessageList.js';
-import styles from './ChatPage.module.css';
+import { ProjectAgentSetup } from '../components/agents/ProjectAgentSetup.js';
 import { useChat } from '../hooks/useChat.js';
 import { NotFoundPage } from './NotFoundPage.js';
 
@@ -16,6 +17,8 @@ export function ChatPage() {
 }
 
 function ProjectChat({ projectId }: { projectId: string }) {
+  const [search, setSearch] = useSearchParams();
+  const setupOpen = search.get('setup') === 'agents';
   const chat = useChat(projectId);
   const head = chat.history?.turns.at(-1);
 
@@ -27,7 +30,13 @@ function ProjectChat({ projectId }: { projectId: string }) {
     <Stack gap="lg" maw={800} mx="auto" w="100%">
       <PageHeader
         title={chat.project?.name ?? 'Conversation'}
-        actions={<Button component={Link} to="/projects" variant="subtle">Tous les projets</Button>}
+        actions={<Group gap="xs">
+          <Button variant="light" leftSection={<IconAdjustmentsHorizontal size={16} />} disabled={chat.pending}
+            onClick={() => setSearch((current) => { current.set('setup', 'agents'); return current; })}>
+            Configuration
+          </Button>
+          <Button component={Link} to="/projects" variant="subtle">Tous les projets</Button>
+        </Group>}
       />
       {chat.error && (
         <Alert color="red" title="Conversation" role="alert">
@@ -48,37 +57,93 @@ function ProjectChat({ projectId }: { projectId: string }) {
       )}
       {chat.project && (
         <>
-          <Select
-            label="Branche de conversation"
-            value={chat.history?.branch.id ?? null}
-            data={chat.branches.map((branch) => ({ value: branch.id, label: branch.name }))}
-            onChange={(value) => { if (value) chat.selectBranch(value); }}
-            disabled={chat.pending || !chat.history}
-            allowDeselect={false}
-          />
-          <details className={styles.systemPrompt}>
-            <summary>Prompt système</summary>
-            <Text size="sm" c="dimmed" mt="sm">{chat.project.systemPrompt || 'Aucun prompt système.'}</Text>
-          </details>
+          <Group align="center" justify='space-between' gap="sm">
+            <Select
+              label="Branche de conversation"
+              value={chat.history?.branch.id ?? null}
+              data={chat.branches.map((branch) => ({ value: branch.id, label: branch.name }))}
+              onChange={(value) => { if (value) chat.selectBranch(value); }}
+              disabled={chat.pending || !chat.history}
+              allowDeselect={false}
+            />
+            <Popover position="bottom-end" withArrow shadow="md" width={380}>
+              <Popover.Target>
+                <Tooltip
+                  label="Voir le prompt système du projet"
+                  withArrow
+                >
+                  <ActionIcon
+                    variant="subtle"
+                    color="gray"
+                    size="lg"
+                    radius="xl"
+                    aria-label="Afficher le prompt système"
+                  >
+                    <IconInfoCircle size={19} />
+                  </ActionIcon>
+                </Tooltip>
+              </Popover.Target>
+
+              <Popover.Dropdown>
+                <Stack gap="xs">
+                  <Text size="sm" fw={600}>
+                    Prompt système
+                  </Text>
+                  <ScrollArea.Autosize mah={300} type="auto">
+                    <Code>
+                      {chat.project.systemPrompt || 'Aucun prompt système.'}
+                    </Code>
+                  </ScrollArea.Autosize>
+                </Stack>
+              </Popover.Dropdown>
+            </Popover>
+          </Group>
           <MessageList messages={chat.messages} partial={chat.partial} pending={chat.pending} />
           {head && (
-            <Group>
+            <Group justify="flex-end" gap={4}>
               {head.status === 'completed' && (
-                <Button variant="subtle" disabled={chat.pending} onClick={() => void chat.regenerate()}>
-                  Régénérer la réponse
-                </Button>
+                <Tooltip label="Régénérer la réponse" withArrow>
+                  <ActionIcon
+                    variant="subtle"
+                    color="gray"
+                    disabled={chat.pending}
+                    aria-label="Régénérer la réponse"
+                    onClick={() => void chat.regenerate()}
+                  >
+                    <IconRefresh size={18} />
+                  </ActionIcon>
+                </Tooltip>
               )}
+
               {head.status === 'failed' && (
                 <>
-                  <Text c="red" size="sm">{head.error}</Text>
-                  <Button variant="light" disabled={chat.pending} onClick={() => void chat.retry()}>
-                    Réessayer la réponse
-                  </Button>
+                  <Text c="red" size="xs">{head.error}</Text>
+                  <Tooltip label="Réessayer la réponse" withArrow>
+                    <ActionIcon
+                      variant="subtle"
+                      color="red"
+                      disabled={chat.pending}
+                      aria-label="Réessayer la réponse"
+                      onClick={() => void chat.retry()}
+                    >
+                      <IconRefresh size={18} />
+                    </ActionIcon>
+                  </Tooltip>
                 </>
               )}
             </Group>
           )}
           <MessageComposer pending={chat.pending} onSend={chat.send} />
+          <Drawer opened={setupOpen} position="right" size="lg" title="Configuration du projet"
+            overlayProps={{ backgroundOpacity: 0.35, blur: 3 }}
+            onClose={() => setSearch((current) => {
+              const next = new URLSearchParams(current);
+              next.delete('setup');
+              next.delete('agentVersion');
+              return next;
+            })}>
+            {setupOpen && <ProjectAgentSetup projectId={projectId} suggestedVersion={search.get('agentVersion')} />}
+          </Drawer>
         </>
       )}
     </Stack>

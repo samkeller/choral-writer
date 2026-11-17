@@ -18,6 +18,7 @@ function setup() {
   };
   const context = {
     project: { id: projectId, systemPrompt: 'Current prompt.' },
+    narratorInstructions: null as string | null,
     branches: {
       list: vi.fn<ChatTransactionContext['branches']['list']>(),
       get: vi.fn<ChatTransactionContext['branches']['get']>().mockResolvedValue(branch),
@@ -55,6 +56,18 @@ function setup() {
 }
 
 describe('chat orchestration without infrastructure', () => {
+  it('adds enabled narrator instructions to the project prompt', async () => {
+    const { context, narrate, run } = setup();
+    context.narratorInstructions = 'Write in a concise, playful tone.';
+    narrate.mockResolvedValue('The door opens.');
+
+    await run();
+
+    expect(narrate).toHaveBeenCalledWith(expect.objectContaining({
+      systemPrompt: 'Current prompt.\n\nWrite in a concise, playful tone.',
+    }));
+  });
+
   it('does not reclassify a persistence failure as a generation failure', async () => {
     const { context, narrate, run } = setup();
     const error = new Error('Persistence unavailable.');

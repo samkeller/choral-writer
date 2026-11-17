@@ -1,8 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import { projectInputSchema, projectParamsSchema } from '@choral-writer/shared';
 
-import { requireAuth } from '../../auth/routes.js';
-import type { ProjectsService } from './service.js';
+import { requireAuth } from '../../../auth/routes.js';
+import type { ProjectsService } from '../services/projectServices.js';
 
 export function registerProjectRoutes(app: FastifyInstance, service: ProjectsService): void {
   app.get('/api/projects', { preHandler: requireAuth }, () => service.list());

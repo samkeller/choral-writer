@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Paper, ScrollArea, Stack, Text } from '@mantine/core';
+import { Loader, Paper, ScrollArea, Stack, Text } from '@mantine/core';
 import type { Message } from '@choral-writer/shared';
 
 import styles from './MessageList.module.css';
@@ -27,9 +27,6 @@ export function MessageList({ messages, partial, pending }: MessageListProps) {
       viewportProps={{ role: 'log', 'aria-label': 'Conversation', 'aria-live': 'polite' }}
     >
       <Stack gap="md" pr="xs">
-        {messages.length === 0 && !pending && (
-          <Text c="dimmed">Envoyez un message pour commencer l’histoire.</Text>
-        )}
         {messages.map((message) => (
           <Paper
             key={message.id}
@@ -46,14 +43,7 @@ export function MessageList({ messages, partial, pending }: MessageListProps) {
             </Text>
           </Paper>
         ))}
-        {(pending || partial) && (
-          <Paper p="md" bg="transparent" className={styles.assistantMessage}>
-            <Text size="xs" c={pending ? 'choral.3' : 'yellow.4'} fw={600} mb="xs">
-              {pending ? 'Assistant · génération en cours…' : 'Réponse interrompue · non enregistrée'}
-            </Text>
-            <Text className={styles.assistantContent}>{partial || 'En attente du modèle…'}</Text>
-          </Paper>
-        )}
+        {(pending || partial) &&  <Loader size="sm" color="choral.3" />}
       </Stack>
     </ScrollArea.Autosize>
   );

@@ -1,6 +1,6 @@
 import type { ChatTurn } from '@choral-writer/shared';
 
-import { ApiError } from '../../../errors.js';
+import { ApiError } from '../../../errors/errors.js';
 import type { ChatTurnRepository } from '../repositories/turnRepository.js';
 import type { ChatRunResult } from '../types/chat.types.js';
 import type { NewChatTurn, TurnCompletion } from '../types/turn.types.js';

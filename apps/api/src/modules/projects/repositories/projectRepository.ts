@@ -1,9 +1,8 @@
 import { desc, eq } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
 import type { Project, ProjectInput } from '@choral-writer/shared';
-
-import type { Database, Transaction } from '../../db/client.js';
-import { projects } from '../../db/entities/project.js';
+import { Database, Transaction } from '../../../db/client.js';
+import { projects } from '../../../db/entities/project.js';
 
 function projectDto(row: typeof projects.$inferSelect): Project {
   return { ...row, createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString() };

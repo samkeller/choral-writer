@@ -1,6 +1,6 @@
 import type { ChatEvent, Message, Project } from '@choral-writer/shared';
 
-import type { ProjectsService } from '../../projects/service.js';
+import type { ProjectsService } from '../../projects/services/projectServices.js';
 import type { ChatBranchService } from '../services/branchService.js';
 import type { ChatMessageService } from '../services/messageService.js';
 import type { ChatTurnService } from '../services/turnService.js';
@@ -27,6 +27,7 @@ export type ChatEntityServices = {
 /** Services are bound to one locked project and must not escape the callback. */
 export type ChatTransactionContext = ChatEntityServices & {
   project: Pick<Project, 'id' | 'systemPrompt'>;
+  narratorInstructions: string | null;
   recordActivity(at: Date): Promise<void>;
 };
 

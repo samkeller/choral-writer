@@ -46,7 +46,9 @@ export class ChatService {
         });
         const content = await this.dependencies.narrate({
           turnId,
-          systemPrompt: context.project.systemPrompt,
+          systemPrompt: [context.project.systemPrompt, context.narratorInstructions]
+            .filter((instruction): instruction is string => Boolean(instruction))
+            .join('\n\n'),
           history,
           userMessage: input.userMessage,
           signal,

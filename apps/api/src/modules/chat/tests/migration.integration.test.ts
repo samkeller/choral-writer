@@ -11,7 +11,9 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('chat migration with legacy data
   const pool = new Pool({ connectionString: process.env.TEST_DATABASE_URL });
   afterAll(() => pool.end());
 
-  async function withLegacy(run: (client: PoolClient, namespace: string, upgrade: () => Promise<void>) => Promise<void>) {
+  async function withLegacy(run: (
+    client: PoolClient, namespace: string, upgrade: () => Promise<void>, execute: (name: string) => Promise<void>,
+  ) => Promise<void>) {
     const client = await pool.connect();
     const namespace = `chat_upgrade_${randomUUID().replaceAll('-', '')}`;
     const execute = async (name: string) => {
@@ -23,7 +25,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('chat migration with legacy data
       await client.query(`CREATE SCHEMA ${namespace}`);
       await execute('0000_wet_joshua_kane');
       await execute('0001_last_wolfpack');
-      await run(client, namespace, () => execute('0002_chat_branching'));
+      await run(client, namespace, () => execute('0002_chat_branching'), execute);
     } finally {
       await client.query('ROLLBACK');
       client.release();
@@ -80,6 +82,69 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('chat migration with legacy data
       await client.query(`INSERT INTO ${ns}.messages(id,project_id,role,content) VALUES($1,$2,'user','Orphelin')`,
         [randomUUID(), projectId]);
       await expect(upgrade()).rejects.toThrow('Cannot migrate inconsistent chat history');
+    });
+  });
+
+  it('preserves legacy agents as versions and fills required restitution contracts', async () => {
+    await withLegacy(async (client, ns, upgrade, execute) => {
+      const projectId = randomUUID();
+      const emptyId = randomUUID();
+      const narratorId = randomUUID();
+      const otherNarratorId = randomUUID();
+      const analysisId = randomUUID();
+      await client.query(`INSERT INTO ${ns}.projects(id,name,system_prompt) VALUES
+        ($1,'Ancien projet','Prompt'),($2,'Sans agents','')`, [projectId, emptyId]);
+      await upgrade();
+      await execute('0003_ambitious_human_torch');
+      await client.query(`INSERT INTO ${ns}.agent
+        (id, project_id, name, role, instructions, enabled, position) VALUES
+        ($1,$4,'Réponse existante','narrator','Conserver ce ton.',true,0),
+        ($2,$4,'Autre réponse','narrator','Ancienne variante.',true,1),
+        ($3,$4,'Analyse inactive','analysis','Ne pas perdre.',false,2)`,
+      [narratorId, otherNarratorId, analysisId, projectId]);
+      await execute('0004_agent_library');
+
+      const versions = await client.query(`SELECT agent_id, instructions, version FROM ${ns}.agent_version
+        WHERE agent_id = ANY($1::uuid[])`, [[narratorId, otherNarratorId, analysisId]]);
+      expect(versions.rows).toHaveLength(3);
+      expect(versions.rows).toEqual(expect.arrayContaining([
+        { agent_id: narratorId, instructions: 'Conserver ce ton.', version: 1 },
+        { agent_id: analysisId, instructions: 'Ne pas perdre.', version: 1 },
+      ]));
+      const assignments = await client.query(`SELECT * FROM ${ns}.project_agent`);
+      expect(assignments.rows).toHaveLength(4);
+      expect(assignments.rows).toEqual(expect.arrayContaining([
+        expect.objectContaining({ project_id: projectId, agent_id: narratorId, output: 'narrative' }),
+        expect.objectContaining({ project_id: emptyId, output: 'memory_proposals' }),
+      ]));
+      expect(assignments.rows.some((row) => row.agent_id === otherNarratorId || row.agent_id === analysisId)).toBe(false);
+    });
+  });
+
+  it('publishes the requested defaults without overwriting versions or upgrading existing projects', async () => {
+    await withLegacy(async (client, ns, upgrade, execute) => {
+      await client.query(`INSERT INTO ${ns}.projects(id,name,system_prompt) VALUES($1,'Projet existant','')`, [randomUUID()]);
+      await upgrade();
+      await execute('0003_ambitious_human_torch');
+      await execute('0004_agent_library');
+      const before = (await client.query(`SELECT * FROM ${ns}.project_agent ORDER BY agent_id`)).rows;
+      const narratorId = '019aee00-0000-7000-8000-000000000001';
+      const guardianId = '019aee00-0000-7000-8000-000000000002';
+      await client.query(`INSERT INTO ${ns}.agent_version(id,agent_id,version,name,instructions)
+        VALUES($1,$2,2,'Narrateur personnalisé','Conserver cette version.')`, [randomUUID(), narratorId]);
+
+      await execute('0005_default_agent_prompts');
+
+      const versions = (await client.query(`SELECT agent_id,version,instructions FROM ${ns}.agent_version
+        ORDER BY agent_id,version`)).rows;
+      expect(versions).toEqual([
+        { agent_id: narratorId, version: 1, instructions: '' },
+        { agent_id: narratorId, version: 2, instructions: 'Conserver cette version.' },
+        { agent_id: narratorId, version: 3, instructions: 'Produis toujours une restitution pertinente à partir du contexte disponible. Ne laisse jamais ta réponse vide, même si les informations sont limitées. Sois créatif.' },
+        { agent_id: guardianId, version: 1, instructions: '' },
+        { agent_id: guardianId, version: 2, instructions: 'Examine toujours le contexte et retourne une réponse structurée. Ne laisse jamais ta sortie vide : retourne une liste vide si aucune proposition pertinente n\'est à faire.' },
+      ]);
+      expect((await client.query(`SELECT * FROM ${ns}.project_agent ORDER BY agent_id`)).rows).toEqual(before);
     });
   });
 });

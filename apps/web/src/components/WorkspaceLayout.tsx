@@ -36,7 +36,6 @@ export function WorkspaceLayout() {
       <AppShell.Header px="md">
         <Group h="100%" justify="space-between" gap="sm">
           <Box hiddenFrom="sm"><Brand /></Box>
-          <Text size="sm" c="dimmed" visibleFrom="sm">Votre espace de création</Text>
           <Button
             variant="subtle" color="gray" size="xs" hiddenFrom="sm"
             loading={pending} onClick={() => void handleLogout()}

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 export * from './projects.js';
+export * from './agents.js';
 export * from './chat/index.js';
 export * from './errors.js';
 

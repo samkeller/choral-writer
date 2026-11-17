@@ -1,8 +1,8 @@
 import { APIConnectionError, APIConnectionTimeoutError, APIError } from 'openai/error';
 import { describe, expect, it } from 'vitest';
 
-import { toPublicError } from '../errors.js';
-import { normalizeLlmError } from './errors.js';
+import { toPublicError } from '../errors/errors.js';
+import { normalizeLlmError } from '../errors/llmErrors.js';
 
 describe('LLM error normalization', () => {
   it('preserves a provider 402 message and request reference without requiring a dedicated SDK subclass', () => {

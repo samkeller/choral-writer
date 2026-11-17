@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { apiErrorSchema } from '@choral-writer/shared';
 
-import { buildApp } from './app.js';
-import { ApiError } from './errors.js';
+import { buildApp } from '../app.js';
+import { ApiError, serviceUnavailableError } from './errors.js';
 
 describe('public API errors', () => {
   const apps: ReturnType<typeof buildApp>[] = [];
@@ -20,9 +20,7 @@ describe('public API errors', () => {
   }
 
   it('exposes an intentionally public message, including for a 5xx error, without serializing its cause', async () => {
-    const app = appWithError(new ApiError(503, 'MAINTENANCE', 'Maintenance en cours.', {
-      cause: new Error('private database details'),
-    }));
+    const app = appWithError(serviceUnavailableError('Maintenance en cours.', { cause: new Error('private database details') }));
     const response = await app.inject('/test-error');
 
     expect(response.statusCode).toBe(503);

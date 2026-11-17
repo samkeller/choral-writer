@@ -1,4 +1,5 @@
-import { createTheme } from '@mantine/core';
+import { Code, createTheme } from '@mantine/core';
+import { ThemeCode } from './mantine/ThemeCode';
 
 export const theme = createTheme({
   primaryColor: 'choral',
@@ -83,5 +84,6 @@ export const theme = createTheme({
     Textarea: { defaultProps: { radius: 'md' } },
     Paper: { defaultProps: { radius: 'md' } },
     Modal: { defaultProps: { centered: true } },
+    Code: ThemeCode
   },
 });

@@ -1,7 +1,7 @@
 import { APIConnectionError, APIConnectionTimeoutError, APIError, APIUserAbortError } from 'openai/error';
 import { z } from 'zod';
 
-import { ApiError } from '../errors.js';
+import { ApiError } from './errors.js';
 
 const providerErrorSchema = z.object({
   message: z.string().min(1).optional(),

@@ -9,8 +9,8 @@ import { v7 as uuidv7 } from 'uuid';
 import { z } from 'zod';
 import { APIError } from 'openai/error';
 
-import { ApiError } from '../errors.js';
-import { normalizeLlmError } from './errors.js';
+import { ApiError } from '../errors/errors.js';
+import { normalizeLlmError } from '../errors/llmErrors.js';
 
 export interface CallLLMInput<T = unknown> {
   turnId?: string;

@@ -1,0 +1,38 @@
+.card {
+    position: relative;
+    transition:
+        border-color 150ms ease,
+        background-color 150ms ease;
+}
+
+.card:hover {
+    border-color: var(--mantine-color-choral-5);
+    background-color: light-dark(var(--mantine-color-choral-0),
+            var(--mantine-color-dark-6));
+}
+
+.card:has(.link:focus-visible) {
+    outline: 2px solid var(--mantine-color-choral-5);
+    outline-offset: 2px;
+}
+
+.link {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    border-radius: inherit;
+}
+
+.content {
+    position: relative;
+    z-index: 2;
+    pointer-events: none;
+}
+
+.content :global(button),
+.content :global(a),
+.content :global([role="button"]) {
+    pointer-events: auto;
+    position: relative;
+    z-index: 2;
+}

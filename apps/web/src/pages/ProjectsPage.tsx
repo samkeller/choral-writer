@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Alert, Button, Center, Group, Loader, Modal, Paper, SimpleGrid, Stack, Text, Title } from '@mantine/core';
+import { ActionIcon, Alert, Button, Center, Code, Group, Loader, Modal, Paper, SimpleGrid, Stack, Text, Title, Tooltip } from '@mantine/core';
 import { Link } from 'react-router-dom';
 import type { Project, ProjectInput } from '@choral-writer/shared';
 
@@ -8,6 +8,8 @@ import { getErrorMessage } from '../api/client.js';
 import { PageHeader } from '../components/PageHeader.js';
 import { ProjectForm } from '../components/projects/ProjectForm.js';
 import { useProjects } from '../hooks/useProjects.js';
+import { IconEdit, IconMessageCircle, IconTrash, IconUsers } from '@tabler/icons-react';
+import { ClickableCard } from '../components/atoms/clickableCard/ClickableCard.js';
 
 export function ProjectsPage() {
   const { projects, loading, error, reload } = useProjects();
@@ -64,22 +66,47 @@ export function ProjectsPage() {
       )}
       <SimpleGrid cols={{ base: 1, md: 2 }}>
         {projects.map((project) => (
-          <Paper key={project.id} withBorder p="lg">
-            <Stack>
-              <Title order={2} size="h3">{project.name}</Title>
-              <Text c="dimmed" size="sm" lineClamp={3}>{project.systemPrompt || 'Aucun prompt système.'}</Text>
-              <Group gap="xs" wrap="wrap">
-                <Button component={Link} to={`/projects/${project.id}`}>Ouvrir le chat</Button>
-                <Button variant="default" onClick={() => setEditing(project)}>Modifier</Button>
-                <Button
-                  variant="subtle" color="red"
-                  onClick={() => { setDeleteError(''); setDeleting(project); }}
-                >
-                  Supprimer
-                </Button>
+          <ClickableCard
+            key={project.id}
+            to={`/projects/${project.id}`}
+          >
+            <Stack gap="sm">
+              <Group justify="space-between" align="center">
+                <Title order={3} size="h4">
+                  {project.name}
+                </Title>
+
+                <Group gap={4}>
+                  <Tooltip label="Modifier">
+                    <ActionIcon
+                      variant="subtle"
+                      color="gray"
+                      onClick={() => setEditing(project)}
+                    >
+                      <IconEdit size={18} />
+                    </ActionIcon>
+                  </Tooltip>
+
+                  <Tooltip label="Supprimer">
+                    <ActionIcon
+                      variant="subtle"
+                      color="red"
+                      onClick={() => {
+                        setDeleteError('');
+                        setDeleting(project);
+                      }}
+                    >
+                      <IconTrash size={18} />
+                    </ActionIcon>
+                  </Tooltip>
+                </Group>
               </Group>
+
+              <Code>
+                {project.systemPrompt || 'Aucune description.'}
+              </Code>
             </Stack>
-          </Paper>
+          </ClickableCard>
         ))}
       </SimpleGrid>
       <Modal opened={editing !== undefined} onClose={() => setEditing(undefined)} title={editing ? 'Modifier le projet' : 'Nouveau projet'}>

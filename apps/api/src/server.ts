@@ -2,14 +2,17 @@ import { buildApp } from './app.js';
 import { loadConfig } from './config.js';
 import { db, pool } from './db/client.js';
 import { callLLM } from './llm/index.js';
-import { ProjectsService } from './modules/projects/service.js';
+import { AgentsService } from './modules/agents/services/agentsService.js';
+import { ProjectsService } from './modules/projects/services/projectServices.js';
 import { createChatBranchService, createChatService } from './modules/chat/index.js';
 
 async function main(): Promise<void> {
   const config = loadConfig();
   const projects = new ProjectsService(db, createChatBranchService);
+  const agents = new AgentsService(db, projects);
   const app = buildApp(config, {
     projects,
+    agents,
     chat: createChatService(db, projects, callLLM),
   });
 

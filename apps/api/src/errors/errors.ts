@@ -1,16 +1,27 @@
 import { ZodError } from 'zod';
 import type { PublicError } from '@choral-writer/shared';
 
+interface ApiErrorOptions {
+  source?: PublicError['source'];
+  requestId?: string;
+  cause?: unknown;
+}
+
 export class ApiError extends Error {
   constructor(
+    /**
+     * Le code HTTP associé à cette erreur.
+     */
     public readonly statusCode: number,
+    /**
+     * Le code d'erreur identifiant le type d'erreur.
+     */
     public readonly code: string,
+    /**
+     * Le message d'erreur décrivant l'erreur.
+     */
     message: string,
-    public readonly options: {
-      source?: PublicError['source'];
-      requestId?: string;
-      cause?: unknown;
-    } = {},
+    public readonly options: ApiErrorOptions = {},
   ) {
     super(message, { cause: options.cause });
   }
@@ -44,3 +55,7 @@ export function isLockConflict(error: unknown): boolean {
   if ('code' in error && error.code === '55P03') return true;
   return 'cause' in error && isLockConflict(error.cause);
 }
+
+export const notfoundError = (message?: string, options?: ApiErrorOptions): ApiError => new ApiError(404, 'NOT_FOUND', message ?? 'La ressource demandée est introuvable.', options);
+export const unauthorizedError = (message?: string, options?: ApiErrorOptions): ApiError => new ApiError(401, 'UNAUTHORIZED', message ?? 'Non autorisé.', options);
+export const serviceUnavailableError = (message?: string, options?: ApiErrorOptions): ApiError => new ApiError(503, 'SERVICE_UNAVAILABLE', message ?? 'Le service est temporairement indisponible.', options);

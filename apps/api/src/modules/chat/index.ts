@@ -1,6 +1,6 @@
 import type { Database, Transaction } from '../../db/client.js';
 import type { createCallLLM } from '../../llm/call-llm.js';
-import type { ProjectsService } from '../projects/service.js';
+import type { ProjectsService } from '../projects/services/projectServices.js';
 import { ChatService } from './services/chatService.js';
 import { ChatBranchService } from './services/branchService.js';
 import { ChatMessageService } from './services/messageService.js';
@@ -14,7 +14,6 @@ import { ChatTransactionService } from './services/chatTransactionService.js';
 
 export type { ChatService } from './services/chatService.js';
 export { ChatController } from './controllers/chatController.js';
-export { registerChatRoutes } from './routes/chatRoutes.js';
 
 /** Also used by project creation to initialize chat through its branch service. */
 export function createChatBranchService(connection: Database | Transaction, projectId: string): ChatBranchService {

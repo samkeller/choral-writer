@@ -1,6 +1,6 @@
 import type { ChatBranch } from '@choral-writer/shared';
 
-import { ApiError } from '../../../errors.js';
+import { ApiError } from '../../../errors/errors.js';
 import type { ChatBranchRepository } from '../repositories/branchRepository.js';
 
 export class ChatBranchService {

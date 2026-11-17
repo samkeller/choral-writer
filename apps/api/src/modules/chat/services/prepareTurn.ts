@@ -1,6 +1,5 @@
 import type { ChatCommand } from '@choral-writer/shared';
-
-import { ApiError } from '../../../errors.js';
+import { ApiError } from '../../../errors/errors.js';
 import type { ChatEntityServices } from '../types/chat.types.js';
 import type { NewChatTurn } from '../types/turn.types.js';
 

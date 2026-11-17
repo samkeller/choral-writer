@@ -1,7 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { ChatEvent } from '@choral-writer/shared';
-
-import { toPublicError } from '../../../errors.js';
+import { toPublicError } from '../../../errors/errors.js';
 import type { ChatProgressEvent, ChatRunResult } from '../types/chat.types.js';
 
 /** SSE lifecycle shared by all chat commands; terminal success follows DB commit. */

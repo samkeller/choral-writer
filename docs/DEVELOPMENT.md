@@ -7,6 +7,10 @@
 - Démarrer PostgreSQL avec `docker compose up -d` si nécessaire et appliquer les migrations avec `pnpm db:migrate`.
 - `pnpm dev` démarre l'API et Vite. Le frontend est servi sur le port `5175`; Vite relaie `/api` et `/healthz` vers `http://127.0.0.1:<PORT>`, où `PORT` vaut `3001` par défaut.
 
+Après une mise à jour ou un changement de branche qui ajoute des migrations,
+réexécuter `pnpm db:migrate` avant `pnpm dev`. Le serveur ne migre pas la base
+automatiquement ; une ancienne structure peut rendre les endpoints incompatibles.
+
 ## Workspaces et scripts
 
 Le repository pnpm contient `apps/web` (React/Vite), `apps/api` (Fastify) et `packages/shared` (contrats et validation partagés). Les scripts racine coordonnent les workspaces :

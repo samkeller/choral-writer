@@ -4,7 +4,8 @@ import { loginRequestSchema } from '@choral-writer/shared';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 
 import type { AuthConfig } from '../config.js';
-import { ApiError } from '../errors.js';
+import { ApiError } from '../errors/errors.js';
+import { unauthorizedError } from '../errors/errors.js';
 
 const AUTH_COOKIE = 'cw_auth';
 const AUTH_COOKIE_VALUE = 'authenticated';
@@ -20,25 +21,19 @@ export async function requireAuth(
   request: FastifyRequest,
 ): Promise<void> {
   const signedValue = request.cookies[AUTH_COOKIE];
-  if (!signedValue) {
-    throw new ApiError(401, 'UNAUTHORIZED', 'Authentication required.');
-  }
+  if (!signedValue) throw unauthorizedError('Authentication required.');
 
   const result = request.unsignCookie(signedValue);
-  if (!result.valid || result.value !== AUTH_COOKIE_VALUE) {
-    throw new ApiError(401, 'UNAUTHORIZED', 'Authentication required.');
-  }
+  if (!result.valid || result.value !== AUTH_COOKIE_VALUE) throw unauthorizedError('Authentication required.');
 }
 
 export function registerAuthRoutes(app: FastifyInstance, config: AuthConfig): void {
   app.post('/api/login', async (request, reply) => {
     const parsed = loginRequestSchema.safeParse(request.body);
-    if (!parsed.success) {
+    if (!parsed.success)  {
       throw new ApiError(400, 'INVALID_REQUEST', 'A password is required.');
     }
-    if (!passwordsMatch(parsed.data.password, config.appPassword)) {
-      throw new ApiError(401, 'INVALID_CREDENTIALS', 'Incorrect password.');
-    }
+    if (!passwordsMatch(parsed.data.password, config.appPassword)) throw unauthorizedError('Incorrect password.');
 
     return reply
       .setCookie(AUTH_COOKIE, AUTH_COOKIE_VALUE, {

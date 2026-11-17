@@ -6,7 +6,7 @@ import { Pool } from 'pg';
 import type { ChatCompletionChunk } from 'openai/resources/chat/completions';
 import { APIError } from 'openai/error';
 import { v7 as uuidv7 } from 'uuid';
-import { chatEventSchema, chatHistorySchema, projectSchema } from '@choral-writer/shared';
+import { agentSchema, projectAgentSchema, chatEventSchema, chatHistorySchema, projectSchema } from '@choral-writer/shared';
 
 import { buildApp } from '../../../app.js';
 import * as schema from '../../../db/schema.js';
@@ -16,7 +16,8 @@ import { ChatMessageService } from '../services/messageService.js';
 import { ChatTurnService } from '../services/turnService.js';
 import { ChatMessageRepository } from '../repositories/messageRepository.js';
 import { ChatTurnRepository } from '../repositories/turnRepository.js';
-import { ProjectsService } from '../../projects/service.js';
+import { AgentsService } from '../../agents/services/agentsService.js';
+import { ProjectsService } from '../../projects/services/projectServices.js';
 
 // Only run against an explicitly supplied disposable PostgreSQL database.
 describe.skipIf(!process.env.TEST_DATABASE_URL)('projects and chat with PostgreSQL', () => {
@@ -38,11 +39,12 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('projects and chat with PostgreS
     },
   });
   const projects = new ProjectsService(database, createChatBranchService);
+  const agents = new AgentsService(database, projects);
   const app = buildApp({
     appPassword: 'test-password',
     cookieSecret: 'test-cookie-secret-with-at-least-thirty-two-characters',
     nodeEnv: 'test',
-  }, { projects, chat: createChatService(database, projects, callLLM) });
+  }, { projects, agents, chat: createChatService(database, projects, callLLM) });
   let cookie: string;
   let address: string;
   const createdIds: string[] = [];
@@ -75,6 +77,13 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('projects and chat with PostgreS
     const project = await projects.get(id);
     if (!project.defaultBranchId) throw new Error('Missing default branch.');
     return sendOnBranch(id, project.defaultBranchId, content);
+  }
+
+  async function narratorPrompt(projectId: string): Promise<string> {
+    const project = await projects.get(projectId);
+    const narrator = (await agents.listForProject(projectId)).find((agent) => agent.output === 'narrative');
+    if (!narrator) throw new Error('Missing narrator assignment.');
+    return [project.systemPrompt, narrator.instructions].filter(Boolean).join('\n\n');
   }
 
   async function sendOnBranch(projectId: string, branchId: string, content: string) {
@@ -150,6 +159,124 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('projects and chat with PostgreS
     })).statusCode).toBe(404);
   });
 
+  it('shares agents across projects, pins immutable versions and applies only explicit upgrades', async () => {
+    const project = await createProject('Agents');
+    const second = await createProject('Autre équipe');
+    expect((await app.inject({
+      method: 'GET', url: '/api/agents',
+    })).statusCode).toBe(401);
+    const listResponse = await app.inject({
+      method: 'GET', url: `/api/projects/${project.id}/agents`, headers: { cookie },
+    });
+    const defaults = projectAgentSchema.array().parse(listResponse.json());
+    expect(defaults).toEqual(expect.arrayContaining([
+      expect.objectContaining({ phase: 'restitution', output: 'narrative' }),
+      expect.objectContaining({ phase: 'restitution', output: 'memory_proposals' }),
+    ]));
+    const narrator = defaults.find((agent) => agent.output === 'narrative');
+    if (!narrator) throw new Error('Missing default narrator.');
+    const newAgent = agentSchema.parse((await app.inject({
+      method: 'POST', url: '/api/agents', headers: { cookie },
+      payload: {
+        name: 'Réponse personnalisée', phase: 'restitution', output: 'narrative', instructions: 'Ton initial.',
+      },
+    })).json());
+    const initial = newAgent.versions[0]!;
+    const selections = defaults.map((agent) => agent.output === 'narrative'
+      ? { agentId: newAgent.id, versionId: initial.id }
+      : { agentId: agent.agentId, versionId: agent.versionId });
+    for (const id of [project.id, second.id]) {
+      expect((await app.inject({
+        method: 'PUT', url: `/api/projects/${id}/agents`, headers: { cookie }, payload: { agents: selections },
+      })).statusCode).toBe(200);
+    }
+    const updated = await app.inject({
+      method: 'POST', url: `/api/agents/${newAgent.id}/versions`, headers: { cookie },
+      payload: { name: 'Réponse personnalisée', instructions: 'Ton enjoué.', expectedVersion: 1 },
+    });
+    expect(updated.statusCode).toBe(201);
+    const published = agentSchema.parse(updated.json());
+    expect(published.versions.map((version) => version.version)).toEqual([2, 1]);
+    expect(published.projects).toHaveLength(2);
+    expect((await app.inject({
+      method: 'POST', url: `/api/agents/${newAgent.id}/versions`, headers: { cookie },
+      payload: { name: 'Obsolète', instructions: '', expectedVersion: 1 },
+    })).statusCode).toBe(409);
+    expect((await app.inject({
+      method: 'DELETE', url: `/api/agents/${newAgent.id}`, headers: { cookie },
+    })).statusCode).toBe(409);
+    await expect(database.update(schema.agentVersions).set({ instructions: 'Mutation interdite' })
+      .where(eq(schema.agentVersions.id, initial.id))).rejects.toThrow();
+    await send(project.id, 'Avant mise à jour.');
+    expect(create).toHaveBeenLastCalledWith(expect.objectContaining({
+      messages: expect.arrayContaining([{ role: 'system', content: `${project.systemPrompt}\n\nTon initial.` }]),
+    }), expect.anything());
+    const nextVersion = published.versions[0]!;
+    expect((await app.inject({
+      method: 'PUT', url: `/api/projects/${project.id}/agents`, headers: { cookie },
+      payload: { agents: selections.map((agent) => agent.agentId === newAgent.id
+        ? { ...agent, versionId: nextVersion.id } : agent) },
+    })).statusCode).toBe(200);
+    await send(project.id, 'La porte s’ouvre.');
+    expect(create).toHaveBeenLastCalledWith(expect.objectContaining({
+      messages: expect.arrayContaining([{ role: 'system', content: `${project.systemPrompt}\n\nTon enjoué.` }]),
+    }), expect.anything());
+    const other = await agents.listForProject(second.id);
+    expect(other.find((agent) => agent.agentId === newAgent.id)?.versionId).toBe(initial.id);
+  });
+
+  it('rejects missing, duplicate and mismatched restitution contracts without changing the team', async () => {
+    const project = await createProject('Contrats');
+    const before = await agents.listForProject(project.id);
+    const [first, second] = before;
+    if (!first || !second) throw new Error('Missing required agents.');
+    const extra = await agents.create({
+      name: 'Autre réponse', instructions: '', phase: 'restitution', output: 'narrative',
+    });
+    for (const selection of [
+      [],
+      [first],
+      [first, first, second],
+      [{ ...first, versionId: second.versionId }, second],
+      [...before, { agentId: extra.id, versionId: extra.versions[0]!.id }],
+    ]) {
+      const response = await app.inject({
+        method: 'PUT', url: `/api/projects/${project.id}/agents`, headers: { cookie },
+        payload: { agents: selection.map(({ agentId, versionId }) => ({ agentId, versionId })) },
+      });
+      expect(response.statusCode).toBe(400);
+      expect(await agents.listForProject(project.id)).toEqual(before);
+    }
+    await expect(database.delete(schema.projectAgents)
+      .where(eq(schema.projectAgents.projectId, project.id))).rejects.toThrow();
+    await expect(database.update(schema.agents).set({ phase: 'analysis', output: 'envelope' })
+      .where(eq(schema.agents.id, extra.id))).rejects.toThrow();
+    expect((await app.inject({
+      method: 'DELETE', url: `/api/agents/${extra.id}`, headers: { cookie },
+    })).statusCode).toBe(204);
+    const invalid = await app.inject({
+      method: 'POST', url: '/api/agents', headers: { cookie },
+      payload: { name: 'Invalide', instructions: '', phase: 'analysis', output: 'narrative' },
+    });
+    expect(invalid.statusCode).toBe(400);
+  });
+
+  it('pins the latest built-in versions only when a new project is created', async () => {
+    const existing = await createProject('Avant publication');
+    const before = await agents.listForProject(existing.id);
+    for (const assignment of before) {
+      const libraryAgent = (await agents.list()).find((agent) => agent.id === assignment.agentId);
+      if (!libraryAgent) throw new Error('Missing built-in agent.');
+      await agents.publish(assignment.agentId, {
+        name: assignment.name, instructions: assignment.instructions, expectedVersion: libraryAgent.versions[0]!.version,
+      });
+    }
+    const fresh = await createProject('Après publication');
+    const after = await agents.listForProject(fresh.id);
+    expect(after.map((agent) => agent.version)).toEqual(before.map((agent) => agent.version + 1));
+    expect(await agents.listForProject(existing.id)).toEqual(before);
+  });
+
   it('streams, persists history, reuses context, isolates projects, and saves the LLM trace', async () => {
     const first = await createProject('Monde A', 'Tu es le narrateur A.');
     const second = await createProject('Monde B', 'Tu es le narrateur B.');
@@ -177,7 +304,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('projects and chat with PostgreS
     await send(first.id, 'Elle avance.');
     expect(create).toHaveBeenLastCalledWith(expect.objectContaining({
       messages: [
-        { role: 'system', content: 'Tu es le narrateur A.' },
+        { role: 'system', content: await narratorPrompt(first.id) },
         { role: 'user', content: 'Mara entre.' },
         { role: 'assistant', content: 'Bonjour Mara.' },
         { role: 'user', content: 'Elle avance.' },
@@ -186,7 +313,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('projects and chat with PostgreS
     await send(second.id, 'Une autre histoire.');
     expect(create).toHaveBeenLastCalledWith(expect.objectContaining({
       messages: [
-        { role: 'system', content: 'Tu es le narrateur B.' },
+        { role: 'system', content: await narratorPrompt(second.id) },
         { role: 'user', content: 'Une autre histoire.' },
       ],
     }), expect.anything());
@@ -273,7 +400,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('projects and chat with PostgreS
       expect(create.mock.calls.length).toBe(previousCalls + 1);
       expect(create).toHaveBeenLastCalledWith(expect.objectContaining({
         messages: [
-          { role: 'system', content: 'Prompt modifié.' },
+          { role: 'system', content: await narratorPrompt(project.id) },
           { role: 'user', content: 'Premier message.' },
           { role: 'assistant', content: 'Bonjour Mara.' },
           { role: 'user', content: 'Deuxième message.' },
@@ -343,7 +470,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('projects and chat with PostgreS
     expect(updated.turns[0]).toMatchObject({ retryOfTurnId: failedTurnId, parentTurnId: null });
     expect(create).toHaveBeenLastCalledWith(expect.objectContaining({
       messages: [
-        { role: 'system', content: project.systemPrompt },
+        { role: 'system', content: await narratorPrompt(project.id) },
         { role: 'user', content: 'Même saisie.' },
       ],
     }), expect.anything());
@@ -417,7 +544,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('projects and chat with PostgreS
     await send(project.id, 'Suite.');
     expect(create).toHaveBeenLastCalledWith(expect.objectContaining({
       messages: [
-        { role: 'system', content: project.systemPrompt },
+        { role: 'system', content: await narratorPrompt(project.id) },
         ...Array.from({ length: 20 }, (_, index) => [
           { role: 'user', content: `Question ${index + 3}` },
           { role: 'assistant', content: `Réponse ${index + 3}` },
