@@ -34,6 +34,19 @@ Garder la logique métier et les appels API dans leurs modules existants ; ne pa
 - Garder la validation de formulaire liée aux schémas partagés. Préserver les comportements d'authentification et d'API.
 - Tester les interactions principales, le clavier et les largeurs mobiles. Utiliser les props responsives Mantine avant d'écrire une media query ; respecter les zones de sécurité sur la barre basse.
 
+## Mémoire : import et export CSV
+
+- L'échange de mémoire passe par deux fichiers CSV : `memoire-tags.csv` (`nom`, `description`) et `memoire-souvenirs.csv` (`cle`, `contenu`, `tags`, `protege`, `archive`). Les souvenirs référencent les tags par leur nom ; les tags d'une entrée sont séparés par `|`.
+- Le transport CSV générique vit dans `api/csv/` (papaparse) ; le mapping métier reste dans `api/memories/memoryCsv.ts`. Ne pas réimplémenter la lecture ou l'écriture d'un fichier délimité dans un composant.
+- Les modèles affichés dans l'interface (`TAG_CSV_TEMPLATE`, `ENTRY_CSV_TEMPLATE`) sont dérivés du même codec que l'export : ils restent importables tels quels et ne peuvent pas diverger du parseur.
+- L'import remplace intégralement la branche : il n'existe pas d'opération de suppression côté API, donc un import partiel n'est pas exprimable. Le formulaire d'import est donc un remplacement, pas une fusion.
+- Afficher un format dans un bloc `Code` copiable via `CopyButton` plutôt qu'une description textuelle des colonnes.
+
+## Sélection de branche
+
+- Utiliser `components/chat/BranchSwitcher` pour changer de branche : un `Menu` ancré sur un bouton compact, avec `aria-current` sur la branche courante. Ne pas réintroduire de `Select` de branche dans les barres d'outils.
+- La page d'un projet affiche une seule branche à la fois ; le sélecteur reste accessible dans l'en-tête, à côté de l'action « Tous les projets ».
+
 ## Nouveaux composants
 
 Créer un composant partagé lorsque plusieurs vues ont un besoin concret commun ou qu'une unité métier devient difficile à lire. Le placer dans le dossier du domaine concerné, définir une API typée minimale, éviter les abstractions spéculatives et documenter une nouvelle convention seulement si elle impacte les prochains changements.

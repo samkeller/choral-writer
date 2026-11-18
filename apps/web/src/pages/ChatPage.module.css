@@ -25,13 +25,3 @@
     gap: var(--mantine-spacing-md);
   }
 }
-
-@media (max-width: 47.99em) {
-  .branchLabel {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-  }
-}

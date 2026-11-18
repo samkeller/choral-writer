@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Alert, Box, Button, Center, Group, Loader, Modal, Select, Stack, Tabs, Text } from '@mantine/core';
+import { Alert, Box, Button, Center, Group, Loader, Modal, Stack, Tabs, Text } from '@mantine/core';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { IconArrowLeft, IconRefresh } from '@tabler/icons-react';
 import { projectParamsSchema } from '@choral-writer/shared';
 
 import { PageHeader } from '../components/PageHeader';
+import { BranchSwitcher } from '../components/chat/BranchSwitcher';
 import { MessageComposer } from '../components/chat/MessageComposer';
 import { MessageList } from '../components/chat/MessageList';
 import { TraceDrawer } from '../components/chat/TraceDrawer';
@@ -38,6 +39,8 @@ function ProjectChat({ projectId }: { projectId: string }) {
       <PageHeader
         title={chat.project?.name ?? 'Conversation'}
         actions={<Group gap="xs">
+          <BranchSwitcher branches={chat.branches} currentId={chat.history?.branch.id ?? null}
+            disabled={chat.pending || !chat.history} onChange={chat.selectBranch} />
           <IconAction component={Link} to="/projects" label="Tous les projets">
             <IconArrowLeft size={18} aria-hidden="true" />
           </IconAction>
@@ -81,17 +84,6 @@ function ProjectChat({ projectId }: { projectId: string }) {
             initialSection={search.get('section') === 'memory' ? 'memory' : search.get('section') === 'agents' || search.get('setup') === 'agents' ? 'agents' : 'project'}
             onProjectSaved={chat.reload} />}
           <Stack className={styles.story} gap="xs" style={{ display: setupOpen ? 'none' : undefined, flex: 1, minHeight: 0 }}>
-          <Group align="center" justify='space-between' gap="sm">
-            <Select
-              label="Branche de conversation"
-              classNames={{ label: styles.branchLabel }}
-              value={chat.history?.branch.id ?? null}
-              data={chat.branches.map((branch) => ({ value: branch.id, label: branch.name }))}
-              onChange={(value) => { if (value) chat.selectBranch(value); }}
-              disabled={chat.pending || !chat.history}
-              allowDeselect={false}
-            />
-          </Group>
           <Box className={styles.conversation}>
             <MessageList
               messages={chat.messages}

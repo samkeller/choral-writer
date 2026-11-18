@@ -2,7 +2,7 @@
 import { Alert, Box, Button, Checkbox, Loader, Paper, Select, Text } from '@mantine/core';
 import { Link } from 'react-router-dom';
 import type { Agent } from '@choral-writer/shared';
-import { IconLibrary } from '@tabler/icons-react';
+import { IconLibrary, IconPlus } from '@tabler/icons-react';
 import {
   ConfigurationDetailPane,
   ConfigurationListPane,
@@ -11,11 +11,12 @@ import {
   ConfigurationSection,
   ConfigurationSplitView,
 } from '../configuration/ConfigurationLayout';
-import { useProjectSetup } from '../../hooks/useProjectSetup';
+import { selectVersion, useProjectSetup } from '../../hooks/useProjectSetup';
 import type { useMemories } from '../../hooks/useMemories';
 import { PromptDisplay } from '../llm/PromptDisplay';
 import { AgentMemoryEditor } from '../memories/MemoryEditors';
 import { IconAction } from '../atoms/IconAction';
+import { AgentEditor } from './AgentEditor';
 
 const outputLabels: Record<Agent['output'], string> = {
   envelope: 'Analyse',
@@ -29,6 +30,7 @@ export function ProjectAgentSetup({ projectId, suggestedVersion, onSaved, memory
 }) {
   const setup = useProjectSetup(projectId, suggestedVersion);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
   useEffect(() => {
     if (!selectedId && setup.agents.length) {
       const preferred = setup.agents.find((agent) => agent.versions.some((version) => version.id === suggestedVersion))
@@ -41,17 +43,24 @@ export function ProjectAgentSetup({ projectId, suggestedVersion, onSaved, memory
   const displayedVersion = version ?? agent?.versions[0];
   const persisted = memory.agents.find((item) => item.agentId === agent?.id);
   function selectRequired(output: Agent['output'], versionId: string) {
-    const oldIds = new Set(setup.agents.filter((item) => item.output === output).flatMap((item) => item.versions.map((v) => v.id)));
-    setup.change([...setup.versionIds.filter((id) => !oldIds.has(id)), versionId]);
+    setup.change(selectVersion(setup.versionIds, setup.agents, output, versionId));
     const next = setup.agents.find((item) => item.versions.some((v) => v.id === versionId));
     if (next) setSelectedId(next.id);
+  }
+  /** Sélectionne un agent créé depuis cette page sans attendre le rechargement de la bibliothèque. */
+  function selectCreated(created: Agent) {
+    setup.adopt(created);
+    setSelectedId(created.id);
   }
   return <ConfigurationSection title="Agents"
     primaryAction={{
       label: 'Enregistrer l’équipe', loading: setup.pending, disabled: setup.loading,
       onClick: () => void setup.save().then((ok) => { if (ok) onSaved?.(); })
     }}
-    actions={<IconAction component={Link} to="/agents" label="Voir la bibliothèque"><IconLibrary size={18} /></IconAction>}
+    actions={<>
+      <IconAction label="Nouvel agent" onClick={() => setCreating(true)}><IconPlus size={18} /></IconAction>
+      <IconAction component={Link} to="/agents" label="Voir la bibliothèque"><IconLibrary size={18} /></IconAction>
+    </>}
     feedback={(setup.error || setup.saved) && <>
       {setup.error && <Alert color="red" role="alert">{setup.error}<Button variant="subtle" onClick={setup.reload} disabled={setup.pending}>Recharger</Button></Alert>}
       {setup.saved && <Alert color="choral" role="status">Configuration enregistrée. Elle sera utilisée au prochain tour.</Alert>}
@@ -108,5 +117,7 @@ export function ProjectAgentSetup({ projectId, suggestedVersion, onSaved, memory
         </ConfigurationDetailPane>
       </ConfigurationSplitView>
     }
+    {creating && <AgentEditor agent={null} onClose={() => setCreating(false)}
+      onSaved={(agent) => { selectCreated(agent); setCreating(false); }} />}
   </ConfigurationSection>;
 }

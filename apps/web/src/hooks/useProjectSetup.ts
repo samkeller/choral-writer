@@ -3,6 +3,30 @@ import type { Agent } from '@choral-writer/shared';
 import { configureProjectAgents, listAgents, listProjectAgents } from '../api/agents/agentsApi';
 import { getErrorMessage } from '../api/client';
 
+/**
+ * Un projet a exactement un narrateur et un gardien : choisir une version pour
+ * ces contrats remplace celle de l'agent précédent, alors que les agents
+ * d'analyse s'ajoutent à la sélection.
+ */
+export function selectVersion(
+  ids: string[], agents: Agent[], output: Agent['output'], versionId: string,
+): string[] {
+  if (output === 'envelope') return ids.includes(versionId) ? ids : [...ids, versionId];
+  const previous = new Set(agents.filter((agent) => agent.output === output)
+    .flatMap((agent) => agent.versions.map((version) => version.id)));
+  // Le remplacement garde la position de la version précédente pour stabiliser l'ordre d'enregistrement.
+  const next: string[] = [];
+  let placed = false;
+  for (const id of ids) {
+    if (previous.has(id) || id === versionId) {
+      if (!placed) { next.push(versionId); placed = true; }
+    } else {
+      next.push(id);
+    }
+  }
+  return placed ? next : [...next, versionId];
+}
+
 export function useProjectSetup(projectId: string, suggestedVersion?: string | null) {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [versionIds, setVersionIds] = useState<string[]>([]);
@@ -23,9 +47,10 @@ export function useProjectSetup(projectId: string, suggestedVersion?: string | n
         const retained = suggested ? assignments.filter((assignment) =>
           suggested.output === 'envelope'
             ? assignment.agentId !== suggested.id : assignment.output !== suggested.output) : assignments;
+        const assigned = [...retained.map((assignment) => assignment.versionId),
+          ...(suggested && suggestedVersion ? [suggestedVersion] : [])];
         setAgents(library);
-        setVersionIds([...retained.map((assignment) => assignment.versionId),
-          ...(suggested && suggestedVersion ? [suggestedVersion] : [])]);
+        setVersionIds(assigned);
       })
       .catch((failure: unknown) => {
         if (!controller.signal.aborted) setError(getErrorMessage(failure));
@@ -37,6 +62,18 @@ export function useProjectSetup(projectId: string, suggestedVersion?: string | n
 
   function change(ids: string[]) {
     setVersionIds(ids);
+    setSaved(false);
+  }
+
+  /**
+   * Intègre un agent créé depuis la bibliothèque dans l'équipe du projet sans
+   * attendre un rechargement : il pilote alors le contrat de sortie déjà pourvu.
+   */
+  function adopt(agent: Agent) {
+    const versionId = agent.versions[0]?.id;
+    if (!versionId) return;
+    setAgents((current) => [agent, ...current.filter((entry) => entry.id !== agent.id)]);
+    setVersionIds((current) => selectVersion([...current, versionId], agents, agent.output, versionId));
     setSaved(false);
   }
 
@@ -61,7 +98,7 @@ export function useProjectSetup(projectId: string, suggestedVersion?: string | n
     }
   }
   return {
-    agents, versionIds, loading, pending, error, saved, change, save,
+    agents, versionIds, loading, pending, error, saved, change, save, adopt,
     reload: () => setRevision((value) => value + 1),
   };
 }

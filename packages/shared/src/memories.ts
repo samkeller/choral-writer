@@ -79,6 +79,26 @@ export const memoryExpectedSchema = z.object({
   expectedCatalogRevisionId: id.nullable(),
 }).strict();
 
+/**
+ * Contenu d'un remplacement intégral de la mémoire, quel que soit son mode de
+ * saisie (formulaire ou import de fichiers). Les entrées référencent les tags
+ * par nom pour rester indépendantes des identifiants générés par le serveur.
+ */
+export const memoryImportEntrySchema = z.object({
+  key: memoryEntryInputSchema.shape.key,
+  content: memoryEntryInputSchema.shape.content,
+  tagNames: z.string().trim().min(1).max(120).array().min(1).max(100),
+  protected: z.boolean(),
+  archived: z.boolean(),
+}).strict();
+
+export const memoryImportSchema = z.object({
+  tags: memoryTagInputSchema.array().max(300),
+  entries: memoryImportEntrySchema.array().max(2000),
+}).strict();
+
+export type MemoryImport = z.infer<typeof memoryImportSchema>;
+
 const tagRef = z.string().trim().min(1).max(120);
 export const memorySetupProposalSchema = z.object({
   tags: memoryTagInputSchema.extend({ ref: tagRef }).array().max(300),
@@ -95,6 +115,7 @@ const mutation = z.discriminatedUnion('op', [
   z.object({ op: z.literal('saveEntry'), id: id.optional(), entry: memoryEntryInputSchema }),
   z.object({ op: z.literal('archiveEntry'), id, archived: z.boolean() }),
   z.object({ op: z.literal('setAgentRead'), agentId: id, read: memoryReadSchema }),
+  z.object({ op: z.literal('replaceMemory'), memory: memoryImportSchema }),
 ]);
 export const memoryMutationSchema = z.object({
   ...memoryExpectedSchema.shape, change: mutation,

@@ -1,7 +1,7 @@
 ﻿import { useEffect, useState } from 'react';
-import { Alert, Badge, Button, Checkbox, Group, Loader, Modal, Pagination, Paper, Select, Stack, Switch, Text, TextInput, Textarea, Title } from '@mantine/core';
+import { Alert, Badge, Button, Checkbox, Group, Loader, Modal, Pagination, Paper, Stack, Switch, Text, TextInput, Textarea, Title } from '@mantine/core';
 import type { MemoryEntry, MemoryMutation, MemorySetupProposal, MemoryTag } from '@choral-writer/shared';
-import { IconArchive, IconEdit, IconHistory, IconPlus, IconRefresh, IconTags } from '@tabler/icons-react';
+import { IconArchive, IconEdit, IconFileSpreadsheet, IconHistory, IconPlus, IconRefresh, IconTags } from '@tabler/icons-react';
 import {
   ConfigurationDetailPane,
   ConfigurationListPane,
@@ -14,6 +14,8 @@ import { IconAction } from '../components/atoms/IconAction';
 import { MarkdownContent } from '../components/llm/MarkdownContent';
 import { MemoryEntryEditor, MemoryReadSelect, MemoryTagEditor } from '../components/memories/MemoryEditors';
 import { MemoryResultDisplay } from '../components/memories/MemoryTracePanel';
+import { MemoryTransfer } from '../components/memories/MemoryTransfer';
+import { BranchSwitcher } from '../components/chat/BranchSwitcher';
 import type { useMemories } from '../hooks/useMemories';
 
 type Editor = { kind: 'entry'; value: MemoryEntry | null } | { kind: 'tag'; value: MemoryTag | null };
@@ -28,6 +30,7 @@ export function ProjectMemories({ memory, selectBranch }: {
   const [page, setPage] = useState(1);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [tagsOpen, setTagsOpen] = useState(false);
+  const [transferOpen, setTransferOpen] = useState(false);
   const [resultOpen, setResultOpen] = useState(false);
   const [retryOpen, setRetryOpen] = useState(false);
   const [draft, setDraft] = useState<MemorySetupProposal | null>(null);
@@ -57,6 +60,7 @@ export function ProjectMemories({ memory, selectBranch }: {
           <IconAction label={`${selected.archived ? 'Restaurer' : 'Archiver'} ${selected.key}`} disabled={memory.pending} onClick={() => setConfirmation({ label: `${selected.archived ? 'Restaurer' : 'Archiver'} « ${selected.key} » ?`, change: { op: 'archiveEntry', id: selected.id, archived: !selected.archived } })}><IconArchive size={18} /></IconAction>
         </>}
         <IconAction label={`Tags (${view.state.tags.length})`} onClick={() => setTagsOpen(true)}><IconTags size={18} /></IconAction>
+        <IconAction label="Import / export CSV" disabled={memory.pending} onClick={() => setTransferOpen(true)}><IconFileSpreadsheet size={18} /></IconAction>
         {memory.lastResult && <IconAction onClick={() => setResultOpen(true)}
           label={`Dernier traitement : ${memory.lastResult.status === 'success' ? 'terminé' : memory.lastResult.status === 'failed' ? 'échec' : 'non exécuté'}${memory.lastResult.tagSuggestions?.length ? ` · ${memory.lastResult.tagSuggestions.length} suggestion(s)` : ''}`}>
           <IconHistory size={18} />
@@ -65,13 +69,13 @@ export function ProjectMemories({ memory, selectBranch }: {
           onClick={() => setRetryOpen(true)}><IconRefresh size={18} /></IconAction>}
       </>}
       controls={<>
-        <Select label="Branche de la mémoire" size="sm" w={{ base: '100%', sm: '16rem' }} value={view.branchId} allowDeselect={false} disabled={memory.pending}
-          data={memory.branches.map((branch) => ({ value: branch.id, label: branch.name }))} onChange={(value) => { if (value) selectBranch(value); }} />
+        <BranchSwitcher branches={memory.branches} currentId={view.branchId} disabled={memory.pending}
+          onChange={selectBranch} />
         <Switch label="Mémoire activée" checked={view.enabled} disabled={memory.pending}
           onChange={(event) => void memory.change({ op: 'settings', enabled: event.currentTarget.checked })} />
         <Text size="xs" c="dimmed">Gardien : {memory.agents.some((agent) => agent.output === 'memory_proposals') ? 'configuré' : 'absent'}</Text>
       </>}
-      feedback={error}>
+      feedback={<>{error}{memory.notice && <Alert color="choral" role="status">{memory.notice}</Alert>}</>}>
       <ConfigurationSplitView>
         <ConfigurationListPane title="Souvenirs" count={filtered.length}
           actions={<IconAction label="Créer une entrée manuellement" disabled={memory.pending || !view.state.tags.length}
@@ -133,6 +137,7 @@ export function ProjectMemories({ memory, selectBranch }: {
           <Button mt="xs" size="xs" variant="light" disabled={approved.includes(index)} loading={memory.pending} onClick={() => void memory.change({ op: 'saveTag', tag: { name: suggestion.name, description: suggestion.description } }).then((ok) => { if (ok) setApproved((current) => [...current, index]); })}>{approved.includes(index) ? 'Tag ajouté' : 'Approuver ce tag'}</Button>
         </Paper>)}{error}</Stack>}
       </Modal>
+      {transferOpen && <MemoryTransfer view={view} pending={memory.pending} save={memory.change} close={() => setTransferOpen(false)} />}
       <Modal opened={editor !== null} onClose={() => { if (!memory.pending) setEditor(null); }} title={editor?.kind === 'entry' ? 'Entrée mémoire' : 'Tag mémoire'}>
         {error}{editor?.kind === 'entry' && <MemoryEntryEditor entry={editor.value} tags={view.state.tags} pending={memory.pending} save={memory.change} close={() => setEditor(null)} />}
         {editor?.kind === 'tag' && <MemoryTagEditor tag={editor.value} pending={memory.pending} save={memory.change} close={() => setEditor(null)} />}

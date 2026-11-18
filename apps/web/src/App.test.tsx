@@ -10,15 +10,33 @@ import {
   type AgentDto, type PublishAgentVersion, type ChatBranchDto,
   type ChatEventDto, type ChatHistoryDto, type ProjectAgent,
   type MessageDto, type ProjectDto, type TraceCallDetail, type TurnTraceSummary,
+  type ProjectAgentsInput,
   memoryMutationSchema, type MemoryView, type MemoryResult,
 } from '@choral-writer/shared';
 
+
 import { api, ClientApiError } from './api/client';
+import { ENTRY_CSV_TEMPLATE, TAG_CSV_TEMPLATE } from './api/memories/memoryCsv';
 import { App } from './App';
 import { cssVariablesResolver, theme } from './theme/theme';
 
 const originalAdapter = api.defaults.adapter;
 const adapter = vi.fn<AxiosAdapter>();
+
+// jsdom n'implémente pas encore Blob#text, utilisé pour lire les fichiers importés.
+if (typeof Blob.prototype.text !== 'function') {
+  Object.defineProperty(Blob.prototype, 'text', {
+    configurable: true,
+    value(this: Blob) {
+      return new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(reader.error);
+        reader.readAsText(this);
+      });
+    },
+  });
+}
 
 function respond(config: InternalAxiosRequestConfig, status: number, data: unknown) {
   const response = { config, status, data, statusText: String(status), headers: {} };
@@ -742,17 +760,29 @@ describe('projects and chat screens', () => {
     expect(screen.queryByLabelText('Réponse utilisateur · Narrateur', { selector: 'input' })).toBeNull();
   });
 
-  it('creates, edits, and deletes a project through the forms', async () => {
+  it('opens the configuration of a newly created project, then still edits and deletes it', async () => {
     let saved: ProjectDto | null = null;
     adapter.mockImplementation(async (config) => {
       if (config.url === '/session') return respond(config, 200, { authenticated: true });
       if (config.url === '/projects' && config.method === 'get') {
         return respond(config, 200, saved ? [saved] : []);
       }
+      if (config.url === `/projects/${project.id}` && config.method === 'get') {
+        return respond(config, 200, saved ?? project);
+      }
       if (config.method === 'post' || config.method === 'put') {
         saved = { ...project, ...projectInputSchema.parse(JSON.parse(String(config.data))) };
         return respond(config, config.method === 'post' ? 201 : 200, saved);
       }
+      if (config.url === `/projects/${project.id}/branches`) return respond(config, 200, [branch]);
+      if (config.url === `/projects/${project.id}/branches/${branch.id}/history`) {
+        return respond(config, 200, { branch, turns: [] });
+      }
+      if (config.url === '/agents' || config.url === `/projects/${project.id}/agents`) return respond(config, 200, []);
+      if (config.url === `/projects/${project.id}/branches/${branch.id}/memories`) return respond(config, 200, {
+        projectId: project.id, branchId: branch.id, headTurnId: null, revisionId: null, catalogRevisionId: null,
+        enabled: false, state: { v: 2, tags: [], entries: [] },
+      });
       if (config.method === 'delete') {
         saved = null;
         return respond(config, 204, undefined);
@@ -766,8 +796,12 @@ describe('projects and chat screens', () => {
     fireEvent.change(screen.getByLabelText('Nom du projet', { exact: false }), { target: { value: 'Mon histoire' } });
     fireEvent.change(screen.getByLabelText('Prompt système'), { target: { value: 'Tu es le narrateur.' } });
     fireEvent.click(screen.getByRole('button', { name: 'Enregistrer' }));
-    await screen.findByRole('heading', { name: 'Mon histoire' });
+    // Un projet neuf s'ouvre directement sur sa configuration, section Projet.
+    expect(await screen.findByRole('navigation', { name: 'Sections de configuration' })).toBeTruthy();
+    expect(screen.getByTestId('location').textContent).toBe(`/projects/${project.id}?tab=config`);
+    fireEvent.click(screen.getByRole('button', { name: 'Précédent' }));
 
+    await screen.findByRole('heading', { name: 'Mon histoire' });
     fireEvent.click(screen.getByRole('button', { name: 'Modifier' }));
     fireEvent.change(screen.getByLabelText('Nom du projet', { exact: false }), { target: { value: 'Mon nouveau monde' } });
     fireEvent.click(screen.getByRole('button', { name: 'Enregistrer' }));
@@ -779,6 +813,127 @@ describe('projects and chat screens', () => {
     await screen.findByText('Aucun projet pour le moment.');
     expect(saved).toBeNull();
   });
+
+  it('creates a narrator from project configuration and selects it in the team', async () => {
+    const guardian = existingAgent('019ad30c-19b0-7000-8000-000000000301', 'memory_proposals', 'Gardien');
+    const narrator = existingAgent('019ad30c-19b0-7000-8000-000000000302', 'narrative', 'Narrateur');
+    let library: AgentDto[] = [narrator, guardian];
+    let assignments: ProjectAgent[] = [narrator, guardian].map((agent) => assignmentOf(agent));
+    let configured: ProjectAgentsInput | null = null;
+    adapter.mockImplementation(async (config) => {
+      if (config.url === '/session') return respond(config, 200, { authenticated: true });
+      if (config.url === `/projects/${project.id}`) return respond(config, 200, project);
+      if (config.url === `/projects/${project.id}/branches`) return respond(config, 200, [branch]);
+      if (config.url === `/projects/${project.id}/branches/${branch.id}/history`) {
+        return respond(config, 200, { branch, turns: [] });
+      }
+      if (config.url === `/projects/${project.id}/branches/${branch.id}/memories`) return respond(config, 200, {
+        projectId: project.id, branchId: branch.id, headTurnId: null, revisionId: null, catalogRevisionId: null,
+        enabled: true, state: { v: 2, tags: [], entries: [] },
+      });
+      if (config.url === '/agents') {
+        if (config.method === 'post') {
+          const input = agentInputSchema.parse(JSON.parse(String(config.data)));
+          const created = { ...existingAgent('019ad30c-19b0-7000-8000-000000000303', input.output, input.name), versions: [{
+            id: '019ad30c-19b0-7000-8000-000000000304', version: 1, name: input.name,
+            instructions: input.instructions, createdAt: project.createdAt,
+          }] } as AgentDto;
+          library = [created, ...library];
+          return respond(config, 201, created);
+        }
+        return respond(config, 200, library);
+      }
+      if (config.url === `/projects/${project.id}/agents`) {
+        if (config.method === 'put') {
+          configured = projectAgentsInputSchema.parse(JSON.parse(String(config.data)));
+          assignments = configured.agents.map((selection) => assignmentOf(
+            library.find((agent) => agent.id === selection.agentId)!, selection.versionId));
+        }
+        return respond(config, 200, assignments);
+      }
+      throw new Error(`Unexpected request: ${config.method} ${config.url}`);
+    });
+
+    renderApp(`/projects/${project.id}?tab=config&section=agents`);
+    fireEvent.click(await screen.findByRole('button', { name: 'Nouvel agent' }));
+    const dialog = within(await screen.findByRole('dialog'));
+    fireEvent.change(dialog.getByRole('textbox', { name: 'Nom' }), { target: { value: 'Nouveau narrateur' } });
+    fireEvent.change(dialog.getByRole('textbox', { name: 'Instructions' }), { target: { value: 'Sois lyrique.' } });
+    fireEvent.click(dialog.getByLabelText('Contrat de sortie', { selector: 'input' }));
+    fireEvent.click(await screen.findByRole('option', { name: /Restitution Réponse utilisateur/ }));
+    fireEvent.click(dialog.getByRole('button', { name: 'Créer l’agent' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    // Le nouvel agent remplace l'ancien narrateur sans quitter la page de configuration.
+    const narratorSelect = await screen.findByLabelText('Réponse utilisateur · Narrateur', { selector: 'input' });
+    await waitFor(() => expect(narratorSelect.getAttribute('value')).toBe('Nouveau narrateur · v1'));
+    fireEvent.click(screen.getByRole('button', { name: 'Enregistrer l’équipe' }));
+    await screen.findByText('Configuration enregistrée. Elle sera utilisée au prochain tour.');
+    expect(configured).toMatchObject({ agents: [
+      { agentId: '019ad30c-19b0-7000-8000-000000000303', versionId: '019ad30c-19b0-7000-8000-000000000304' },
+      { agentId: guardian.id, versionId: guardian.versions[0]!.id },
+    ] });
+  });
+
+  it('replaces the branch memory from the exported CSV files', async () => {
+    const tagId = '019ad30c-19b0-7000-8000-000000000401';
+    const view: MemoryView = { projectId: project.id, branchId: branch.id, headTurnId: null,
+      revisionId: null, catalogRevisionId: null, enabled: true,
+      state: { v: 2, tags: [{ id: tagId, name: 'Lieux', description: 'Endroits du récit' }],
+        entries: [{ id: '019ad30c-19b0-7000-8000-000000000402', tagIds: [tagId], protected: false,
+          key: 'Château', content: 'Bâti sur la falaise.', archived: false, source: 'user', turnId: null,
+          updatedAt: project.createdAt }] } };
+    let written: unknown = null;
+    adapter.mockImplementation(async (config) => {
+      if (config.url === '/session') return respond(config, 200, { authenticated: true });
+      if (config.url === `/projects/${project.id}`) return respond(config, 200, project);
+      if (config.url === `/projects/${project.id}/branches`) return respond(config, 200, [branch]);
+      if (config.url === `/projects/${project.id}/branches/${branch.id}/history`) {
+        return respond(config, 200, { branch, turns: [] });
+      }
+      if (config.url === '/agents' || config.url === `/projects/${project.id}/agents`) return respond(config, 200, []);
+      if (config.url === `/projects/${project.id}/branches/${branch.id}/memories`) {
+        if (config.method === 'post') written = memoryMutationSchema.parse(JSON.parse(String(config.data)));
+        return respond(config, 200, view);
+      }
+      throw new Error(`Unexpected request: ${config.method} ${config.url}`);
+    });
+    renderApp(`/projects/${project.id}?tab=config&section=memory`);
+    fireEvent.click(await screen.findByRole('button', { name: 'Import / export CSV' }));
+    const dialog = await screen.findByRole('dialog');
+    // Les formats sont affichés tels quels et copiables d'un clic.
+    expect([...dialog.querySelectorAll('pre')].map((node) => node.textContent))
+      .toEqual([TAG_CSV_TEMPLATE, ENTRY_CSV_TEMPLATE]);
+    expect(within(dialog).getByRole('button', { name: 'Copier le format des tags' })).toBeTruthy();
+    expect(within(dialog).getByRole('button', { name: 'Copier le format des souvenirs' })).toBeTruthy();
+    const files = dialog.querySelectorAll('input[type="file"]');
+    expect(files).toHaveLength(2);
+    fireEvent.change(files[0]!, { target: { files: [new File(
+      ['nom;description\r\nVilles;Cités du récit\r\n'], 'tags.csv', { type: 'text/csv' })] } });
+    fireEvent.change(files[1]!, { target: { files: [new File(
+          ['cle;contenu;tags;protege;archive\r\nPort;Un vieux port.;Villes;oui;non\r\n'],
+      'souvenirs.csv', { type: 'text/csv' })] } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Remplacer la mémoire' }));
+    await waitFor(() => expect(written).toMatchObject({ change: { op: 'replaceMemory', memory: {
+      tags: [{ name: 'Villes', description: 'Cités du récit' }],
+      entries: [{ key: 'Port', content: 'Un vieux port.', tagNames: ['Villes'], protected: true, archived: false }],
+    } } }));
+    await screen.findByText('Mémoire remplacée : 1 tag(s) et 1 souvenir(s) importés.');
+  });
+
+  /** Construit un agent de bibliothèque minimal pour les tests de configuration. */
+  function existingAgent(id: string, output: AgentDto['output'], name: string): AgentDto {
+      // La version dérive de l'agent sans collision entre deux identifiants voisins.
+      const versionId = `${id.slice(0, -2)}9${id.slice(-1)}`;
+    return { id, phase: output === 'envelope' ? 'analysis' : 'restitution', output,
+      createdAt: project.createdAt, projects: [],
+        versions: [{ id: versionId, version: 1, name, instructions: '', createdAt: project.createdAt }] };
+  }
+
+  function assignmentOf(agent: AgentDto, versionId = agent.versions[0]!.id): ProjectAgent {
+    const version = agent.versions.find((item) => item.id === versionId)!;
+    return { agentId: agent.id, versionId, phase: agent.phase, output: agent.output,
+      version: version.version, name: version.name, instructions: version.instructions };
+  }
 
   it('renders streamed text before completion and reloads the persisted conversation', async () => {
     let savedHistory: ChatHistoryDto = { branch, turns: [] };
@@ -994,7 +1149,7 @@ describe('projects and chat screens', () => {
     await screen.findByText('Une autre voie…');
     expect(screen.getByText('Réponse originale.')).toBeTruthy();
     expect(screen.getAllByText(fixture.user.content)).toHaveLength(1);
-    expect(screen.getByLabelText('Branche de conversation', { selector: 'input' }).hasAttribute('disabled')).toBe(true);
+    expect(screen.getByRole('button', { name: 'Branche de conversation' }).hasAttribute('disabled')).toBe(true);
 
     await act(async () => {
       const alternative = fixture.alternative('completed');
@@ -1013,11 +1168,32 @@ describe('projects and chat screens', () => {
     await screen.findByText('Réponse alternative.');
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
-    fireEvent.click(screen.getByLabelText('Branche de conversation', { selector: 'input' }));
-    fireEvent.click(await screen.findByRole('option', { name: 'Principale' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Branche de conversation' }));
+        fireEvent.click(await screen.findByRole('menuitem', { name: 'Principale' }));
     await screen.findByText('Réponse originale.');
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+
+      it('switches branches from the header control and marks the current one', async () => {
+        const fixture = existingChat();
+        fixture.histories.set(fixture.alternativeId, fixture.alternative('completed'));
+        const view = renderApp(`/projects/${project.id}`);
+        await screen.findByText('Réponse originale.');
+
+        fireEvent.click(screen.getByRole('button', { name: 'Branche de conversation' }));
+        const menu = await screen.findByRole('menu');
+        expect(within(menu).getAllByRole('menuitem').map((item) => item.textContent))
+          .toEqual(['Principale', 'Alternative 1']);
+        // La branche courante est signalée, l'autre reste sélectionnable.
+        expect(within(menu).getByRole('menuitem', { name: 'Principale' }).getAttribute('aria-current')).toBe('true');
+
+        fireEvent.click(within(menu).getByRole('menuitem', { name: 'Alternative 1' }));
+        await screen.findByText('Réponse alternative.');
+        await waitFor(() => expect(screen.getByTestId('location').textContent).toContain(`branch=${fixture.alternativeId}`));
+        // Le nom de la branche courante reste visible dans l'en-tête.
+        expect(screen.getByRole('button', { name: 'Branche de conversation' }).textContent).toContain('Alternative 1');
+        view.unmount();
+      });
 
   it('keeps a failed alternative accessible and retries without duplicating the user message', async () => {
     const fixture = existingChat();

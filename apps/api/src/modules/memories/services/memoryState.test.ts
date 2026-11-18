@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { v7 as uuidv7 } from 'uuid';
 import { defaultMemoryRead, emptyMemoryState, type MemoryState, type ProjectAgent } from '@choral-writer/shared';
-import { applyManualChange, applyMemorySetup, memoryPrompt, reduceProposals, selectedEntries, validateMemory } from './memoryState.js';
+import { applyImportMemory, applyManualChange, applyMemorySetup, memoryPrompt, reduceProposals, selectedEntries, validateMemory } from './memoryState.js';
 
 const now = '2026-01-01T00:00:00.000Z';
 function setup() {
@@ -113,5 +113,40 @@ describe('memory tag routing and atomic reduction', () => {
     expect(() => applyMemorySetup(state, { tags: [], agents: [
       { agentId: guardian.agentId, versionId: uuidv7(), mode: 'all', tagRefs: [] },
     ] }, [guardian], uuidv7)).toThrow('version d’un agent');
+  });
+
+  it('replaces tags and entries from an import while keeping identities of reused tags', () => {
+    const { state, truth } = setup();
+    const next = applyImportMemory(state, {
+      tags: [{ name: 'WORLD_RULES', description: 'Faits canoniques établis.' },
+        { name: 'Objectifs', description: 'Buts actifs.' }],
+      entries: [
+        { key: 'Max', content: 'Max est mortel.', tagNames: ['world_rules'], protected: false, archived: false },
+        { key: 'Quête', content: 'Trouver la clé.', tagNames: ['Objectifs', 'world_rules'],
+          protected: true, archived: true },
+      ],
+    }, uuidv7, now);
+    expect(next.entries).toHaveLength(2);
+    expect(next.tags.map((tag) => tag.name)).toEqual(['WORLD_RULES', 'Objectifs']);
+    // Le tag conservé garde son identifiant pour ne pas casser les accès mémoire des agents.
+    expect(next.tags[0]!.id).toBe(truth);
+    expect(next.entries[0]).toMatchObject({ key: 'Max', tagIds: [truth], source: 'user', turnId: null, updatedAt: now });
+    expect(next.entries[1]).toMatchObject({ tagIds: [next.tags[1]!.id, truth], protected: true, archived: true });
+    expect(next.entries[0]!.id).not.toBe(state.entries[0]!.id);
+  });
+
+  it('rejects an import with an unknown tag, a duplicate tag, or an oversized active memory', () => {
+    const { state } = setup();
+    const tags = [{ name: 'Faits', description: 'Faits.' }];
+    expect(() => applyImportMemory(state, { tags, entries: [
+      { key: 'Max', content: 'Texte', tagNames: ['Absent'], protected: false, archived: false },
+    ] }, uuidv7, now)).toThrow('tag absent');
+    expect(() => applyImportMemory(state, { tags: [tags[0]!, { name: 'faits', description: 'Doublon.' }],
+      entries: [] }, uuidv7, now)).toThrow('existe déjà');
+    expect(() => applyImportMemory(state, { tags, entries: [
+      { key: 'Long 1', content: '€'.repeat(30_000), tagNames: ['Faits'], protected: false, archived: false },
+      { key: 'Long 2', content: '€'.repeat(30_000), tagNames: ['Faits'], protected: false, archived: false },
+    ] }, uuidv7, now)).toThrow('128 Kio');
+    expect(state.tags).toHaveLength(2);
   });
 });

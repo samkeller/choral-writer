@@ -1,6 +1,6 @@
 import {
   defaultMemoryRead, memoryReadSchema, memoryStateSchema,
-  type MemoryContext, type MemoryMutation, type MemoryProposal, type MemoryRead, type MemoryResult,
+  type MemoryContext, type MemoryImport, type MemoryMutation, type MemoryProposal, type MemoryRead, type MemoryResult,
   type MemorySetupProposal, type MemoryState, type ProjectAgent,
 } from '@choral-writer/shared';
 import { ApiError } from '../../../errors/errors.js';
@@ -43,7 +43,7 @@ export function validateMemory(state: MemoryState, previous?: MemoryState): void
   const tags = new Set<string>();
   const names = new Set<string>();
   for (const tag of state.tags) {
-    const name = tag.name.normalize('NFC').toLocaleLowerCase('fr');
+    const name = normalizeName(tag.name);
     if (tags.has(tag.id) || names.has(name)) reject('MEMORY_TAG_CONFLICT', 'Ce tag existe déjà.');
     tags.add(tag.id);
     names.add(name);
@@ -61,6 +61,35 @@ export function validateMemory(state: MemoryState, previous?: MemoryState): void
   if (bytes > 131_072 && (!previous || bytes > activeBytes(previous))) {
     reject('MEMORY_CONTEXT_LIMIT', 'La mémoire active dépasse 128 Kio. Archivez ou raccourcissez des entrées.');
   }
+}
+
+function normalizeName(value: string): string {
+  return value.normalize('NFC').trim().toLocaleLowerCase('fr');
+}
+
+/**
+ * Remplace intégralement les souvenirs et les tags d'une branche par un import.
+ * Les identifiants sont regénérés : un import n'est pas une fusion, il redéfinit
+ * la mémoire à partir de son fichier source.
+ */
+export function applyImportMemory(
+  state: MemoryState, memory: MemoryImport, id: () => string, at: string,
+): MemoryState {
+  const previousTags = new Map(state.tags.map((tag) => [normalizeName(tag.name), tag.id]));
+  const tags = memory.tags.map((tag) => ({ ...tag, id: previousTags.get(normalizeName(tag.name)) ?? id() }));
+  const byName = new Map(tags.map((tag) => [normalizeName(tag.name), tag.id]));
+  if (byName.size !== tags.length) reject('MEMORY_TAG_CONFLICT', 'Ce tag existe déjà.');
+  const entries = memory.entries.map((entry) => {
+    const ids = [...new Set(entry.tagNames.map((name) => byName.get(normalizeName(name))))];
+    if (ids.some((tagId) => !tagId)) reject('UNKNOWN_TAG', 'Un souvenir référence un tag absent du fichier des tags.');
+    return {
+      id: id(), key: entry.key, content: entry.content, tagIds: ids as string[],
+      protected: entry.protected, archived: entry.archived, source: 'user' as const, turnId: null, updatedAt: at,
+    };
+  });
+  const next: MemoryState = { ...state, tags, entries };
+  validateMemory(next, state);
+  return next;
 }
 
 export function applyManualChange(
@@ -83,6 +112,8 @@ export function applyManualChange(
     const entry = next.entries.find((item) => item.id === change.id);
     if (!entry) reject('UNKNOWN_ENTRY', 'Ce souvenir n’existe plus.');
     Object.assign(entry, { archived: change.archived, source: 'user', turnId: null, updatedAt: at });
+  } else if (change.op === 'replaceMemory') {
+    return applyImportMemory(next, change.memory, id, at);
   }
   validateMemory(next, state);
   return next;

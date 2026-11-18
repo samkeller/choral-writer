@@ -14,6 +14,7 @@ export function useMemories(projectId: string, requestedBranch: string | null) {
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const [revision, setRevision] = useState(0);
   const [lastResult, setLastResult] = useState<MemoryResult | null>(null);
   const retryRequest = useRef<AbortController | null>(null);
@@ -49,12 +50,15 @@ export function useMemories(projectId: string, requestedBranch: string | null) {
 
   async function change(input: MemoryMutation['change'], expectedView?: MemoryView): Promise<boolean> {
     if (!view || pending) return false;
-    setPending(true); setError('');
+    setPending(true); setError(''); setNotice('');
     try {
       const next = await mutateMemory(expectedView ?? view, input);
       setView(next);
       if (input.op === 'setAgentRead') setAgents((current) => current.map((agent) =>
         agent.agentId === input.agentId ? { ...agent, memoryRead: input.read } : agent));
+      if (input.op === 'replaceMemory') {
+        setNotice(`Mémoire remplacée : ${next.state.tags.length} tag(s) et ${next.state.entries.length} souvenir(s) importés.`);
+      }
       if (input.op === 'applySetup') {
         try { setAgents(await listProjectAgents(projectId)); }
         catch (failure) { setError(`Proposition appliquée, mais impossible de recharger les agents : ${getErrorMessage(failure)}`); }
@@ -85,6 +89,6 @@ export function useMemories(projectId: string, requestedBranch: string | null) {
       if (retryRequest.current === controller) retryRequest.current = null;
     }
   }
-  return { view, project, branches, agents, loading, pending, error, change, propose, lastResult, runGuardian,
+  return { view, project, branches, agents, loading, pending, error, notice, change, propose, lastResult, runGuardian,
     reload: () => setRevision((value) => value + 1) };
 }

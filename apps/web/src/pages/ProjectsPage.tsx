@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Alert, Button, Center, Group, Loader, Modal, Paper, SimpleGrid, Stack, Text, Title } from '@mantine/core';
 import type { Project, ProjectInput } from '@choral-writer/shared';
+import { useNavigate } from 'react-router-dom';
 
 import { createProject, deleteProject, updateProject } from '../api/projects/projectsApi';
 import { getErrorMessage } from '../api/client';
@@ -14,16 +15,25 @@ import { IconAction } from '../components/atoms/IconAction';
 
 export function ProjectsPage() {
   const { projects, loading, error, reload } = useProjects();
+  const navigate = useNavigate();
   const [editing, setEditing] = useState<Project | null | undefined>();
   const [deleting, setDeleting] = useState<Project | null>(null);
   const [deletePending, setDeletePending] = useState(false);
   const [deleteError, setDeleteError] = useState('');
 
   async function save(input: ProjectInput) {
-    if (editing) await updateProject(editing.id, input);
-    else await createProject(input);
-    setEditing(undefined);
+      // Un projet existant se contente d'être mis à jour sur place.
+      if (editing) {
+        await updateProject(editing.id, input);
+        setEditing(undefined);
+      reload();
+      return;
+    }
+      const created = await createProject(input);
+      setEditing(undefined);
     reload();
+      // Un projet neuf n'a ni équipe personnalisée ni mémoire : ouvrir sa configuration, section Projet.
+      navigate(`/projects/${created.id}?tab=config`);
   }
 
   async function remove() {
