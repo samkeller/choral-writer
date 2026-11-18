@@ -20,7 +20,7 @@
   flex-shrink: 1;
 }
 
-@media (min-width: 48em) {
+@media (min-width: $mantine-breakpoint-sm) {
   .page {
     gap: var(--mantine-spacing-md);
   }

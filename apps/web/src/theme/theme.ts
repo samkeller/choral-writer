@@ -1,4 +1,5 @@
 import { createTheme, defaultVariantColorsResolver, parseThemeColor, type CSSVariablesResolver } from '@mantine/core';
+import { breakpoints } from './breakpoints';
 import { ThemeCode } from './mantine/ThemeCode';
 
 export const cssVariablesResolver: CSSVariablesResolver = (theme) => ({
@@ -88,13 +89,7 @@ export const theme = createTheme({
     lg: '0 8px 24px rgb(0 0 0 / 20%)',
     xl: '0 12px 32px rgb(0 0 0 / 22%)',
   },
-  breakpoints: {
-    xs: '36em',
-    sm: '48em',
-    md: '62em',
-    lg: '75em',
-    xl: '88em',
-  },
+  breakpoints,
   components: {
     Button: { defaultProps: { radius: 'md' } },
     ActionIcon: { defaultProps: { radius: 'md' } },

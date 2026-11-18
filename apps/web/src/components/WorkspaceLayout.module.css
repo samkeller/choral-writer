@@ -2,8 +2,10 @@
   background: var(--mantine-color-body);
 }
 
-.navbar {
-  background: var(--mantine-color-body);
+/* Le rail replié modifie `--app-shell-navbar-width` : la largeur doit donc
+   s'animer comme le padding déjà transitionné par Mantine sur la zone principale. */
+.shell .navbar {
+  transition-property: transform, top, height, width;
 }
 
 .main {

@@ -85,7 +85,7 @@
 
 /* Mobile */
 
-@media (max-width: 600px) {
+@media (max-width: $mantine-breakpoint-xs-below) {
   .userMessage {
     max-width: 92%;
     border-radius: 16px 16px 4px 16px;

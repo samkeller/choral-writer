@@ -3,6 +3,7 @@ import { Button, NavLink, Stack, Text } from '@mantine/core';
 import { IconBook2, IconHome2, IconUsers } from '@tabler/icons-react';
 import { Link, useMatch, useResolvedPath } from 'react-router-dom';
 
+import { IconAction } from './atoms/IconAction';
 import styles from './WorkspaceLayout.module.css';
 
 const navigation = [
@@ -11,25 +12,45 @@ const navigation = [
   { path: '/agents', label: 'Agents', icon: IconUsers },
 ];
 
-export function WorkspaceNavigation({ compact = false, trailingAction }: {
-  compact?: boolean;
+type NavigationItem = (typeof navigation)[number];
+
+/**
+ * `list` : menu latéral complet. `rail` : mêmes liens réduits à leur icône, le libellé
+ * passant dans l'infobulle. `compact` : barre basse mobile, icône au-dessus du libellé.
+ */
+type NavigationVariant = 'list' | 'rail' | 'compact';
+
+export function WorkspaceNavigation({ variant = 'list', trailingAction }: {
+  variant?: NavigationVariant;
   trailingAction?: ReactNode;
 }) {
+  if (variant === 'compact') {
+    return (
+      <nav className={styles.mobileNavigation} aria-label="Navigation principale">
+        {navigation.map((item) => <CompactNavButton key={item.path} item={item} />)}
+        {trailingAction}
+      </nav>
+    );
+  }
+
+  const NavButton = variant === 'rail' ? RailNavButton : ListNavButton;
+
   return (
-    <nav className={compact ? styles.mobileNavigation : undefined} aria-label="Navigation principale">
-      {compact
-        ? <>
-            {navigation.map((item) => <CompactNavButton key={item.path} item={item} />)}
-            {trailingAction}
-          </>
-        : <Stack gap={4}>{navigation.map((item) => <NavButton key={item.path} item={item} />)}</Stack>}
+    <nav aria-label="Navigation principale">
+      <Stack gap={4} align={variant === 'rail' ? 'center' : undefined}>
+        {navigation.map((item) => <NavButton key={item.path} item={item} />)}
+      </Stack>
     </nav>
   );
 }
 
-function NavButton({ item }: { item: (typeof navigation)[number] }) {
-  const resolved = useResolvedPath(item.path);
-  const active = useMatch({ path: resolved.pathname, end: item.path === '/' }) !== null;
+function useActiveItem(path: NavigationItem['path']) {
+  const resolved = useResolvedPath(path);
+  return useMatch({ path: resolved.pathname, end: path === '/' }) !== null;
+}
+
+function ListNavButton({ item }: { item: NavigationItem }) {
+  const active = useActiveItem(item.path);
   const Icon = item.icon;
 
   return (
@@ -46,9 +67,26 @@ function NavButton({ item }: { item: (typeof navigation)[number] }) {
   );
 }
 
-function CompactNavButton({ item }: { item: (typeof navigation)[number] }) {
-  const resolved = useResolvedPath(item.path);
-  const active = useMatch({ path: resolved.pathname, end: item.path === '/' }) !== null;
+function RailNavButton({ item }: { item: NavigationItem }) {
+  const active = useActiveItem(item.path);
+  const Icon = item.icon;
+
+  return (
+    <IconAction
+      component={Link}
+      to={item.path}
+      label={item.label}
+      variant={active ? 'light' : 'subtle'}
+      color={active ? 'choral' : 'gray'}
+      aria-current={active ? 'page' : undefined}
+    >
+      <Icon size={19} stroke={1.7} aria-hidden="true" />
+    </IconAction>
+  );
+}
+
+function CompactNavButton({ item }: { item: NavigationItem }) {
+  const active = useActiveItem(item.path);
   const Icon = item.icon;
 
   return (
@@ -63,7 +101,7 @@ function CompactNavButton({ item }: { item: (typeof navigation)[number] }) {
       aria-current={active ? 'page' : undefined}
     >
       <Stack gap={2} align="center">
-        <Icon size={18} stroke={1.7} />
+        <Icon size={18} stroke={1.7} aria-hidden="true" />
         <Text size="xs" lineClamp={1}>{item.label}</Text>
       </Stack>
     </Button>
