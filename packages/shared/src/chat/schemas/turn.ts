@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import { chatBranchParamsSchema } from './branch.js';
 import { messageDtoSchema, messageSchema } from './message.js';
+import { memoryResultSchema } from '../../memories.js';
 
 export const chatTurnParamsSchema = chatBranchParamsSchema.extend({ turnId: z.string().uuid() });
 export const chatExecutionParamsSchema = chatTurnParamsSchema.omit({ branchId: true });
@@ -17,6 +18,7 @@ export const chatTurnDtoSchema = z.object({
   error: z.string().nullable(),
   userMessage: messageDtoSchema,
   assistantMessage: messageDtoSchema.nullable(),
+  memory: memoryResultSchema.nullable().optional(),
 });
 
 export const chatTurnSchema = chatTurnDtoSchema.extend({

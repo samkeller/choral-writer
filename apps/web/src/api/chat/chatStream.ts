@@ -13,7 +13,8 @@ export async function streamTurn(
   const url = command.operation === 'send' ? base : `${base}/${command.turnId}/${command.operation}`;
   const input = command.operation === 'send'
     ? sendMessageSchema.parse({ expectedHeadTurnId: command.expectedHeadTurnId, content: command.content })
-    : headInputSchema.parse({ expectedHeadTurnId: command.expectedHeadTurnId });
+    : headInputSchema.parse({ expectedHeadTurnId: command.expectedHeadTurnId,
+      allowLegacyMemoryReset: command.allowLegacyMemoryReset });
   const response = await fetch(url, {
     method: 'POST',
     credentials: 'include',

@@ -18,6 +18,7 @@ export function toChatEventDto(event: ChatEvent): ChatEventDto {
         turnId: event.turnId,
         branchId: event.branchId,
         message: toMessageDto(event.message),
+        memory: event.memory,
       };
     case 'chat.message.delta':
       return { type: event.type, delta: event.delta };

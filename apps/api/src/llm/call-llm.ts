@@ -8,6 +8,7 @@ import type {
 import { v7 as uuidv7 } from 'uuid';
 import { z } from 'zod';
 import { APIError } from 'openai/error';
+import type { MemoryContext } from '@choral-writer/shared';
 
 import { ApiError } from '../errors/errors.js';
 import { normalizeLlmError } from '../errors/llmErrors.js';
@@ -16,8 +17,10 @@ export interface CallLLMInput<T = unknown> {
   turnId?: string;
   agentId?: string;
   agentVersionId?: string;
+  stageExecutionId?: string;
   stage: string;
   messages: ChatCompletionMessageParam[];
+  memory?: MemoryContext;
   schema?: z.ZodType<T>;
   validateResponse?: (content: string) => void;
   onDelta?: (delta: string) => void | Promise<void>;
@@ -29,9 +32,11 @@ export interface LlmCallTrace {
   turnId: string | null;
   agentId: string | null;
   agentVersionId: string | null;
+  stageExecutionId?: string | null;
   stage: string;
   model: string;
   messages: ChatCompletionMessageParam[];
+  memory?: MemoryContext;
   response: string | null;
   inputTokens: number | null;
   outputTokens: number | null;
@@ -144,6 +149,11 @@ export function createCallLLM({ client, traces, model, now = Date.now, apiKey }:
         content = response.choices[0]?.message.content ?? null;
         inputTokens = response.usage?.prompt_tokens ?? null;
         outputTokens = response.usage?.completion_tokens ?? null;
+        if (response.choices[0]?.finish_reason !== 'stop') {
+          throw new ApiError(502, 'LLM_INCOMPLETE_RESPONSE', 'Le fournisseur LLM a interrompu la réponse avant sa fin.', {
+            source: 'llm',
+          });
+        }
       }
       if (!content?.trim()) {
         throw new ApiError(502, 'LLM_EMPTY_RESPONSE', 'Le fournisseur LLM a renvoyé une réponse vide.', { source: 'llm' });
@@ -166,9 +176,11 @@ export function createCallLLM({ client, traces, model, now = Date.now, apiKey }:
         turnId: input.turnId ?? null,
         agentId: input.agentId ?? null,
         agentVersionId: input.agentVersionId ?? null,
+        stageExecutionId: input.stageExecutionId ?? null,
         stage: input.stage,
         model,
         messages: input.messages,
+        memory: input.memory,
         response: content,
         inputTokens,
         outputTokens,
@@ -198,9 +210,11 @@ export function createCallLLM({ client, traces, model, now = Date.now, apiKey }:
       turnId: input.turnId ?? null,
       agentId: input.agentId ?? null,
       agentVersionId: input.agentVersionId ?? null,
+      stageExecutionId: input.stageExecutionId ?? null,
       stage: input.stage,
       model,
       messages: input.messages,
+      memory: input.memory,
       response: content,
       inputTokens,
       outputTokens,

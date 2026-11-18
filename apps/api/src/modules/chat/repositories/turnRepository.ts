@@ -1,15 +1,16 @@
 import { and, eq, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { v7 as uuidv7 } from 'uuid';
-import type { ChatTurn } from '@choral-writer/shared';
+import type { ChatTurn, MemoryResult } from '@choral-writer/shared';
 
 import type { Database, Transaction } from '../../../db/client.js';
 import { chatMessages } from '../../../db/entities/chat/message.js';
 import { chatTurns } from '../../../db/entities/chat/turn.js';
+import { memoryRuns } from '../../../db/entities/memory.js';
 import type { NewChatTurn, TurnCompletion } from '../types/turn.types.js';
 import type { TurnRow } from '../types/turn-row.types.js';
 
-function toChatTurn({ turn, user, assistant }: TurnRow): ChatTurn {
+function toChatTurn({ turn, user, assistant, memoryResult }: TurnRow): ChatTurn {
   if (turn.assistantMessageId && !assistant) throw new Error('Missing chat assistant message.');
   return {
     id: turn.id,
@@ -19,6 +20,7 @@ function toChatTurn({ turn, user, assistant }: TurnRow): ChatTurn {
     regeneratedFromTurnId: turn.regeneratedFromTurnId,
     status: turn.status,
     error: turn.error,
+    memory: memoryResult ?? turn.memoryResult,
     userMessage: user,
     assistantMessage: assistant,
   };
@@ -34,6 +36,11 @@ export class ChatTurnRepository {
     const assistant = alias(chatMessages, 'assistant_message');
     return this.database.select({
       turn: chatTurns, user: chatMessages, assistant,
+      memoryResult: sql<MemoryResult | null>`(
+        select mr.result from ${memoryRuns} mr
+        where mr.turn_id = ${chatTurns.id} and mr.project_id = ${chatTurns.projectId}
+        order by mr.created_at desc, mr.id desc limit 1
+      )`,
     }).from(chatTurns)
       .innerJoin(chatMessages, eq(chatMessages.id, chatTurns.userMessageId))
       .leftJoin(assistant, eq(assistant.id, chatTurns.assistantMessageId));
@@ -94,6 +101,7 @@ export class ChatTurnRepository {
       retryOfTurnId: input.retryOfTurnId,
       regeneratedFromTurnId: input.regeneratedFromTurnId,
       status: 'running',
+      memorySnapshot: input.memorySnapshot,
     });
     return id;
   }
@@ -104,6 +112,7 @@ export class ChatTurnRepository {
       assistantMessageId: completion.status === 'completed' ? completion.assistantMessageId : null,
       error: completion.status === 'failed' ? completion.error : null,
       completedAt: completion.completedAt,
+      memoryResult: completion.memoryResult,
     }).where(and(
       eq(chatTurns.projectId, this.projectId), eq(chatTurns.id, id),
       eq(chatTurns.originBranchId, branchId), eq(chatTurns.status, 'running'),

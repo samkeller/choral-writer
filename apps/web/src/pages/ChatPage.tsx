@@ -1,15 +1,14 @@
 import { useEffect, useState } from 'react';
-import { Alert, Box, Button, Center, Drawer, Group, Loader, Popover, Select, Stack, Text } from '@mantine/core';
+import { Alert, Box, Button, Center, Group, Loader, Modal, Select, Stack, Tabs, Text } from '@mantine/core';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { IconAdjustmentsHorizontal, IconArrowLeft, IconInfoCircle, IconRefresh } from '@tabler/icons-react';
+import { IconArrowLeft, IconRefresh } from '@tabler/icons-react';
 import { projectParamsSchema } from '@choral-writer/shared';
 
 import { PageHeader } from '../components/PageHeader';
 import { MessageComposer } from '../components/chat/MessageComposer';
 import { MessageList } from '../components/chat/MessageList';
 import { TraceDrawer } from '../components/chat/TraceDrawer';
-import { PromptDisplay } from '../components/llm/PromptDisplay';
-import { ProjectAgentSetup } from '../components/agents/ProjectAgentSetup';
+import { ProjectConfiguration } from './ProjectConfiguration';
 import { useChat } from '../hooks/useChat';
 import { NotFoundPage } from './NotFoundPage';
 import { IconAction } from '../components/atoms/IconAction';
@@ -23,8 +22,8 @@ export function ChatPage() {
 
 function ProjectChat({ projectId }: { projectId: string }) {
   const [search, setSearch] = useSearchParams();
-  const setupOpen = search.get('setup') === 'agents';
   const chat = useChat(projectId);
+  const setupOpen = !chat.pending && (search.get('tab') === 'config' || search.get('setup') === 'agents');
   const head = chat.history?.turns.at(-1);
   const [traceTurnId, setTraceTurnId] = useState<string | null>(null);
 
@@ -35,19 +34,28 @@ function ProjectChat({ projectId }: { projectId: string }) {
   }
 
   return (
-    <Stack gap="xs" maw="min(100%, 72rem)" mx="auto" w="100%" className={styles.page}>
+    <Stack gap="xs" mx="auto" w="100%" className={styles.page}>
       <PageHeader
         title={chat.project?.name ?? 'Conversation'}
         actions={<Group gap="xs">
-          <IconAction label="Configuration" disabled={chat.pending}
-            onClick={() => setSearch((current) => { current.set('setup', 'agents'); return current; })}>
-            <IconAdjustmentsHorizontal size={18} aria-hidden="true" />
-          </IconAction>
           <IconAction component={Link} to="/projects" label="Tous les projets">
             <IconArrowLeft size={18} aria-hidden="true" />
           </IconAction>
         </Group>}
       />
+      <Tabs value={setupOpen ? 'config' : 'story'} onChange={(value) => {
+        if (chat.pending) return;
+        setSearch((current) => {
+          const next = new URLSearchParams(current);
+          if (value === 'config') next.set('tab', 'config'); else next.delete('tab');
+          next.delete('setup'); next.delete('agentVersion'); next.delete('section');
+          return next;
+        });
+      }}>
+        <Tabs.List>
+          <Tabs.Tab value="story" disabled={chat.pending}>Récit</Tabs.Tab>
+          <Tabs.Tab value="config" disabled={chat.pending}>Configuration</Tabs.Tab></Tabs.List>
+      </Tabs>
       {chat.error && (
         <Alert color="red" title="Conversation" role="alert">
           <Stack gap="sm">
@@ -67,6 +75,12 @@ function ProjectChat({ projectId }: { projectId: string }) {
       )}
       {chat.project && (
         <>
+          {setupOpen && <ProjectConfiguration project={chat.project}
+            branchId={chat.history?.branch.id ?? search.get('branch')} selectBranch={chat.selectBranch}
+            suggestedVersion={search.get('agentVersion')}
+            initialSection={search.get('section') === 'memory' ? 'memory' : search.get('section') === 'agents' || search.get('setup') === 'agents' ? 'agents' : 'project'}
+            onProjectSaved={chat.reload} />}
+          <Stack className={styles.story} gap="xs" style={{ display: setupOpen ? 'none' : undefined, flex: 1, minHeight: 0 }}>
           <Group align="center" justify='space-between' gap="sm">
             <Select
               label="Branche de conversation"
@@ -77,24 +91,6 @@ function ProjectChat({ projectId }: { projectId: string }) {
               disabled={chat.pending || !chat.history}
               allowDeselect={false}
             />
-            <Popover position="bottom-end" withArrow shadow="md" width="min(23.75rem, calc(100vw - 2rem))">
-              <Popover.Target>
-                <IconAction label="Afficher le prompt système">
-                  <IconInfoCircle size={18} aria-hidden="true" />
-                </IconAction>
-              </Popover.Target>
-
-              <Popover.Dropdown>
-                <Stack gap="xs">
-                  <Text size="sm" fw={600}>
-                    Prompt système
-                  </Text>
-                  <Box mah={300} style={{ minWidth: 0, overflowY: 'auto' }}>
-                    <PromptDisplay content={chat.project.systemPrompt || 'Aucun prompt système.'} />
-                  </Box>
-                </Stack>
-              </Popover.Dropdown>
-            </Popover>
           </Group>
           <Box className={styles.conversation}>
             <MessageList
@@ -107,6 +103,14 @@ function ProjectChat({ projectId }: { projectId: string }) {
             />
           </Box>
           {head?.status === 'failed' && <Text c="red" size="xs" role="alert">{head.error}</Text>}
+          {head?.memory?.status === 'failed' && !chat.pending && <Alert color="yellow" title="Mémoire à relancer">
+            <Text size="sm">{head.memory.message}</Text>
+            <Group gap="xs" mt="xs">
+              <Button onClick={() => void chat.retryMemory()} variant="light" size="compact-sm">Relancer le Gardien</Button>
+              <Button onClick={() => setSearch((current) => { const next = new URLSearchParams(current); next.set('tab', 'config'); next.set('section', 'memory'); return next; })}
+                variant="subtle" size="compact-sm">Corriger la mémoire</Button>
+            </Group>
+          </Alert>}
           <MessageComposer pending={chat.pending} onSend={chat.send} actions={head && (
             <Group justify="flex-end" gap={4} wrap="nowrap">
               {head.status === 'completed' && (
@@ -124,16 +128,7 @@ function ProjectChat({ projectId }: { projectId: string }) {
               )}
             </Group>
           )} />
-          <Drawer opened={setupOpen} position="right" size="lg" title="Configuration du projet"
-            overlayProps={{ backgroundOpacity: 0.35, blur: 3 }}
-            onClose={() => setSearch((current) => {
-              const next = new URLSearchParams(current);
-              next.delete('setup');
-              next.delete('agentVersion');
-              return next;
-            })}>
-            {setupOpen && <ProjectAgentSetup projectId={projectId} suggestedVersion={search.get('agentVersion')} />}
-          </Drawer>
+          </Stack>
           {traceTurnId && (
             <TraceDrawer
               projectId={projectId}
@@ -141,6 +136,14 @@ function ProjectChat({ projectId }: { projectId: string }) {
               onClose={() => setTraceTurnId(null)}
             />
           )}
+          <Modal opened={chat.legacyMemoryConfirmation} onClose={chat.cancelLegacyMemoryReset} title="Ancien tour sans état mémoire">
+            <Text mb="md">Ce tour précède M6. Cette alternative repartira sans les entrées ajoutées depuis.
+              La branche actuelle restera intacte.</Text>
+            <Group justify="flex-end">
+              <Button variant="subtle" onClick={chat.cancelLegacyMemoryReset}>Annuler</Button>
+              <Button onClick={chat.confirmLegacyMemoryReset}>Créer l’alternative sans mémoire</Button>
+            </Group>
+          </Modal>
         </>
       )}
     </Stack>

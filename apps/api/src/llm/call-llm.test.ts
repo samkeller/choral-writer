@@ -74,6 +74,21 @@ describe('callLLM', () => {
     expect(insert).toHaveBeenCalledWith(expect.objectContaining({ status: 'success' }));
   });
 
+  it.each([false, true])('preserves received memory in traces without sending trace metadata to the provider (failure=%s)', async (fail) => {
+    const create = vi.fn(async (_params: ChatCompletionCreateParamsNonStreaming) => {
+      if (fail) throw new Error('Simulated provider failure.');
+      return completion('hello');
+    });
+    const { callLLM, insert } = setup(create);
+    const memory = { tags: [], entries: [] };
+    const request = callLLM({ stage: 'analysis', messages: [{ role: 'user', content: 'begin' }], memory });
+    if (fail) await expect(request).rejects.toThrow();
+    else await request;
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({ memory, status: fail ? 'error' : 'success' }));
+    expect(create.mock.calls[0]).toHaveLength(1);
+    expect(create.mock.calls[0]![0]).not.toHaveProperty('memory');
+  });
+
   it('traces invalid structured output and propagates the validation error', async () => {
     const { callLLM, insert } = setup(async () => completion('{"count":"not a number"}'));
 
@@ -86,6 +101,18 @@ describe('callLLM', () => {
     expect(insert).toHaveBeenCalledWith(expect.objectContaining({
       response: '{"count":"not a number"}',
       status: 'error',
+    }));
+  });
+
+  it('rejects truncated but parseable JSON and correlates the failed memory attempt', async () => {
+    const response = completion('{"count":3}');
+    response.choices[0]!.finish_reason = 'length';
+    const { callLLM, insert } = setup(async () => response);
+    await expect(callLLM({ stage: 'guardian', stageExecutionId: 'memory-run',
+      messages: [{ role: 'user', content: 'memorize' }], schema: z.object({ count: z.number() }),
+    })).rejects.toMatchObject({ code: 'LLM_INCOMPLETE_RESPONSE' });
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({
+      stageExecutionId: 'memory-run', status: 'error', response: '{"count":3}',
     }));
   });
 

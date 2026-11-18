@@ -6,7 +6,7 @@ Chat est un flagship d'un domaine de l'application. Il illustre les principes de
 
 Le domaine possède `chat_message`, `chat_turn` et `chat_branch`, regroupés dans
 `db/entities/chat`. Le préfixe désigne une responsabilité, pas toutes les données
-utilisées pendant une conversation : projets, appels LLM et future mémoire
+utilisées pendant une conversation : projets, appels LLM et mémoire
 gardent leurs domaines propres.
 
 Le point d'entrée est [index.ts](../../apps/api/src/modules/chat/index.ts) :
@@ -33,6 +33,14 @@ un contexte verrouillé, puis ses services utilisent tous cette même transactio
 Réciproquement, la création du projet initialise sa branche via le service branche,
 pas par une écriture directe dans sa table. Les transactions Drizzle n'entrent
 pas dans `ChatService`.
+
+Le domaine mémoire fournit une session liée à cette transaction : snapshot
+d'entrée, vues filtrées par agent, Gardien et réduction atomique dans un
+savepoint. Un échec mémoire préserve une narration entièrement validée, y
+compris lors d'une déconnexion après sa réception. Les résultats des relances
+sont ajoutés dans `memory_run` ; le résultat mémoire affiché est une projection
+du dernier traitement, sans mutation du récit terminal.
+Les tags, les branches et les routes de l'API sont détaillés ci-dessous.
 
 Les [schémas Zod](../../packages/shared/src/chat/schemas) sont séparés par entité
 ou protocole, et leurs [types](../../packages/shared/src/chat/types.ts) restent
@@ -165,8 +173,5 @@ Pour les tests réels de persistance et de migration, utiliser uniquement une
 
 ## Contrainte pour les prochains étages
 
-Whiteboard, résolution, propositions et traces référenceront l'exécution par
-`turnId`, sans remplacer les résultats d'une autre tentative. La mémoire devra
-respecter le chemin narratif : l'état avant C' est celui après B, pas après C.
-Une projection globale mutable par projet ne convient donc pas ; le choix entre
-rejeu du chemin et matérialisation par branche appartient au lot mémoire.
+Whiteboard, résolution, propositions et traces référencent l'exécution par
+`turnId`, sans remplacer les résultats d'une autre tentative.

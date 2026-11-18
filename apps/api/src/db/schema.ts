@@ -4,3 +4,4 @@ export { agents, agentVersions, projectAgents, agentPhase, agentOutput } from '.
 export { chatMessages } from './entities/chat/message.js';
 export { chatTurns } from './entities/chat/turn.js';
 export { chatBranches } from './entities/chat/branch.js';
+export * from './entities/memory.js';

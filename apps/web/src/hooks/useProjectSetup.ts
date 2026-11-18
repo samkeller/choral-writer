@@ -52,8 +52,10 @@ export function useProjectSetup(projectId: string, suggestedVersion?: string | n
       });
       await configureProjectAgents(projectId, { agents: selections });
       setSaved(true);
+      return true;
     } catch (failure) {
       setError(getErrorMessage(failure));
+      return false;
     } finally {
       setPending(false);
     }

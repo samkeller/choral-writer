@@ -28,7 +28,7 @@ export class ChatTurnService {
   /** Only a running execution can become terminal; results are never overwritten. */
   async finish(id: string, branchId: string, result: ChatRunResult, completedAt: Date): Promise<void> {
     const completion: TurnCompletion = result.status === 'completed'
-      ? { status: 'completed', assistantMessageId: result.message.id, completedAt }
+      ? { status: 'completed', assistantMessageId: result.message.id, completedAt, memoryResult: result.memory }
       : {
         status: 'failed', completedAt,
         error: result.error instanceof Error ? result.error.message : String(result.error),

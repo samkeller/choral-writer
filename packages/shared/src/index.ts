@@ -26,3 +26,4 @@ export type LoggedOutSession = z.infer<typeof loggedOutSessionSchema>;
 
 export const healthSchema = z.object({ status: z.literal('ok') });
 export type Health = z.infer<typeof healthSchema>;
+export * from './memories.js';

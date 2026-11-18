@@ -6,17 +6,20 @@ import { AgentsService } from './modules/agents/services/agentsService.js';
 import { ProjectsService } from './modules/projects/services/projectServices.js';
 import { createChatBranchService, createChatService } from './modules/chat/index.js';
 import { createTraceService } from './modules/traces/index.js';
+import { MemoriesService } from './modules/memories/services/memoriesService.js';
 
 async function main(): Promise<void> {
   const config = loadConfig();
   const projects = new ProjectsService(db, createChatBranchService);
   const agents = new AgentsService(db, projects);
-  const chat = createChatService(db, projects, callLLM);
+  const memories = new MemoriesService(db, projects, callLLM);
+  const chat = createChatService(db, projects, callLLM, memories);
   const app = buildApp(config, {
     projects,
     agents,
     chat,
     traces: createTraceService(db, chat),
+    memories,
   });
 
   try {

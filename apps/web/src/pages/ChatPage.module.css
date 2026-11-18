@@ -7,9 +7,17 @@
   flex-shrink: 0;
 }
 
-.page > .conversation {
+.story > .conversation {
   flex: 1;
   min-height: 0;
+}
+
+.story > * {
+  flex-shrink: 0;
+}
+
+.story > .conversation {
+  flex-shrink: 1;
 }
 
 @media (min-width: 48em) {

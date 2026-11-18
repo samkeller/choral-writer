@@ -1,5 +1,5 @@
 import {
-  check, foreignKey, index, text, timestamp, unique, uuid,
+  check, foreignKey, index, jsonb, text, timestamp, unique, uuid,
   type PgTableExtraConfigValue,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
@@ -8,6 +8,7 @@ import { choralWriterSchema } from '../../namespace.js';
 import { projects } from '../project.js';
 import { chatMessages } from './message.js';
 import { chatBranches } from './branch.js';
+import type { MemoryResult, MemoryState } from '@choral-writer/shared';
 
 /**
  * One execution of the narrative pipeline for a user message.
@@ -28,6 +29,8 @@ export const chatTurns = choralWriterSchema.table('chat_turn', {
   assistantMessageId: uuid('assistant_message_id'),
   status: text('status', { enum: ['running', 'completed', 'failed'] }).notNull(),
   error: text('error'),
+  memorySnapshot: jsonb('memory_snapshot').$type<MemoryState>(),
+  memoryResult: jsonb('memory_result').$type<MemoryResult>(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   completedAt: timestamp('completed_at', { withTimezone: true }),
 }, (table): PgTableExtraConfigValue[] => [

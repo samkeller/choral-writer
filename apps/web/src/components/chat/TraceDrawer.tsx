@@ -3,13 +3,15 @@ import {
   Alert, Badge, Button, Drawer, Group, Loader, Paper, Stack, Tabs, Text,
 } from '@mantine/core';
 import { IconArrowLeft, IconChevronRight, IconRefresh } from '@tabler/icons-react';
-import type { TraceCallDetail, TraceCallSummary, TurnTraceSummary } from '@choral-writer/shared';
+import type { MemoryContext, TraceCallDetail, TraceCallSummary, TurnTraceSummary } from '@choral-writer/shared';
 
 import { getTraceCallDetail, getTurnTraceSummary } from '../../api/chat/traceApi';
 import { getErrorMessage } from '../../api/client';
 import { AnalysisEnvelopeDisplay } from '../llm/AnalysisEnvelopeDisplay';
 import { LLMResponseDisplay } from '../llm/LLMResponseDisplay';
 import { PromptDisplay } from '../llm/PromptDisplay';
+import { MarkdownContent } from '../llm/MarkdownContent';
+import { MemoryTracePanel } from '../memories/MemoryTracePanel';
 import styles from './TraceDrawer.module.css';
 
 interface TraceDrawerProps {
@@ -82,6 +84,7 @@ export function TraceDrawer({ projectId, turnId, onClose }: TraceDrawerProps) {
         />
       ) : (
         <TraceSummaryView
+          projectId={projectId}
           summary={summary}
           loading={loading}
           error={error}
@@ -94,8 +97,9 @@ export function TraceDrawer({ projectId, turnId, onClose }: TraceDrawerProps) {
 }
 
 function TraceSummaryView({
-  summary, loading, error, onSelectCall, onRetry,
+  summary, loading, error, onSelectCall, onRetry, projectId,
 }: {
+  projectId: string;
   summary: TurnTraceSummary | null;
   loading: boolean;
   error: string;
@@ -118,11 +122,12 @@ function TraceSummaryView({
   if (!summary) return <Text c="dimmed">Aucune trace disponible pour ce tour.</Text>;
 
   return (
-    <Tabs defaultValue="pipeline" key={summary.turnId} classNames={{ root: styles.tabs, list: styles.tabList }}>
+    <Tabs defaultValue="pipeline" keepMounted={false} key={summary.turnId} classNames={{ root: styles.tabs, list: styles.tabList }}>
       <Tabs.List grow>
         <Tabs.Tab value="pipeline">Pipeline</Tabs.Tab>
         <Tabs.Tab value="whiteboard">Whiteboard</Tabs.Tab>
         <Tabs.Tab value="calls">Appels ({summary.calls.length})</Tabs.Tab>
+        <Tabs.Tab value="memory">Mémoire</Tabs.Tab>
       </Tabs.List>
       <Tabs.Panel value="pipeline" pt="md">
         <PipelinePanel summary={summary} onSelectCall={onSelectCall} />
@@ -132,6 +137,9 @@ function TraceSummaryView({
       </Tabs.Panel>
       <Tabs.Panel value="calls" pt="md">
         <CallsPanel calls={summary.calls} onSelectCall={onSelectCall} />
+      </Tabs.Panel>
+      <Tabs.Panel value="memory" pt="md">
+        <MemoryTracePanel projectId={projectId} turnId={summary.turnId} />
       </Tabs.Panel>
     </Tabs>
   );
@@ -306,6 +314,8 @@ function CallDetailView({
         </Alert>
       )}
       {detail && (
+        <>
+        <ReceivedMemory memory={detail.request.memory} />
         <Tabs defaultValue="response" key={detail.id} classNames={{ root: styles.tabs, list: styles.tabList }}>
           <Tabs.List grow>
             <Tabs.Tab value="response">Réponse</Tabs.Tab>
@@ -313,6 +323,7 @@ function CallDetailView({
             <Tabs.Tab value="raw">Brut</Tabs.Tab>
           </Tabs.List>
           <Tabs.Panel value="prompt" pt="md">
+            <Text size="sm" c="dimmed" mb="xs">Messages réellement envoyés à cet appel, y compris les souvenirs éventuels.</Text>
             <Stack gap="xs" className={styles.promptMessages}>
               {detail.request.messages.map((message, index) => {
                 const content = formatValue(message.content);
@@ -344,9 +355,29 @@ function CallDetailView({
             </Text>
           </Tabs.Panel>
         </Tabs>
+        </>
       )}
     </Stack>
   );
+}
+
+export function ReceivedMemory({ memory }: { memory: MemoryContext | undefined }) {
+  return <details>
+    <summary>Mémoire reçue{memory ? ` · ${memory.entries.length} entrée(s)` : ''}</summary>
+    <Stack gap="sm" mt="sm">
+      {!memory ? <Text size="sm" c="dimmed">Détail mémoire indisponible pour cet ancien appel.</Text> : <>
+        {memory.tags.length > 0 && <Stack gap="xs"><Text size="sm" fw={600}>Définitions de tags reçues</Text>
+          {memory.tags.map((tag) => <Text key={tag.id} size="sm"><strong>{tag.name}</strong> · {tag.description}</Text>)}</Stack>}
+        {memory.entries.length === 0 && <Text size="sm" c="dimmed">Aucune entrée mémoire reçue.</Text>}
+        {memory.entries.map((entry) => <Paper key={entry.id} withBorder p="sm"><Stack gap="xs">
+          <Text fw={600}>{entry.key}</Text>
+          <Group gap={4}>{entry.tagIds.map((id) => <Badge key={id} color="gray" variant="light">{memory.tags.find((tag) => tag.id === id)?.name ?? id}</Badge>)}</Group>
+          <MarkdownContent content={entry.content} />
+          {entry.legacy && <Text size="xs" c="dimmed">Ancien périmètre : {entry.legacy.scopeName}</Text>}
+        </Stack></Paper>)}
+      </>}
+    </Stack>
+  </details>;
 }
 
 function previewValue(value: string): string {
@@ -360,6 +391,8 @@ function StatusBadge({ status }: { status: 'success' | 'error' }) {
 function stageLabel(stage: string): string {
   if (stage === 'analysis') return 'Analyse';
   if (stage === 'narrator') return 'Narrateur';
+  if (stage === 'guardian') return 'Gardien';
+  if (stage === 'reducer') return 'Écriture mémoire';
   return stage;
 }
 

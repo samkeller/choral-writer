@@ -4,6 +4,8 @@ import type { AnalysisEnvelope, ChatBranch, ChatEvent, Message, ProjectAgent } f
 import type { ChatServiceDependencies, ChatTransactionContext } from '../types/chat.types.js';
 import type { Narrator } from '../types/narrator.types.js';
 import { ChatService } from './chatService.js';
+import { emptyMemoryState } from '@choral-writer/shared';
+import { skippedMemory } from '../../memories/services/memoriesService.js';
 
 function setup() {
   const projectId = 'project';
@@ -23,6 +25,15 @@ function setup() {
   const context = {
     project: { id: projectId, systemPrompt: 'Current prompt.' },
     projectAgents: [narrator],
+    memory: {
+      prepare: vi.fn<ChatTransactionContext['memory']['prepare']>().mockResolvedValue({
+        projectId, branchId: branch.id, headTurnId: null, revisionId: null, catalogRevisionId: null,
+        enabled: false, state: emptyMemoryState(),
+      }),
+      process: vi.fn<ChatTransactionContext['memory']['process']>().mockResolvedValue(skippedMemory('Disabled.')),
+      failed: vi.fn<ChatTransactionContext['memory']['failed']>(),
+      source: vi.fn<ChatTransactionContext['memory']['source']>(),
+    },
     branches: {
       list: vi.fn<ChatTransactionContext['branches']['list']>(),
       get: vi.fn<ChatTransactionContext['branches']['get']>().mockResolvedValue(branch),
@@ -63,10 +74,25 @@ function setup() {
 }
 
 describe('chat orchestration without infrastructure', () => {
+  it('preserves a fully validated narration if delivery fails before memory processing', async () => {
+    const { context, narrate, emit, run } = setup();
+    narrate.mockResolvedValue({ prose: 'The door opens.', resolution: 'The door opens.', callId: 'narrator-call' });
+    const memory = { ...skippedMemory('Memory interrupted.'), status: 'failed' as const, code: 'MEMORY_FAILED' };
+    context.memory.failed.mockResolvedValue(memory);
+    emit.mockImplementation(async (event) => {
+      if (event.type === 'chat.pipeline.stage' && event.stage === 'narrator' && event.status === 'completed') {
+        throw new DOMException('Client disconnected.', 'AbortError');
+      }
+    });
+    expect(await run()).toMatchObject({ status: 'completed', memory });
+    expect(context.memory.process).not.toHaveBeenCalled();
+    expect(context.turns.finish).toHaveBeenCalledWith('turn', 'branch', expect.objectContaining({ status: 'completed', memory }), expect.any(Date));
+  });
+
   it('adds enabled narrator instructions to the project prompt', async () => {
     const { context, narrate, run } = setup();
     context.projectAgents[0]!.instructions = 'Write in a concise, playful tone.';
-    narrate.mockResolvedValue('The door opens.');
+    narrate.mockResolvedValue({ prose: 'The door opens.', resolution: 'The door opens.', callId: 'narrator-call' });
 
     await run();
 
@@ -89,7 +115,7 @@ describe('chat orchestration without infrastructure', () => {
       items: [{ kind: 'observation', text: 'A wire is visible.', importance: 'NORMAL' }],
     }];
     analyze.mockResolvedValue(whiteboard);
-    narrate.mockResolvedValue('The door opens carefully.');
+    narrate.mockResolvedValue({ prose: 'The door opens carefully.', resolution: 'The door opens.', callId: 'narrator-call' });
 
     await run();
 
@@ -111,7 +137,7 @@ describe('chat orchestration without infrastructure', () => {
       await onAgentProgress?.({ agentId: 'analyst', name: 'Chaos', status: 'completed', durationMs: 12 });
       return [];
     });
-    narrate.mockResolvedValue('The door opens.');
+    narrate.mockResolvedValue({ prose: 'The door opens.', resolution: 'The door opens.', callId: 'narrator-call' });
 
     await run();
 
@@ -156,7 +182,7 @@ describe('chat orchestration without infrastructure', () => {
   it('does not reclassify a persistence failure as a generation failure', async () => {
     const { context, narrate, run } = setup();
     const error = new Error('Persistence unavailable.');
-    narrate.mockResolvedValue('The door opens.');
+    narrate.mockResolvedValue({ prose: 'The door opens.', resolution: 'The door opens.', callId: 'narrator-call' });
     context.turns.finish.mockRejectedValue(error);
 
     await expect(run()).rejects.toBe(error);

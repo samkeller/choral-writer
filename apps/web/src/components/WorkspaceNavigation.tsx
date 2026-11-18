@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Button, NavLink, Stack, Text } from '@mantine/core';
-import { IconBook2, IconBrain, IconHome2, IconUsers } from '@tabler/icons-react';
+import { IconBook2, IconHome2, IconUsers } from '@tabler/icons-react';
 import { Link, useMatch, useResolvedPath } from 'react-router-dom';
 
 import styles from './WorkspaceLayout.module.css';
@@ -9,7 +9,6 @@ const navigation = [
   { path: '/', label: 'Accueil', icon: IconHome2 },
   { path: '/projects', label: 'Projets', icon: IconBook2 },
   { path: '/agents', label: 'Agents', icon: IconUsers },
-  { path: '/memories', label: 'Mémoires', icon: IconBrain },
 ];
 
 export function WorkspaceNavigation({ compact = false, trailingAction }: {

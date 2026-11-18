@@ -15,7 +15,7 @@ export async function streamChatCommand(
   ) => Promise<ChatRunResult>,
 ): Promise<void> {
   const controller = new AbortController();
-  const deadline = setTimeout(() => controller.abort(new DOMException('Turn timed out.', 'TimeoutError')), 120_000);
+  const deadline = setTimeout(() => controller.abort(new DOMException('Turn timed out.', 'TimeoutError')), 300_000);
   const abort = () => controller.abort();
   reply.raw.on('close', abort);
   let streaming = false;
@@ -70,6 +70,7 @@ export async function streamChatCommand(
       await emit({
         type: 'chat.turn.completed', branchId: result.branchId,
         turnId: result.turnId, message: result.message,
+        memory: result.memory,
       });
     }
   } catch (error) {

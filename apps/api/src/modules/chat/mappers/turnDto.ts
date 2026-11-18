@@ -13,5 +13,6 @@ export function toChatTurnDto(turn: ChatTurn): ChatTurnDto {
     error: turn.status === 'failed' ? 'La génération de ce tour a échoué.' : null,
     userMessage: toMessageDto(turn.userMessage),
     assistantMessage: turn.assistantMessage ? toMessageDto(turn.assistantMessage) : null,
+    memory: turn.memory ?? null,
   };
 }

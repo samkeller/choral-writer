@@ -1,4 +1,4 @@
-import type { AnalysisEnvelope, ChatTurn, Message } from '@choral-writer/shared';
+import type { AnalysisEnvelope, ChatTurn, MemoryContext, Message } from '@choral-writer/shared';
 
 export type NarratorInput = {
   turnId: string;
@@ -10,6 +10,8 @@ export type NarratorInput = {
   userMessage: Message;
   signal: AbortSignal;
   onDelta: (delta: string) => Promise<void>;
+  memoryContext?: MemoryContext;
 };
 
-export type Narrator = (input: NarratorInput) => Promise<string>;
+export type NarratorOutput = { resolution: string; prose: string; callId: string };
+export type Narrator = (input: NarratorInput) => Promise<NarratorOutput>;

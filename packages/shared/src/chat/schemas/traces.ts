@@ -2,8 +2,9 @@ import { z } from 'zod';
 
 import { analysisEnvelopeSchema } from '../../pipeline.js';
 import { chatExecutionParamsSchema } from './turn.js';
+import { memoryContextSchema } from '../../memories.js';
 
-export const traceStageSchema = z.enum(['analysis', 'narrator']);
+export const traceStageSchema = z.enum(['analysis', 'narrator', 'guardian', 'reducer']);
 export const traceStatusSchema = z.enum(['success', 'error']);
 export const traceCallParamsSchema = chatExecutionParamsSchema.extend({ callId: z.string().uuid() });
 
@@ -26,6 +27,7 @@ export const traceCallSummarySchema = z.object({
 
 export const traceCallDetailSchema = traceCallSummarySchema.extend({
   request: z.object({
+    memory: memoryContextSchema.optional(),
     messages: z.array(z.object({
       role: z.string(),
       content: z.unknown().optional(),

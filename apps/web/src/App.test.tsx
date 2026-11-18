@@ -10,6 +10,7 @@ import {
   type AgentDto, type PublishAgentVersion, type ChatBranchDto,
   type ChatEventDto, type ChatHistoryDto, type ProjectAgent,
   type MessageDto, type ProjectDto, type TraceCallDetail, type TurnTraceSummary,
+  memoryMutationSchema, type MemoryView, type MemoryResult,
 } from '@choral-writer/shared';
 
 import { api, ClientApiError } from './api/client';
@@ -136,12 +137,7 @@ describe('routing and authentication', () => {
 
     await screen.findByRole('heading', { name: 'Page introuvable' });
     expect(screen.queryByRole('link', { name: 'Traces' })).toBeNull();
-    fireEvent.click(screen.getAllByRole('link', { name: 'Mémoires' })[0]);
-    await screen.findByRole('heading', { name: 'Mémoires' });
-    expect(screen.getByTestId('location').textContent).toBe('/memories');
-    fireEvent.click(screen.getByRole('button', { name: 'Précédent' }));
-    await screen.findByRole('heading', { name: 'Page introuvable' });
-    expect(screen.getByTestId('location').textContent).toBe('/traces');
+    expect(screen.queryByRole('link', { name: 'Mémoires' })).toBeNull();
 
     adapter.mockImplementation(async (config) => respond(config, 500, {
       error: { code: 'INTERNAL_SERVER_ERROR', message: 'Logout unavailable.', status: 500, source: 'application' },
@@ -378,6 +374,188 @@ describe('projects and chat screens', () => {
     sourceBranchId: null, forkTurnId: null, headTurnId: null, createdAt: project.createdAt,
   };
 
+  it('saves project settings from the shared toolbar without losing edits across sections or an error', async () => {
+    let saved = project;
+    let attempts = 0;
+    adapter.mockImplementation(async (config) => {
+      if (config.url === '/session') return respond(config, 200, { authenticated: true });
+      if (config.url === `/projects/${project.id}`) {
+        if (config.method === 'put') {
+          attempts++;
+          const input = projectInputSchema.parse(JSON.parse(String(config.data)));
+          if (attempts === 1) return respond(config, 409, {
+            error: { code: 'PROJECT_UPDATE_FAILED', message: 'Enregistrement indisponible.', status: 409, source: 'application' },
+          });
+          saved = { ...saved, ...input };
+        }
+        return respond(config, 200, saved);
+      }
+      if (config.url === '/agents' || config.url === `/projects/${project.id}/agents`) return respond(config, 200, []);
+      if (config.url === `/projects/${project.id}/branches`) return respond(config, 200, [branch]);
+      if (config.url === `/projects/${project.id}/branches/${branch.id}/history`) return respond(config, 200, { branch, turns: [] });
+      if (config.url === `/projects/${project.id}/branches/${branch.id}/memories`) return respond(config, 200, {
+        projectId: project.id, branchId: branch.id, headTurnId: null, revisionId: null, catalogRevisionId: null,
+        enabled: false, state: { v: 2, tags: [], entries: [] },
+      });
+      throw new Error(`Unexpected request: ${config.method} ${config.url}`);
+    });
+    renderApp(`/projects/${project.id}?tab=config`);
+    fireEvent.change(await screen.findByRole('textbox', { name: /Nom du projet/ }), { target: { value: 'Le nouveau monde' } });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Prompt système' }), { target: { value: 'Instructions corrigées' } });
+    const navigation = within(screen.getByRole('navigation', { name: 'Sections de configuration' }));
+    fireEvent.click(navigation.getByRole('button', { name: 'Agents' }));
+    expect(await screen.findByRole('button', { name: 'Enregistrer l’équipe' })).toBeTruthy();
+    fireEvent.click(navigation.getByRole('button', { name: 'Mémoire' }));
+    expect(await screen.findByRole('button', { name: 'Proposer la configuration mémoire' })).toBeTruthy();
+    fireEvent.click(navigation.getByRole('button', { name: 'Projet' }));
+    expect((screen.getByRole('textbox', { name: /Nom du projet/ }) as HTMLInputElement).value).toBe('Le nouveau monde');
+    fireEvent.click(screen.getByRole('button', { name: 'Enregistrer' }));
+    await screen.findByText('Enregistrement indisponible.');
+    expect((screen.getByRole('textbox', { name: 'Prompt système' }) as HTMLTextAreaElement).value).toBe('Instructions corrigées');
+    expect(saved).toBe(project);
+    fireEvent.click(screen.getByRole('button', { name: 'Enregistrer' }));
+    await screen.findByRole('heading', { name: 'Le nouveau monde' });
+    expect(saved).toMatchObject({ name: 'Le nouveau monde', systemPrompt: 'Instructions corrigées' });
+    expect(attempts).toBe(2);
+    expect(screen.getByTestId('location').textContent).toBe(`/projects/${project.id}?tab=config`);
+  });
+
+  it('preserves a memory edit through a conflict and reload, then saves against the current revision', async () => {
+    const scopeId = '019ad30c-19b0-7000-8000-000000000020';
+    const entryId = '019ad30c-19b0-7000-8000-000000000021';
+    const newerRevision = '019ad30c-19b0-7000-8000-000000000022';
+    let view: MemoryView = { projectId: project.id, branchId: branch.id, headTurnId: null,
+      revisionId: null, catalogRevisionId: null, enabled: false,
+      state: { v: 2, tags: [{ id: scopeId, name: 'Faits', description: 'Faits du récit' }],
+        entries: [{ id: entryId, tagIds: [scopeId], protected: false, key: 'Max', content: 'Texte initial', archived: false,
+          source: 'user', turnId: null, updatedAt: project.createdAt },
+        { id: '019ad30c-19b0-7000-8000-000000000023', tagIds: [scopeId], protected: true, key: 'Mara', content: 'Autre souvenir', archived: false,
+          source: 'guardian', turnId: null, updatedAt: project.createdAt }] } };
+    let first = true;
+    adapter.mockImplementation(async (config) => {
+      if (config.url === '/session') return respond(config, 200, { authenticated: true });
+      if (config.url === '/projects') return respond(config, 200, [project]);
+      if (config.url === `/projects/${project.id}`) return respond(config, 200, project);
+      if (config.url === `/projects/${project.id}/agents`) return respond(config, 200, []);
+      if (config.url === `/projects/${project.id}/branches`) return respond(config, 200, [branch]);
+      if (config.url === `/projects/${project.id}/branches/${branch.id}/history`) return respond(config, 200, { branch, turns: [] });
+      if (config.url === '/agents') return respond(config, 200, []);
+      if (config.url === `/projects/${project.id}/branches/${branch.id}/memories`) {
+        if (config.method === 'post') {
+          const input = memoryMutationSchema.parse(JSON.parse(String(config.data)));
+          if (first) {
+            first = false; view = { ...view, revisionId: newerRevision };
+            return respond(config, 409, { error: { code: 'MEMORY_CHANGED', message: 'Mémoire modifiée ailleurs.',
+              status: 409, source: 'application' } });
+          }
+          expect(input.expectedRevisionId).toBe(newerRevision);
+          if (input.change.op !== 'saveEntry') throw new Error('Expected entry correction.');
+          const entry = input.change.entry;
+          view = { ...view, state: { ...view.state, entries: view.state.entries.map((item) => item.id === entryId ? { ...item, ...entry } : item) } };
+        }
+        return respond(config, 200, view);
+      }
+      throw new Error(`Unexpected request: ${config.url}`);
+    });
+    renderApp(`/memories?project=${project.id}&branch=${branch.id}`);
+    fireEvent.click(await screen.findByRole('button', { name: /Mara.*Autre souvenir/ }));
+    const memorySection = within(screen.getByRole('region', { name: 'Mémoire' }));
+    expect(memorySection.getAllByRole('toolbar')).toHaveLength(1);
+    const toolbar = within(memorySection.getByRole('toolbar', { name: 'Actions Mémoire' }));
+    expect(toolbar.getByRole('button', { name: 'Modifier Mara' })).toBeTruthy();
+    expect(toolbar.getByRole('button', { name: 'Archiver Mara' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Modifier Max' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /Max.*Texte initial/ }));
+    expect(toolbar.queryByRole('button', { name: 'Modifier Mara' })).toBeNull();
+    fireEvent.click(toolbar.getByRole('button', { name: 'Modifier Max' }));
+    expect(screen.getByTestId('location').textContent).toBe(`/projects/${project.id}?tab=config&section=memory&branch=${branch.id}`);
+    const dialog = within(screen.getByRole('dialog'));
+    fireEvent.change(dialog.getByRole('textbox', { name: 'Texte mémoire' }), { target: { value: 'Correction conservée' } });
+    fireEvent.click(dialog.getByRole('button', { name: 'Enregistrer l’entrée' }));
+    await dialog.findByText('Mémoire modifiée ailleurs.');
+    expect((dialog.getByRole('textbox', { name: 'Texte mémoire' }) as HTMLTextAreaElement).value).toBe('Correction conservée');
+    fireEvent.click(dialog.getByRole('button', { name: /Recharger l’état courant/ }));
+    await waitFor(() => expect(dialog.queryByText('Mémoire modifiée ailleurs.')).toBeNull());
+    fireEvent.click(dialog.getByRole('button', { name: 'Enregistrer l’entrée' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect((await screen.findAllByText('Correction conservée')).length).toBeGreaterThan(0);
+  });
+
+  it('reviews a generated memory proposal before applying edited tags and agent access', async () => {
+    const agentId = '019ad30c-19b0-7000-8000-000000000030';
+    const versionId = '019ad30c-19b0-7000-8000-000000000031';
+    const assignment: ProjectAgent = { agentId, versionId, phase: 'analysis', output: 'envelope',
+      name: 'Analyse', instructions: 'Analyse', version: 1 };
+    const view: MemoryView = { projectId: project.id, branchId: branch.id, headTurnId: null,
+      revisionId: null, catalogRevisionId: null, enabled: true, state: { v: 2, tags: [], entries: [] } };
+    let applied: unknown = null;
+    adapter.mockImplementation(async (config) => {
+      if (config.url === '/session') return respond(config, 200, { authenticated: true });
+      if (config.url === `/projects/${project.id}`) return respond(config, 200, project);
+      if (config.url === `/projects/${project.id}/branches`) return respond(config, 200, [branch]);
+      if (config.url === `/projects/${project.id}/branches/${branch.id}/history`) return respond(config, 200, { branch, turns: [] });
+      if (config.url === '/agents') return respond(config, 200, []);
+      if (config.url === `/projects/${project.id}/agents`) return respond(config, 200, [assignment]);
+      if (config.url === `/projects/${project.id}/branches/${branch.id}/memories/setup`) {
+        expect(JSON.parse(String(config.data))).toEqual({ expectedHeadTurnId: null, expectedRevisionId: null, expectedCatalogRevisionId: null });
+        return respond(config, 200, { tags: [{ ref: 'new-facts', name: 'Faits', description: 'Faits du récit' }],
+          agents: [{ agentId, versionId, mode: 'selected', tagRefs: [] }] });
+      }
+      if (config.url === `/projects/${project.id}/branches/${branch.id}/memories`) {
+        if (config.method === 'post') applied = memoryMutationSchema.parse(JSON.parse(String(config.data)));
+        return respond(config, 200, view);
+      }
+      throw new Error(`Unexpected request: ${config.url}`);
+    });
+    renderApp(`/projects/${project.id}?tab=config&section=memory&branch=${branch.id}`);
+    expect(await screen.findByRole('navigation', { name: 'Sections de configuration' })).toBeTruthy();
+    expect(screen.queryByRole('textbox', { name: /Nom du projet/ })).toBeNull();
+    fireEvent.click(await screen.findByRole('button', { name: 'Proposer la configuration mémoire' }));
+    fireEvent.change(await screen.findByLabelText(/Nom du tag 1/), { target: { value: 'Univers' } });
+    fireEvent.change(screen.getByLabelText(/Description du tag 1/), { target: { value: 'Détails du monde' } });
+    const selection = screen.getByLabelText('Mémoire proposée pour Analyse', { selector: 'input' });
+    fireEvent.click(selection);
+    fireEvent.click(await screen.findByRole('option', { name: 'Toute la mémoire' }));
+    fireEvent.click(selection);
+    fireEvent.click(await screen.findByRole('option', { name: 'Univers' }));
+    expect(applied).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Appliquer la proposition' }));
+    await waitFor(() => expect(applied).toMatchObject({ change: { op: 'applySetup',
+      proposal: { tags: [{ ref: 'new-facts', name: 'Univers', description: 'Détails du monde' }],
+        agents: [{ agentId, versionId, mode: 'selected', tagRefs: ['new-facts'] }] } } }));
+  });
+
+  it('shows the latest guardian suggestion and only saves it on approval', async () => {
+    const turnId = '019ad30c-19b0-7000-8000-000000000040';
+    const runId = '019ad30c-19b0-7000-8000-000000000041';
+    const headBranch = { ...branch, headTurnId: turnId };
+    const view: MemoryView = { projectId: project.id, branchId: branch.id, headTurnId: turnId,
+      revisionId: null, catalogRevisionId: null, enabled: true, state: { v: 2, tags: [], entries: [] } };
+    const writes: unknown[] = [];
+    adapter.mockImplementation(async (config) => {
+      if (config.url === '/session') return respond(config, 200, { authenticated: true });
+      if (config.url === `/projects/${project.id}`) return respond(config, 200, project);
+      if (config.url === `/projects/${project.id}/branches`) return respond(config, 200, [headBranch]);
+      if (config.url === `/projects/${project.id}/branches/${branch.id}/history`) return respond(config, 200, { branch: headBranch, turns: [] });
+      if (config.url === '/agents' || config.url === `/projects/${project.id}/agents`) return respond(config, 200, []);
+      if (config.url === `/projects/${project.id}/turns/${turnId}/memory`) return respond(config, 200, { input: null,
+        runs: [{ id: runId, turnId, branchId: branch.id, createdAt: project.createdAt,
+          result: { status: 'success', message: 'Terminé', code: null, changes: [], guardianMs: 1, reducerMs: 1,
+            tagSuggestions: [{ name: 'Lieux', description: 'Endroits importants', reason: 'Un lieu récurrent' }] } }] });
+      if (config.url === `/projects/${project.id}/branches/${branch.id}/memories`) {
+        if (config.method === 'post') writes.push(memoryMutationSchema.parse(JSON.parse(String(config.data))));
+        return respond(config, 200, view);
+      }
+      throw new Error(`Unexpected request: ${config.url}`);
+    });
+    renderApp(`/projects/${project.id}?tab=config&section=memory`);
+    fireEvent.click(await screen.findByRole('button', { name: /Dernier traitement : terminé/ }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Approuver ce tag' }));
+    await waitFor(() => expect(writes).toMatchObject([{ change: { op: 'saveTag', tag: { name: 'Lieux', description: 'Endroits importants' } } }]));
+    expect(await screen.findByRole('button', { name: 'Tag ajouté' })).toHaveProperty('disabled', true);
+    expect(writes).toHaveLength(1);
+  });
+
   function existingChat() {
     const user: MessageDto = {
       id: '019ad30c-19b0-7000-8000-000000000002', projectId: project.id,
@@ -429,6 +607,67 @@ describe('projects and chat screens', () => {
     return { original, histories, alternativeId, newTurnId, alternative, user };
   }
 
+  it.each(['success', 'failed', 'conflict'] as const)(
+    'retries only memory inside the story timeline without navigating or changing narration (%s)',
+    async (outcome) => {
+      const fixture = existingChat();
+      const head = fixture.original.turns[0]!;
+      const failure: MemoryResult = {
+        status: 'failed', message: 'Réponse mémoire vide.', code: 'LLM_EMPTY_RESPONSE',
+        changes: [], guardianMs: 10, reducerMs: 0,
+      };
+      head.memory = failure;
+      const view: MemoryView = {
+        projectId: project.id, branchId: branch.id, headTurnId: head.id,
+        revisionId: '019ad30c-19b0-7000-8000-000000000020',
+        catalogRevisionId: '019ad30c-19b0-7000-8000-000000000021',
+        enabled: true, state: { v: 2, tags: [], entries: [] },
+      };
+      const chatAdapter = adapter.getMockImplementation()!;
+      let release!: () => void;
+      const waiting = new Promise<void>((resolve) => { release = resolve; });
+      const retryUrl = `/projects/${project.id}/branches/${branch.id}/turns/${head.id}/memory/retry`;
+      adapter.mockImplementation(async (config) => {
+        if (config.url === `/projects/${project.id}/branches/${branch.id}/memories`) return respond(config, 200, view);
+        if (config.url === retryUrl) {
+          expect(JSON.parse(String(config.data))).toEqual({
+            expectedHeadTurnId: head.id, expectedRevisionId: view.revisionId,
+            expectedCatalogRevisionId: view.catalogRevisionId,
+          });
+          await waiting;
+          if (outcome === 'conflict') return respond(config, 409, { error: {
+            code: 'MEMORY_CHANGED', message: 'Mémoire modifiée ailleurs.', status: 409, source: 'application',
+          } });
+          head.memory = { ...failure, status: outcome, message: outcome === 'success' ? 'Mémoire réparée.' : 'Encore vide.' };
+          return respond(config, 200, head.memory);
+        }
+        return chatAdapter(config);
+      });
+      const fetchMock = vi.fn();
+      vi.stubGlobal('fetch', fetchMock);
+      renderApp(`/projects/${project.id}`);
+      fireEvent.click(await screen.findByRole('button', { name: 'Relancer le Gardien' }));
+      await within(screen.getByRole('log', { name: 'Conversation' })).findByText('Mémoire en cours');
+      expect(screen.queryByText('Analyse en cours')).toBeNull();
+      expect(screen.queryByText('Narrateur en cours')).toBeNull();
+      expect(screen.getByLabelText('Votre message').hasAttribute('disabled')).toBe(true);
+      expect(screen.getByRole('tab', { name: 'Configuration' }).hasAttribute('disabled')).toBe(true);
+      expect(screen.getByTestId('location').textContent).toBe(`/projects/${project.id}`);
+      await act(async () => { release(); });
+      await waitFor(() => expect(screen.queryByText('Mémoire en cours')).toBeNull());
+      if (outcome !== 'success') {
+        await screen.findByText(outcome === 'failed' ? 'Encore vide.' : 'Mémoire modifiée ailleurs.');
+        expect(screen.getByRole('button', { name: 'Relancer le Gardien' }).hasAttribute('disabled')).toBe(false);
+      } else expect(screen.queryByText('Mémoire à relancer')).toBeNull();
+      expect(screen.getAllByText('Réponse originale.')).toHaveLength(1);
+      expect(screen.getAllByText(fixture.user.content)).toHaveLength(1);
+      expect(screen.getByLabelText('Votre message').hasAttribute('disabled')).toBe(false);
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(adapter.mock.calls.filter(([config]) => config.url === retryUrl)).toHaveLength(1);
+      expect(screen.getByTestId('location').textContent).toBe(`/projects/${project.id}`);
+    },
+  );
+
   it('shows pinned agents in project setup and explicitly upgrades only the chosen version', async () => {
     const { original } = existingChat();
     const chatAdapter = adapter.getMockImplementation()!;
@@ -461,6 +700,10 @@ describe('projects and chat screens', () => {
       if (config.url === `/projects/${project.id}/branches/${branch.id}/history`) {
         return respond(config, 200, { branch: { ...original.branch, headTurnId: null }, turns: [] });
       }
+      if (config.url === `/projects/${project.id}/branches/${branch.id}/memories`) {
+        return respond(config, 200, { projectId: project.id, branchId: branch.id, headTurnId: null,
+          revisionId: null, catalogRevisionId: null, enabled: true, state: { v: 2, tags: [], entries: [] } });
+      }
       if (config.url === `/projects/${project.id}/agents`) {
         if (config.method === 'put') {
           writes++;
@@ -480,14 +723,23 @@ describe('projects and chat screens', () => {
     renderApp(`/projects/${project.id}?setup=agents`);
     const responseSelect = await screen.findByLabelText('Réponse utilisateur · Narrateur', { selector: 'input' });
     await waitFor(() => expect(responseSelect.getAttribute('value')).toBe('Narrateur · v1'));
+    expect((await screen.findByRole('button', { name: 'Enregistrer les accès de Narrateur' })).textContent).toBe('Enregistrer les accès');
+    const instructions = screen.getByText('Lire les instructions').closest('details');
+    expect(instructions?.open).toBe(false);
+    fireEvent.click(screen.getByText('Lire les instructions'));
+    expect(instructions?.open).toBe(true);
+    expect(screen.getByText('Ton v1')).toBeTruthy();
     expect(writes).toBe(0);
     fireEvent.click(responseSelect);
     fireEvent.click(await screen.findByRole('option', { name: 'Narrateur · v2' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Enregistrer la configuration' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Enregistrer l’équipe' }));
     await screen.findByText('Configuration enregistrée. Elle sera utilisée au prochain tour.');
     expect(writes).toBe(1);
     expect(assignments.find((entry) => entry.output === 'narrative')?.version).toBe(2);
     expect(assignments.find((entry) => entry.output === 'memory_proposals')?.versionId).toBe(memoryVersion.id);
+    fireEvent.click(screen.getByRole('button', { name: /Gardien.*Actif/ }));
+    expect(screen.getByLabelText('Mémoire · Gardien', { selector: 'input' })).toBeTruthy();
+    expect(screen.queryByLabelText('Réponse utilisateur · Narrateur', { selector: 'input' })).toBeNull();
   });
 
   it('creates, edits, and deletes a project through the forms', async () => {
@@ -573,6 +825,7 @@ describe('projects and chat screens', () => {
     expect(screen.getByLabelText('Agent Chaos en cours')).toBeTruthy();
     expect(screen.getByLabelText('Agent Cohérence en cours')).toBeTruthy();
     expect(screen.getByLabelText('Votre message').hasAttribute('disabled')).toBe(true);
+    expect(screen.getByRole('tab', { name: 'Configuration' }).hasAttribute('disabled')).toBe(true);
 
     await act(async () => {
       emit({ type: 'chat.pipeline.agent', turnId, agentId: '019ad30c-19b0-7000-8000-000000000009',
@@ -598,6 +851,7 @@ describe('projects and chat screens', () => {
       controller.close();
     });
     await waitFor(() => expect(screen.getByLabelText('Votre message').hasAttribute('disabled')).toBe(false));
+    expect(screen.getByRole('tab', { name: 'Configuration' }).hasAttribute('disabled')).toBe(false);
     expect(screen.queryByText('Narrateur en cours')).toBeNull();
     expect(screen.getAllByText('Bonjour Mara.')).toHaveLength(1);
     view.unmount();
@@ -647,6 +901,11 @@ describe('projects and chat screens', () => {
     const callDetail: TraceCallDetail = {
       ...summary.calls[0]!,
       request: {
+        memory: {
+          tags: [{ id: '019ad30c-19b0-7000-8000-000000000311', name: 'Lieux', description: 'Endroits reçus' }],
+          entries: [{ id: '019ad30c-19b0-7000-8000-000000000312', key: 'Porte',
+            content: 'Une **porte** ancienne.', tagIds: ['019ad30c-19b0-7000-8000-000000000311'] }],
+        },
         messages: [
           {
             role: 'system',
@@ -684,6 +943,9 @@ describe('projects and chat screens', () => {
     fireEvent.click(screen.getByRole('button', { name: /Chaos · Analyse/ }));
     await screen.findByRole('heading', { name: 'Détail de l’appel' });
     await screen.findByText('Une clé manque.');
+    fireEvent.click(screen.getByText('Mémoire reçue · 1 entrée(s)'));
+    expect(screen.getAllByText('Endroits reçus', { exact: false }).length).toBeGreaterThan(0);
+    expect(screen.getByText('porte', { selector: 'strong' })).toBeTruthy();
     expect(screen.getByRole('tab', { name: 'Réponse' }).getAttribute('aria-selected')).toBe('true');
     fireEvent.click(screen.getByRole('tab', { name: 'Prompt' }));
     await screen.findByText('Prompt exact du narrateur.', { selector: 'p' });
@@ -714,9 +976,6 @@ describe('projects and chat screens', () => {
     const emit = (event: ChatEventDto) => controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(event)}\n\n`));
     const view = renderApp(`/projects/${project.id}`);
     await screen.findByText('Réponse originale.');
-    fireEvent.click(screen.getByRole('button', { name: 'Afficher le prompt système' }));
-    await screen.findByText(project.systemPrompt);
-    fireEvent.click(screen.getByRole('button', { name: 'Afficher le prompt système' }));
     fireEvent.click(screen.getByRole('button', { name: 'Régénérer la réponse' }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     expect(fetchMock.mock.calls[0][0]).toBe(

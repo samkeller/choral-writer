@@ -25,7 +25,6 @@ Garder la logique métier et les appels API dans leurs modules existants ; ne pa
 - Ne pas ajouter Tailwind ni une seconde solution de styling. Le CSS global ne concerne que le document ; les exceptions locales sont des CSS Modules fondés sur les variables Mantine.
 - Ne pas multiplier les variantes ou wrappers génériques. Garder les styles et composants métier près de leur domaine.
 - Utiliser `components/atoms/IconAction` pour les actions secondaires : icône Tabler, tooltip au survol/focus et libellé accessible unique. Conserver les boutons textuels pour les actions principales et les confirmations.
-- Pour les phases, réutiliser `components/phases/PhaseTag`, `PhaseSelect` et `phasePresentation`, y compris dans les choix des sélecteurs ; garder le contrat de sortie séparé du tag. Voir la grammaire des phases dans le design system.
 - Le thème est sombre uniquement. Éviter les textes décoratifs ou les explications redondantes ; préserver les aides nécessaires aux règles métier et aux erreurs.
 
 ## États, erreurs et responsive

@@ -12,6 +12,7 @@ import { ChatBranchRepository } from './repositories/branchRepository.js';
 import { ChatMessageRepository } from './repositories/messageRepository.js';
 import { ChatTurnRepository } from './repositories/turnRepository.js';
 import { ChatTransactionService } from './services/chatTransactionService.js';
+import { MemoriesService } from '../memories/services/memoriesService.js';
 
 export type { ChatService } from './services/chatService.js';
 export { ChatController } from './controllers/chatController.js';
@@ -31,8 +32,9 @@ function createEntityServices(connection: Database | Transaction, projectId: str
 
 export function createChatService(
   database: Database, projects: ProjectsService, callLLM: ReturnType<typeof createCallLLM>,
+  memories = new MemoriesService(database, projects, callLLM),
 ): ChatService {
-  const transaction = new ChatTransactionService(projects, createEntityServices);
+  const transaction = new ChatTransactionService(projects, createEntityServices, memories);
   const analysis = new ChatAnalysisService(callLLM);
   const narrator = new ChatNarratorService(callLLM);
   return new ChatService({

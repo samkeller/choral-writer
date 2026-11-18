@@ -1,4 +1,5 @@
-import { asc, desc, eq, inArray } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray } from 'drizzle-orm';
+import { defaultMemoryRead, type MemoryRead } from '@choral-writer/shared';
 import { v7 as uuidv7 } from 'uuid';
 import type { Agent, AgentInput, AgentVersionInput, ProjectAgent, ProjectAgentsInput } from '@choral-writer/shared';
 
@@ -11,15 +12,13 @@ export class AgentRepository {
   constructor(private readonly database: Database | Transaction) {}
 
   async list(): Promise<Agent[]> {
-    const [identities, versions, usages] = await Promise.all([
-      this.database.select().from(agents).orderBy(desc(agents.createdAt), asc(agents.id)),
-      this.database.select().from(agentVersions).orderBy(desc(agentVersions.version)),
-      this.database.select({
-        agentId: projectAgents.agentId, id: projects.id, name: projects.name,
-        versionId: projectAgents.versionId,
-      }).from(projectAgents).innerJoin(projects, eq(projects.id, projectAgents.projectId))
-        .orderBy(asc(projects.name)),
-    ]);
+    const identities = await this.database.select().from(agents).orderBy(desc(agents.createdAt), asc(agents.id));
+    const versions = await this.database.select().from(agentVersions).orderBy(desc(agentVersions.version));
+    const usages = await this.database.select({
+      agentId: projectAgents.agentId, id: projects.id, name: projects.name,
+      versionId: projectAgents.versionId,
+    }).from(projectAgents).innerJoin(projects, eq(projects.id, projectAgents.projectId))
+      .orderBy(asc(projects.name));
     return identities.map((agent) => ({
       ...agent,
       versions: versions.filter((version) => version.agentId === agent.id),
@@ -67,6 +66,7 @@ export class AgentRepository {
       agentId: projectAgents.agentId, versionId: projectAgents.versionId,
       phase: projectAgents.phase, output: projectAgents.output, version: agentVersions.version,
       name: agentVersions.name, instructions: agentVersions.instructions,
+      memoryRead: projectAgents.memoryRead,
     }).from(projectAgents).innerJoin(agentVersions, eq(agentVersions.id, projectAgents.versionId))
       .where(eq(projectAgents.projectId, projectId))
       .orderBy(asc(projectAgents.phase), asc(agentVersions.name), asc(projectAgents.agentId));
@@ -84,10 +84,22 @@ export class AgentRepository {
   async replace(projectId: string, selections: {
     agentId: string; versionId: string; phase: Agent['phase']; output: Agent['output'];
   }[]): Promise<void> {
+    const previous = await this.listForProject(projectId);
     await this.database.delete(projectAgents).where(eq(projectAgents.projectId, projectId));
     if (selections.length > 0) {
-      await this.database.insert(projectAgents).values(selections.map((selection) => ({ projectId, ...selection })));
+      await this.database.insert(projectAgents).values(selections.map((selection) => ({
+        projectId, ...selection,
+        memoryRead: previous.find((item) => item.agentId === selection.agentId)?.memoryRead
+          ?? defaultMemoryRead(selection.output),
+      })));
     }
+  }
+
+  async setMemoryRead(projectId: string, agentId: string, memoryRead: MemoryRead): Promise<boolean> {
+    const rows = await this.database.update(projectAgents).set({ memoryRead }).where(and(
+      eq(projectAgents.projectId, projectId), eq(projectAgents.agentId, agentId),
+    )).returning({ id: projectAgents.agentId });
+    return rows.length === 1;
   }
 
   async createDefaults(projectId: string): Promise<void> {

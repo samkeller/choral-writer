@@ -1,4 +1,5 @@
-import type { AnalysisEnvelope, ChatEvent, Message, Project, ProjectAgent } from '@choral-writer/shared';
+import type { AnalysisEnvelope, ChatEvent, Message, Project, ProjectAgent, MemoryResult } from '@choral-writer/shared';
+import type { MemorySession } from '../../memories/services/memoriesService.js';
 
 import type { ProjectsService } from '../../projects/services/projectServices.js';
 import type { AnalysisInput } from '../services/analysisService.js';
@@ -13,7 +14,7 @@ export type ChatProgressEvent = Extract<ChatEvent, {
 }>;
 
 export type ChatRunResult = { turnId: string; branchId: string } & (
-  | { status: 'completed'; message: Message }
+  | { status: 'completed'; message: Message; memory?: MemoryResult }
   | { status: 'failed'; error: unknown }
 );
 
@@ -31,6 +32,7 @@ export type ChatEntityServices = {
 export type ChatTransactionContext = ChatEntityServices & {
   project: Pick<Project, 'id' | 'systemPrompt'>;
   projectAgents: ProjectAgent[];
+  memory: Pick<MemorySession, 'prepare' | 'process' | 'failed' | 'source'>;
   recordActivity(at: Date): Promise<void>;
 };
 

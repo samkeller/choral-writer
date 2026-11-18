@@ -4,6 +4,7 @@ import { publicErrorSchema } from '../../errors.js';
 import { chatOperationSchema } from './command.js';
 import { messageDtoSchema, messageSchema } from './message.js';
 import { traceStageSchema } from './traces.js';
+import { memoryResultSchema } from '../../memories.js';
 
 export const chatEventDtoSchema = z.discriminatedUnion('type', [
   z.object({
@@ -35,6 +36,7 @@ export const chatEventDtoSchema = z.discriminatedUnion('type', [
   }),
   z.object({
     type: z.literal('chat.turn.completed'),
+    memory: memoryResultSchema.optional(),
     branchId: z.string().uuid(),
     turnId: z.string().uuid(),
     message: messageDtoSchema,

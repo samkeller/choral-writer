@@ -58,11 +58,15 @@ choral-writer/
 | `messages` | `project_id`, `role` (user ou assistant), contenu |
 | `turns` | `project_id`, `user_message_id`, statut, timestamps |
 | `llm_calls` | trace : `turn_id`, `agent_id`, `agent_version_id`, étage, requête, réponse, tokens, durée, erreur |
-| `memories` | `project_id`, nom, `kind` (texte libre), `config` jsonb |
-| `memory_entries` | `memory_id`, `key`, `content`, `version`, `deleted_at` (c'est la **projection**) |
+| `memory_settings` | activation, révision et catalogue de tags de lecture du projet |
+| `memory_bank` | révision et entrées texte versionnées par branche : identifiant, titre, contenu, tags, protection et archive |
+| `memory_run` | résultat et changements de chaque traitement du Gardien pour un tour et une branche |
 | `events` | journal append-only : `project_id`, `turn_id`, `type`, `payload`, `seq` |
 
-Les mémoires ont un `kind` en texte libre et un `config` jsonb. Cela permet d'ajouter des types de mémoire sans migration.
+Les catalogues et banques mémoire sont des documents JSON versionnés (`v: 2`).
+Les tags ont une identité stable et une définition courte ; ce ne sont pas des
+mots-clés d'activation. La sélection des lecteurs est commune au projet, les
+souvenirs et leurs corrections suivent la branche.
 
 ## 5. Pipeline
 
@@ -100,16 +104,22 @@ Le champ `kind` est une chaîne libre. Les quatre valeurs ci-dessus sont les con
 ```
 Le parseur de flux ne transmet au client que le contenu de `<prose>`. La réponse brute tracée du Narrateur conserve les deux sections, ce qui permet de reconstruire la résolution sans la dupliquer dans une table d'événements.
 
-**Gardien (contrat 4.2)** : un appel unique qui lit le whiteboard, la résolution et la prose. Il retourne des propositions typées :
+**Gardien (contrat 4.2)** : un appel qui lit les définitions de tags, la mémoire
+active, la résolution et la prose. Les prompts complets des autres agents et
+leurs recommandations ne sont pas recopiés dans son contrat. Il retourne des
+propositions typées, avec les identifiants réels des tags :
 ```json
-{ "v": 1, "proposals": [
-  { "op": "upsert", "memory": "Personnages", "key": "Mara",
-    "content": "A perdu sa main gauche.", "reason": "Scène 12" },
-  { "op": "forget", "memory": "Lieux", "key": "Taverne", "reason": "Détruite" }
-]}
+{ "v": 2, "proposals": [
+  { "op": "create", "tagIds": ["<UUID du tag world_rules>"], "key": "Mara",
+    "content": "Mara a perdu sa main gauche.", "reason": "Blessure établie dans la scène." },
+  { "op": "archive", "entryId": "<UUID du souvenir>", "reason": "Information devenue obsolète." }
+], "tagSuggestions": [] }
 ```
 
-**Réducteur** : une transaction qui valide chaque proposition (schéma, mémoire existante, clé et contenu valides, règle d'écriture codée en dur), écrit les événements et met à jour `memory_entries`. Chaque rejet est journalisé avec un code (`UNKNOWN_MEMORY`, `INVALID_SCHEMA`, `FORBIDDEN`, `EMPTY_CONTENT`).
+**Réducteur** : valide tout le lot (schéma, tags existants, souvenirs non protégés,
+cibles non répétées et limites), puis écrit la banque et le résultat dans un
+savepoint. Un échec annule toutes les modifications mémoire, pas la narration.
+Une suggestion de tag ne crée aucun tag et ne modifie aucun abonnement.
 
 ## 6. Progression et visualiseur de traces
 
@@ -173,23 +183,31 @@ Les appels sont chargés à la demande. Leur détail donne accès au prompt exac
 - Traces passées limitées aux tours du chemin affiché ; aucune page globale `/traces`.
 - *Démontrable* : comprendre pourquoi une réponse est telle qu'elle est, en moins de trois clics.
 
-**M6 : Mémoire simple et Gardien**
-- CRUD des mémoires et de leurs entrées via l'interface, avec historique des versions lisible à partir des événements.
-- Gardien produisant des propositions, Réducteur transactionnel, rejets visibles dans la trace.
-- Entrées mémoire injectées dans la vue de contexte de tous les agents.
-- *Démontrable* : un fait établi au tour 3 est restitué au tour 20.
+**M6 : Mémoire simple et Gardien — implémenté**
+- Navigation du projet : Récit et Configuration. La configuration regroupe paramètres, agents et mémoire ; pas de drawer de configuration ni de page mémoire indépendante.
+- Composition desktop : rail Projet / Agents / Mémoire, listes et détail côte à côte, accès mémoire visibles avant les instructions repliables. Les longs contenus défilent dans leur panneau sans ajouter de défilement à la page.
+- Banque d'entrées texte alimentée par le Gardien ; consultation, recherche, correction, protection et archivage depuis la configuration, pour la branche sélectionnée.
+- Un seul sélecteur de tags de lecture par agent : intersection non vide pour lire une entrée ; sélection vide pour ne rien recevoir ; lecture complète explicitement choisie. Aucun cumul périmètres/tags/préfixes.
+- Proposition automatique de tags et d'abonnements à partir des agents, prévisualisée et modifiable avant application explicite. Cet appel de configuration est le seul à recevoir les prompts complets des agents.
+- Gardien proposant créations, éditions et archivages ; validation et écriture atomique du lot, changements et échecs visibles dans les traces.
+- Le Gardien utilise les définitions des tags et peut suggérer un nouveau contrat de lecture, sans l'activer ni réabonner les agents. Il doit lire toute la mémoire pour la maintenir.
+- Chaque agent reçoit seulement les souvenirs correspondant à ses tags. Pas de filtrage du prompt système ni de l'historique conversationnel en M6 ; le filtrage ne garantit pas la justesse sémantique du classement effectué par le LLM.
+- Mémoire désactivable ; son échec ne bloque pas la suite du récit et ne conserve aucune écriture du lot.
+- Migration des banques, snapshots et anciens filtres sans élargissement de lecture ; métadonnées historiques conservées.
 
 **M7 : Finition MVP**
 - Passe UX mobile, états de chargement et d'erreur, page de démonstration avec un projet d'exemple prêt à jouer.
 - Documentation `docs/pipeline.md`, README à jour. On supprime toute la doc non-nécessaire ou qui représente du legacy -> clean slate.
+- Supprimer le code mort, refacto.
+- préparer MEP
 
 ## 8. Après le MVP
 
 **Lot suivant : conception mémoire générique**
 - Types de mémoire (`kind`) et horizons court, moyen et long terme avec règles de modification propres.
-- Table de droits lecture/écriture par agent et par mémoire.
+- Droits d'écriture par agent plus fins, au-delà des périmètres de lecture et règles mémoire prévus en M6.
 - Connaissances par personnage (un personnage ne sait que ce qu'il a appris).
-- Vue de contexte configurable par agent.
+- Vue de contexte configurable par agent au-delà de la seule sélection mémoire, déjà prévue en M6.
 
 **TODO**
 - Annuler un tour, le régénérer, créer une branche.

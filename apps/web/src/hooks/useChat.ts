@@ -2,19 +2,21 @@ import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { ChatBranch, ChatCommand, ChatHistory, Message, Project } from '@choral-writer/shared';
 
-import { getErrorMessage } from '../api/client';
+import { ClientApiError, getErrorMessage } from '../api/client';
 import { getProject } from '../api/projects/projectsApi';
 import { getBranches, getChatHistory, streamTurn } from '../api/chat/chatApi';
+import { getMemory, retryMemory } from '../api/memories/memoriesApi';
 
 type ChatAction =
   | { operation: 'send'; content: string }
   | { operation: 'regenerate' | 'retry' };
 
-type PipelineStage = 'analysis' | 'narrator';
+type PipelineStage = 'analysis' | 'narrator' | 'guardian' | 'reducer';
 type PipelineStepStatus = 'pending' | 'running' | 'completed' | 'failed';
 
 export type ChatPipelineProgress = {
   turnId: string;
+  memoryOnly?: boolean;
   activeStage: PipelineStage | null;
   activeStageStartedAt: number | null;
   analysis: {
@@ -29,7 +31,21 @@ export type ChatPipelineProgress = {
     }>;
   };
   narrator: { status: PipelineStepStatus; elapsedMs: number };
+  guardian: { status: PipelineStepStatus; elapsedMs: number };
+  reducer: { status: PipelineStepStatus; elapsedMs: number };
 };
+
+function initialPipelineProgress(turnId: string): ChatPipelineProgress {
+  return {
+    turnId,
+    activeStage: null,
+    activeStageStartedAt: null,
+    analysis: { status: 'pending', elapsedMs: 0, agentCount: 0, agents: {} },
+    narrator: { status: 'pending', elapsedMs: 0 },
+    guardian: { status: 'pending', elapsedMs: 0 },
+    reducer: { status: 'pending', elapsedMs: 0 },
+  };
+}
 
 /**
  * Owns branch selection, provisional streaming and reconciliation with committed
@@ -51,6 +67,7 @@ export function useChat(projectId: string) {
   const [failedBranchId, setFailedBranchId] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
   const activeRequest = useRef<AbortController | null>(null);
+  const [legacyAction, setLegacyAction] = useState<ChatAction | null>(null);
 
   useEffect(() => {
     if (!pipelineProgress?.activeStage || pipelineProgress.activeStageStartedAt === null) return;
@@ -74,6 +91,7 @@ export function useChat(projectId: string) {
     setOptimisticUser(null);
     setHistory(null);
     setFailedBranchId(null);
+    setLegacyAction(null);
     async function load() {
       const [project, branches] = await Promise.all([
         getProject(projectId, controller.signal), getBranches(projectId, controller.signal),
@@ -107,7 +125,7 @@ export function useChat(projectId: string) {
     });
   }
 
-  async function execute(action: ChatAction): Promise<boolean> {
+  async function execute(action: ChatAction, allowLegacyMemoryReset = false): Promise<boolean> {
     if (activeRequest.current) {
       setError('Une génération est déjà en cours.');
       return false;
@@ -120,6 +138,7 @@ export function useChat(projectId: string) {
     let command: ChatCommand;
     const base = {
       projectId, branchId: history.branch.id, expectedHeadTurnId: history.branch.headTurnId,
+      ...(allowLegacyMemoryReset ? { allowLegacyMemoryReset: true } : {}),
     };
     if (action.operation === 'send') {
       command = { ...base, ...action };
@@ -145,13 +164,7 @@ export function useChat(projectId: string) {
         if (event.type === 'chat.turn.started') {
           userMessageId = event.message.id;
           if (action.operation === 'send') setOptimisticUser(event.message);
-          setPipelineProgress({
-            turnId: event.turnId,
-            activeStage: null,
-            activeStageStartedAt: null,
-            analysis: { status: 'pending', elapsedMs: 0, agentCount: 0, agents: {} },
-            narrator: { status: 'pending', elapsedMs: 0 },
-          });
+          setPipelineProgress(initialPipelineProgress(event.turnId));
         } else if (event.type === 'chat.pipeline.stage') {
           setPipelineProgress((current) => {
             if (!current || current.turnId !== event.turnId) return current;
@@ -215,7 +228,10 @@ export function useChat(projectId: string) {
         }
       });
     } catch (error) {
-      if (!controller.signal.aborted) setError(getErrorMessage(error));
+      if (!controller.signal.aborted) {
+        if (error instanceof ClientApiError && error.details.code === 'MEMORY_LEGACY_RESET') setLegacyAction(action);
+        else setError(getErrorMessage(error));
+      }
     } finally {
       setPipelineProgress(null);
       if (!controller.signal.aborted) {
@@ -250,6 +266,51 @@ export function useChat(projectId: string) {
     return persisted;
   }
 
+  async function retryHeadMemory() {
+    if (activeRequest.current) {
+      setError('Une génération est déjà en cours.');
+      return;
+    }
+    const head = history?.turns.at(-1);
+    if (!history || head?.status !== 'completed') {
+      setError('La mémoire ne peut être relancée que pour une scène terminée.');
+      return;
+    }
+    const controller = new AbortController();
+    activeRequest.current = controller;
+    setPending(true);
+    setError('');
+    setPipelineProgress({
+      ...initialPipelineProgress(head.id),
+      memoryOnly: true,
+      activeStage: 'guardian',
+      activeStageStartedAt: Date.now(),
+      guardian: { status: 'running', elapsedMs: 0 },
+    });
+    try {
+      const view = await getMemory(projectId, history.branch.id, controller.signal);
+      if (view.headTurnId !== head.id) {
+        throw new Error('La conversation a changé. Rechargez avant de relancer la mémoire.');
+      }
+      const result = await retryMemory(view, head.id, controller.signal);
+      if (controller.signal.aborted) return;
+      setHistory((current) => current && {
+        ...current,
+        turns: current.turns.map((turn) => turn.id === head.id ? { ...turn, memory: result } : turn),
+      });
+      const updated = await getChatHistory(projectId, history.branch.id, controller.signal);
+      if (!controller.signal.aborted) setHistory(updated);
+    } catch (error) {
+      if (!controller.signal.aborted) setError(getErrorMessage(error));
+    } finally {
+      if (!controller.signal.aborted) {
+        setPending(false);
+        setPipelineProgress(null);
+      }
+      if (activeRequest.current === controller) activeRequest.current = null;
+    }
+  }
+
   const messages = history?.turns.flatMap((turn) =>
     [turn.userMessage, ...(turn.assistantMessage ? [turn.assistantMessage] : [])]) ?? [];
   if (optimisticUser && !messages.some((message) => message.id === optimisticUser.id)) messages.push(optimisticUser);
@@ -260,6 +321,14 @@ export function useChat(projectId: string) {
     send: (content: string) => execute({ operation: 'send', content }),
     regenerate: () => execute({ operation: 'regenerate' }),
     retry: () => execute({ operation: 'retry' }),
+    retryMemory: retryHeadMemory,
+    legacyMemoryConfirmation: legacyAction !== null,
+    cancelLegacyMemoryReset: () => setLegacyAction(null),
+    confirmLegacyMemoryReset: () => {
+      const action = legacyAction;
+      setLegacyAction(null);
+      if (action) void execute(action, true);
+    },
     reload: () => setRevision((value) => value + 1),
   };
 }

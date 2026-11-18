@@ -1,8 +1,9 @@
 import {
-  check, foreignKey, integer, primaryKey, text, timestamp, unique, uniqueIndex, uuid,
+  check, foreignKey, integer, jsonb, primaryKey, text, timestamp, unique, uniqueIndex, uuid,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import { agentOutputSchema, agentPhaseSchema } from '@choral-writer/shared';
+import type { MemoryRead } from '@choral-writer/shared';
 
 import { choralWriterSchema } from '../../namespace.js';
 import { projects } from '../project.js';
@@ -43,6 +44,7 @@ export const projectAgents = choralWriterSchema.table('project_agent', {
   versionId: uuid('version_id').notNull(),
   phase: agentPhase('phase').notNull(),
   output: agentOutput('output').notNull(),
+  memoryRead: jsonb('memory_read').$type<MemoryRead>(),
 }, (table) => [
   primaryKey({ columns: [table.projectId, table.agentId], name: 'project_agent_pkey' }),
   foreignKey({

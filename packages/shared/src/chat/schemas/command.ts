@@ -6,6 +6,7 @@ import { chatTurnParamsSchema } from './turn.js';
 
 export const headInputSchema = z.object({
   expectedHeadTurnId: z.string().uuid().nullable(),
+  allowLegacyMemoryReset: z.boolean().optional(),
 }).strict();
 
 export const sendMessageSchema = headInputSchema.merge(messageInputSchema);

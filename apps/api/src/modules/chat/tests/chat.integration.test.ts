@@ -11,6 +11,7 @@ import { v7 as uuidv7 } from 'uuid';
 import {
   agentSchema, projectAgentSchema, chatEventSchema, chatHistorySchema, projectSchema,
   traceCallDetailSchema, turnTraceSummarySchema,
+  memoryViewSchema, memoryTraceSchema, type MemoryMutation, type MemoryProposal,
 } from '@choral-writer/shared';
 
 import { buildApp } from '../../../app.js';
@@ -24,6 +25,7 @@ import { ChatTurnRepository } from '../repositories/turnRepository.js';
 import { AgentsService } from '../../agents/services/agentsService.js';
 import { ProjectsService } from '../../projects/services/projectServices.js';
 import { createTraceService } from '../../traces/index.js';
+import { MemoriesService } from '../../memories/services/memoriesService.js';
 
 // Only run against an explicitly supplied disposable PostgreSQL database.
 describe.skipIf(!process.env.TEST_DATABASE_URL)('projects and chat with PostgreSQL', () => {
@@ -34,6 +36,8 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('projects and chat with PostgreS
       { kind: 'observation', text: 'A wire is visible.', importance: 'HIGH' },
     ],
   });
+  let guardianOutput: string | null = null;
+  let setupOutput: string | null = null;
   let generate: (signal?: AbortSignal) => AsyncGenerator<ChatCompletionChunk> = async function* () {
     yield chunk('<resolution>La porte s’ouvre.</resolution><prose>Bonjour ');
     yield chunk('Mara.</prose>');
@@ -44,11 +48,15 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('projects and chat with PostgreS
     options?: { signal?: AbortSignal },
   ): Promise<ChatCompletion | AsyncIterable<ChatCompletionChunk>> => {
     if (params.stream) return generate(options?.signal);
+    const system = params.messages[0]?.content;
+    const content = typeof system === 'string' && system.includes('Propose a compact memory routing configuration')
+      ? setupOutput ?? '{}' : typeof system === 'string' && system.includes('Maintain memory from established narrative events')
+        ? guardianOutput ?? analysisContent : analysisContent;
     return {
       id: 'analysis', object: 'chat.completion', created: 0, model: 'simulated-model',
       choices: [{
         index: 0, finish_reason: 'stop', logprobs: null,
-        message: { role: 'assistant', content: analysisContent, refusal: null, annotations: [] },
+        message: { role: 'assistant', content, refusal: null, annotations: [] },
       }],
       usage: { prompt_tokens: 18, completion_tokens: 8, total_tokens: 26 },
     };
@@ -57,19 +65,20 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('projects and chat with PostgreS
     client: { chat: { completions: { create } } },
     model: 'simulated-model',
     traces: {
-      insert: async ({ messages, ...trace }) => {
-        await database.insert(schema.llmCall).values({ ...trace, request: { messages } });
+      insert: async ({ messages, memory, ...trace }) => {
+        await database.insert(schema.llmCall).values({ ...trace, request: { messages, memory } });
       },
     },
   });
   const projects = new ProjectsService(database, createChatBranchService);
   const agents = new AgentsService(database, projects);
-  const chat = createChatService(database, projects, callLLM);
+  const memories = new MemoriesService(database, projects, callLLM);
+  const chat = createChatService(database, projects, callLLM, memories);
   const app = buildApp({
     appPassword: 'test-password',
     cookieSecret: 'test-cookie-secret-with-at-least-thirty-two-characters',
     nodeEnv: 'test',
-  }, { projects, agents, chat, traces: createTraceService(database, chat) });
+  }, { projects, agents, chat, traces: createTraceService(database, chat), memories });
   let cookie: string;
   let address: string;
   const createdIds: string[] = [];
@@ -742,6 +751,377 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('projects and chat with PostgreS
       release();
       generate = normal;
     }
+  });
+
+  async function memoryView(projectId: string, branchId: string) {
+    const response = await app.inject({ method: 'GET', headers: { cookie },
+      url: `/api/projects/${projectId}/branches/${branchId}/memories` });
+    expect(response.statusCode).toBe(200);
+    return memoryViewSchema.parse(response.json());
+  }
+  async function memoryChange(projectId: string, branchId: string, change: MemoryMutation['change']) {
+    const view = await memoryView(projectId, branchId);
+    const response = await app.inject({ method: 'POST', headers: { cookie },
+      url: `/api/projects/${projectId}/branches/${branchId}/memories`,
+      payload: { expectedHeadTurnId: view.headTurnId, expectedRevisionId: view.revisionId,
+        expectedCatalogRevisionId: view.catalogRevisionId, change },
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    return memoryViewSchema.parse(response.json());
+  }
+  function propose(proposals: MemoryProposal[]) { guardianOutput = JSON.stringify({ v: 2, proposals }); }
+
+  it('gives each pipeline agent its configured memory and retains access settings across version selections', async () => {
+    const project = await createProject('M6 Accès');
+    const branchId = project.defaultBranchId!;
+    let view = await memoryChange(project.id, branchId, { op: 'saveTag',
+      tag: { name: 'world_rules', description: 'Faits canoniques établis.' } });
+    const truth = view.state.tags[0]!.id;
+    view = await memoryChange(project.id, branchId, { op: 'saveTag',
+      tag: { name: 'n_knowledge', description: 'Connaissances et croyances de N.' } });
+    const belief = view.state.tags[1]!.id;
+    await memoryChange(project.id, branchId, { op: 'saveEntry',
+      entry: { tagIds: [truth], key: 'Max', content: 'Vérité réservée au narrateur', protected: true } });
+    await memoryChange(project.id, branchId, { op: 'saveEntry',
+      entry: { tagIds: [belief], key: 'Max', content: 'Croyance réservée à N', protected: false } });
+    const team = await agents.listForProject(project.id);
+    const narrator = team.find((agent) => agent.output === 'narrative')!;
+    await memoryChange(project.id, branchId, { op: 'setAgentRead', agentId: narrator.agentId,
+      read: { mode: 'selected', tagIds: [truth] } });
+    const analyst = await agents.create({ phase: 'analysis', output: 'envelope', name: 'Chaos', instructions: 'Mission spécifique de N.' });
+    const updated = await agents.configure(project.id, { agents: [
+      ...team.map(({ agentId, versionId }) => ({ agentId, versionId })),
+      { agentId: analyst.id, versionId: analyst.versions[0]!.id },
+    ] });
+    expect(updated.find((agent) => agent.agentId === narrator.agentId)?.memoryRead?.tagIds).toEqual([truth]);
+    expect(updated.find((agent) => agent.agentId === analyst.id)?.memoryRead).toEqual({ mode: 'selected', tagIds: [] });
+    await memoryChange(project.id, branchId, { op: 'setAgentRead', agentId: analyst.id,
+      read: { mode: 'selected', tagIds: [belief] } });
+    await memoryChange(project.id, branchId, { op: 'settings', enabled: true });
+    const start = create.mock.calls.length;
+    try {
+      propose([]);
+      await send(project.id, 'Une scène.');
+      const calls = create.mock.calls.slice(start).map(([params]) => params);
+      const analysis = calls.find((params) => typeof params.messages[0]?.content === 'string'
+        && params.messages[0].content.includes('Mission spécifique de N.'))!;
+      expect(analysis.messages[0]!.content).toContain('Croyance réservée à N');
+      expect(analysis.messages[0]!.content).not.toContain('Vérité réservée au narrateur');
+      const narration = calls.find((params) => params.stream)!;
+      expect(narration.messages[0]!.content).toContain('Vérité réservée au narrateur');
+      expect(narration.messages[0]!.content).not.toContain('Croyance réservée à N');
+      const guardian = calls.find((params) => typeof params.messages[0]?.content === 'string'
+        && params.messages[0].content.includes('Maintain memory from'))!;
+      expect(guardian.messages[0]!.content).not.toContain('Mission spécifique de N.');
+      expect(guardian.messages[1]!.content).toContain('Connaissances et croyances de N.');
+      expect(guardian.messages[1]!.content).toContain('Croyance réservée à N');
+      expect(guardian.messages).toHaveLength(2);
+      expect(guardian.messages[1]!.content).toContain('Return JSON only');
+      const turn = (await history(project.id, branchId)).turns.at(-1)!;
+      const persisted = await database.select().from(schema.llmCall).where(eq(schema.llmCall.turnId, turn.id));
+      const analysisTrace = persisted.find((call) => call.stage === 'analysis')!;
+      await memoryChange(project.id, branchId, { op: 'setAgentRead', agentId: analyst.id,
+        read: { mode: 'all', tagIds: [] } });
+      const detail = await app.inject({ method: 'GET', headers: { cookie },
+        url: `/api/projects/${project.id}/turns/${turn.id}/traces/${analysisTrace.id}` });
+      expect(detail.statusCode).toBe(200);
+      expect(traceCallDetailSchema.parse(detail.json()).request.memory?.entries.map((entry) => entry.content))
+        .toEqual(['Croyance réservée à N']);
+      await agents.configure(project.id, { agents: team.map(({ agentId, versionId }) => ({ agentId, versionId })) });
+      expect((await memoryView(project.id, branchId)).state.entries).toHaveLength(2);
+      await agents.remove(analyst.id);
+    } finally { guardianOutput = null; }
+  });
+
+  it('generates setup as a reviewable draft and changes routing only after explicit approval', async () => {
+    const project = await createProject('M6 Configuration proposée');
+    const branchId = project.defaultBranchId!;
+    const originalTeam = await agents.listForProject(project.id);
+    const analyst = await agents.create({ phase: 'analysis', output: 'envelope',
+      name: 'Cohérence', instructions: 'Mission réservée au seul appel de configuration.' });
+    const team = await agents.configure(project.id, { agents: [
+      ...originalTeam.map(({ agentId, versionId }) => ({ agentId, versionId })),
+      { agentId: analyst.id, versionId: analyst.versions[0]!.id },
+    ] });
+    const before = await memoryView(project.id, branchId);
+    try {
+      setupOutput = JSON.stringify({
+        tags: [{ ref: 'world', name: 'world_rules', description: 'Vérités établies du monde.' }],
+        agents: team.map((agent) => ({ agentId: agent.agentId,
+          mode: agent.output === 'envelope' ? 'selected' : 'all', tagRefs: agent.output === 'envelope' ? ['world'] : [] })),
+      });
+      const response = await app.inject({ method: 'POST', headers: { cookie },
+        url: `/api/projects/${project.id}/branches/${branchId}/memories/setup`,
+        payload: { expectedHeadTurnId: before.headTurnId, expectedRevisionId: before.revisionId,
+          expectedCatalogRevisionId: before.catalogRevisionId } });
+      expect(response.statusCode, response.body).toBe(200);
+      expect(await memoryView(project.id, branchId)).toEqual(before);
+      expect((await agents.listForProject(project.id)).find((agent) => agent.agentId === analyst.id)?.memoryRead?.tagIds).toEqual([]);
+      await memoryChange(project.id, branchId, { op: 'applySetup', proposal: response.json() });
+      const result = await memoryView(project.id, branchId);
+      expect(result.state.tags[0]!.name).toBe('world_rules');
+      expect(result.state.entries).toEqual([]);
+      expect((await agents.listForProject(project.id)).find((agent) => agent.agentId === analyst.id)?.memoryRead)
+        .toEqual({ mode: 'selected', tagIds: [result.state.tags[0]!.id] });
+    } finally {
+      setupOutput = null;
+      await agents.configure(project.id, { agents: originalTeam.map(({ agentId, versionId }) => ({ agentId, versionId })) });
+      await agents.remove(analyst.id);
+    }
+  });
+
+  it('does not activate suggested tags or change subscriptions during a normal turn', async () => {
+    const project = await createProject('M6 Suggestion de tag');
+    const branchId = project.defaultBranchId!;
+    const before = await memoryChange(project.id, branchId, { op: 'saveTag',
+      tag: { name: 'world_rules', description: 'Vérités établies.' } });
+    await memoryChange(project.id, branchId, { op: 'settings', enabled: true });
+    const team = await agents.listForProject(project.id);
+    try {
+      guardianOutput = JSON.stringify({ v: 2, proposals: [], tagSuggestions: [
+        { name: 'n_knowledge', description: 'Connaissances de N.', reason: 'N entre en scène.' },
+      ] });
+      await send(project.id, 'N apparaît.');
+      expect((await memoryView(project.id, branchId)).state.tags).toEqual(before.state.tags);
+      expect(await agents.listForProject(project.id)).toEqual(team);
+      expect((await history(project.id, branchId)).turns.at(-1)!.memory?.tagSuggestions?.[0]?.name).toBe('n_knowledge');
+    } finally { guardianOutput = null; }
+  });
+
+  it('rolls back entry writes at the SQL savepoint without losing the narration', async () => {
+    const project = await createProject('M6 Savepoint');
+    const branchId = project.defaultBranchId!;
+    const before = await memoryChange(project.id, branchId, { op: 'saveTag',
+      tag: { name: 'Savoir', description: 'Informations établies.' } });
+    await memoryChange(project.id, branchId, { op: 'settings', enabled: true });
+    await pool.query(`CREATE FUNCTION choral_writer.m6_test_reject_bank() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        IF NEW.project_id = '${project.id}'::uuid THEN RAISE EXCEPTION 'simulated memory write failure'; END IF;
+        RETURN NEW;
+      END $$`);
+    await pool.query(`CREATE TRIGGER m6_test_reject_bank BEFORE INSERT OR UPDATE ON choral_writer.memory_bank
+      FOR EACH ROW EXECUTE FUNCTION choral_writer.m6_test_reject_bank()`);
+    try {
+      propose([
+        { op: 'create', tagIds: [before.state.tags[0]!.id], key: 'Porte', content: 'Une porte', reason: 'Scène' },
+      ]);
+      const last = events((await send(project.id, 'Une scène complète.')).body).at(-1)!;
+      expect(last.type).toBe('chat.turn.completed');
+      const after = await memoryView(project.id, branchId);
+      expect(after.state.tags).toEqual(before.state.tags);
+      expect(after.state.entries).toEqual([]);
+      expect((await history(project.id, branchId)).turns.at(-1)!.memory?.status).toBe('failed');
+    } finally {
+      guardianOutput = null;
+      await pool.query('DROP TRIGGER m6_test_reject_bank ON choral_writer.memory_bank');
+      await pool.query('DROP FUNCTION choral_writer.m6_test_reject_bank()');
+    }
+  });
+
+  it('retains a fact from turn three in turn twenty-five after the conversation window has moved past it', async () => {
+    const project = await createProject('M6 Long récit');
+    const branchId = project.defaultBranchId!;
+    const view = await memoryChange(project.id, branchId, { op: 'saveTag',
+      tag: { name: 'Faits durables', description: 'Faits à conserver.' } });
+    await memoryChange(project.id, branchId, { op: 'settings', enabled: true });
+    try {
+      for (let turn = 1; turn <= 25; turn++) {
+        propose(turn === 3 ? [{ op: 'create', tagIds: [view.state.tags[0]!.id],
+          key: 'Secret', content: 'Le secret durable du tour trois.', reason: 'Révélation au tour 3' }] : []);
+        const response = events((await send(project.id, turn === 3 ? 'Révélation unique au tour trois.' : `Scène ${turn}.`)).body);
+        expect(response.at(-1)?.type).toBe('chat.turn.completed');
+      }
+      const last = create.mock.calls.filter(([params]) => params.stream).at(-1)![0];
+      expect(last.messages).toHaveLength(42); // System, twenty complete turns and the current user input.
+      expect(last.messages[0]!.content).toContain('Le secret durable du tour trois.');
+      expect(last.messages.slice(1).some((message) => message.content === 'Révélation unique au tour trois.')).toBe(false);
+    } finally { guardianOutput = null; }
+  });
+
+  it('rolls back the candidate and its success record when cancelled at the end of memory processing', async () => {
+    const project = await createProject('M6 Annulation mémoire');
+    const branchId = project.defaultBranchId!;
+    const view = await memoryChange(project.id, branchId, { op: 'saveTag',
+      tag: { name: 'Faits', description: 'Informations établies.' } });
+    await memoryChange(project.id, branchId, { op: 'settings', enabled: true });
+    const controller = new AbortController();
+    try {
+      propose([{ op: 'create', tagIds: [view.state.tags[0]!.id], key: 'Mara',
+        content: 'Souvenir à annuler', reason: 'Scène' }]);
+      const result = await chat.run({ operation: 'send', projectId: project.id, branchId,
+        expectedHeadTurnId: null, content: 'Narration conservée.' }, async (event) => {
+        if (event.type === 'chat.pipeline.stage' && event.stage === 'reducer' && event.status === 'completed') {
+          controller.abort(new DOMException('Client disconnected.', 'AbortError'));
+        }
+      }, controller.signal);
+      expect(result.status).toBe('completed');
+      expect((await memoryView(project.id, branchId)).state.entries).toEqual([]);
+      const runs = await memories.trace(project.id, result.turnId);
+      expect(runs.runs.map((run) => run.result.status)).toEqual(['failed']);
+    } finally { guardianOutput = null; }
+  });
+
+  it('preserves memory after whitespace-only Guardian output and repairs it without replaying the story', async () => {
+    const project = await createProject('M6 Guardian vide');
+    const branchId = project.defaultBranchId!;
+    const initial = await memoryChange(project.id, branchId, { op: 'saveTag',
+      tag: { name: 'Faits', description: 'Faits établis' } });
+    await memoryChange(project.id, branchId, { op: 'saveEntry',
+      entry: { tagIds: [initial.state.tags[0]!.id], key: 'Max', content: 'Mémoire intacte', protected: false } });
+    await memoryChange(project.id, branchId, { op: 'settings', enabled: true });
+    const before = await memoryView(project.id, branchId);
+    try {
+      guardianOutput = ' \n '.repeat(100);
+      await send(project.id, 'La scène continue.');
+      const turn = (await history(project.id, branchId)).turns.at(-1)!;
+      expect(turn.status).toBe('completed');
+      expect(turn.memory).toMatchObject({ status: 'failed', code: 'LLM_EMPTY_RESPONSE',
+        message: 'Le fournisseur LLM a renvoyé une réponse vide.' });
+      const failedView = await memoryView(project.id, branchId);
+      expect(failedView.state).toEqual(before.state);
+      const streamCount = create.mock.calls.filter(([params]) => params.stream).length;
+      propose([]);
+      const repair = await app.inject({ method: 'POST', headers: { cookie },
+        url: `/api/projects/${project.id}/branches/${branchId}/turns/${turn.id}/memory/retry`,
+        payload: { expectedHeadTurnId: turn.id, expectedRevisionId: failedView.revisionId,
+          expectedCatalogRevisionId: failedView.catalogRevisionId } });
+      expect(repair.statusCode, repair.body).toBe(200);
+      expect(repair.json().status).toBe('success');
+      expect(create.mock.calls.filter(([params]) => params.stream)).toHaveLength(streamCount);
+      const repaired = (await history(project.id, branchId)).turns.at(-1)!;
+      expect(repaired.assistantMessage).toEqual(turn.assistantMessage);
+      expect(repaired.memory?.status).toBe('success');
+      expect((await memories.trace(project.id, turn.id)).runs.map((run) => run.result.status)).toEqual(['failed', 'success']);
+    } finally { guardianOutput = null; }
+  });
+
+  it('isolates regenerated memory, honors manual corrections and does not replay the narrator during memory repair', async () => {
+    const project = await createProject('M6 Branches');
+    const branchId = project.defaultBranchId!;
+    let view = await memoryChange(project.id, branchId, { op: 'saveTag',
+      tag: { name: 'Faits', description: 'Faits établis' } });
+    const tagId = view.state.tags[0]!.id;
+    await memoryChange(project.id, branchId, { op: 'saveEntry',
+      entry: { tagIds: [tagId], key: 'Max', content: 'État initial A', protected: false } });
+    await memoryChange(project.id, branchId, { op: 'settings', enabled: true });
+    view = await memoryView(project.id, branchId);
+    const entryId = view.state.entries[0]!.id;
+    try {
+      propose([{ op: 'edit', entryId, content: 'État B', reason: 'Première scène' }]);
+      expect(events((await send(project.id, 'Première scène.')).body).at(-1)?.type).toBe('chat.turn.completed');
+      const first = (await history(project.id, branchId)).turns.at(-1)!;
+      expect(first.memory?.status).toBe('success');
+      await memoryChange(project.id, branchId, { op: 'saveEntry', id: entryId,
+        entry: { tagIds: [tagId], key: 'Max', content: 'B corrigé manuellement', protected: false } });
+      propose([{ op: 'edit', entryId, content: 'B alternatif depuis A', reason: 'Autre première scène' }]);
+      const firstAlternative = events((await repeat(project.id, branchId, first.id, 'regenerate')).body).at(-1)!;
+      if (firstAlternative.type !== 'chat.turn.completed') throw new Error('Missing first alternative.');
+      const firstTrace = await memories.trace(project.id, firstAlternative.turnId);
+      expect(firstTrace.input?.entries[0]!.content).toBe('État initial A');
+      propose([]);
+      await send(project.id, 'Deuxième scène.');
+      const prompt = create.mock.calls.filter(([params]) => params.stream).at(-1)![0].messages[0]!.content;
+      expect(prompt).toContain('B corrigé manuellement');
+      const second = (await history(project.id, branchId)).turns.at(-1)!;
+      propose([{ op: 'edit', entryId, content: 'État C alternatif', reason: 'Scène alternative' }]);
+      const alternative = events((await repeat(project.id, branchId, second.id, 'regenerate')).body).at(-1)!;
+      expect(alternative.type).toBe('chat.turn.completed');
+      if (alternative.type !== 'chat.turn.completed') throw new Error('Missing completed alternative.');
+      expect((await memoryView(project.id, alternative.branchId)).state.entries[0]!.content).toBe('État C alternatif');
+      expect((await memoryView(project.id, branchId)).state.entries[0]!.content).toBe('B corrigé manuellement');
+      const trace = memoryTraceSchema.parse((await app.inject({ method: 'GET', headers: { cookie },
+        url: `/api/projects/${project.id}/turns/${alternative.turnId}/memory` })).json());
+      expect(trace.input?.entries[0]!.content).toBe('B corrigé manuellement');
+      view = await memoryView(project.id, branchId);
+      propose([{ op: 'edit', entryId, content: 'Réparation manuelle assistée', reason: 'Correction complémentaire' }]);
+      const streamCount = create.mock.calls.filter(([params]) => params.stream).length;
+      await database.insert(schema.llmCall).values({
+        id: uuidv7(), turnId: second.id, stage: 'analysis', model: 'legacy-model',
+        request: { messages: [] }, response: 'Legacy analysis without a JSON envelope',
+        durationMs: 0, status: 'success',
+      });
+      const repair = await app.inject({ method: 'POST', headers: { cookie },
+        url: `/api/projects/${project.id}/branches/${branchId}/turns/${second.id}/memory/retry`,
+        payload: { expectedHeadTurnId: second.id, expectedRevisionId: view.revisionId,
+          expectedCatalogRevisionId: view.catalogRevisionId } });
+      expect(repair.statusCode, repair.body).toBe(200);
+      expect(repair.json().status).toBe('success');
+      expect(create.mock.calls.filter(([params]) => params.stream)).toHaveLength(streamCount);
+      expect((await history(project.id, branchId)).turns.at(-1)!.assistantMessage?.content).toBe(second.assistantMessage?.content);
+      expect((await memoryView(project.id, branchId)).state.entries[0]!.content).toBe('Réparation manuelle assistée');
+      const oldRetry = await app.inject({ method: 'POST', headers: { cookie },
+        url: `/api/projects/${project.id}/branches/${branchId}/turns/${first.id}/memory/retry`,
+        payload: { expectedHeadTurnId: second.id, expectedRevisionId: view.revisionId,
+          expectedCatalogRevisionId: view.catalogRevisionId } });
+      expect(oldRetry.statusCode).toBe(409);
+    } finally { guardianOutput = null; }
+  });
+
+  it('keeps narration and the entire previous bank after a forbidden batch, then permits the next turn', async () => {
+    const project = await createProject('M6 Atomicité');
+    const branchId = project.defaultBranchId!;
+    const initial = await memoryChange(project.id, branchId, { op: 'saveTag',
+      tag: { name: 'Faits', description: 'Informations établies.' } });
+    const tagId = initial.state.tags[0]!.id;
+    await memoryChange(project.id, branchId, { op: 'settings', enabled: true });
+    const before = await memoryView(project.id, branchId);
+    try {
+      propose([
+        { op: 'create', tagIds: [tagId], key: 'Mara', content: 'Nouvelle entrée', reason: 'Scène' },
+        { op: 'create', tagIds: [uuidv7()], key: 'Interdit', content: 'Non', reason: 'Test' },
+      ]);
+      const response = events((await send(project.id, 'Scène valide, mémoire invalide.')).body);
+      expect(response.at(-1)?.type).toBe('chat.turn.completed');
+      const current = await memoryView(project.id, branchId);
+      expect(current.state.entries).toEqual(before.state.entries);
+      expect(current.revisionId).toBe(before.revisionId);
+      expect((await history(project.id, branchId)).turns.at(-1)!.memory?.status).toBe('failed');
+      guardianOutput = '{"v":2,"proposals":"invalid"}';
+      const count = create.mock.calls.length;
+      await send(project.id, 'On continue.');
+      expect(create.mock.calls.length - count).toBe(3); // Narrator and two schema attempts.
+      expect((await history(project.id, branchId)).turns.at(-1)).toMatchObject({
+        status: 'completed', memory: { status: 'failed', code: 'LLM_INVALID_RESPONSE' },
+      });
+      propose([]);
+      await send(project.id, 'La suite.');
+      expect((await history(project.id, branchId)).turns.at(-1)!.memory?.status).toBe('success');
+    } finally { guardianOutput = null; }
+  });
+
+  it('enforces head/catalog revisions and explicit legacy reset without leaking memory across projects', async () => {
+    const project = await createProject('M6 Conflits');
+    const branchId = project.defaultBranchId!;
+    const initial = await memoryView(project.id, branchId);
+    await memoryChange(project.id, branchId, { op: 'saveTag', tag: { name: 'Faits', description: 'Informations établies.' } });
+    const conflict = await app.inject({ method: 'POST', headers: { cookie },
+      url: `/api/projects/${project.id}/branches/${branchId}/memories`,
+      payload: { expectedHeadTurnId: null, expectedRevisionId: initial.revisionId,
+        expectedCatalogRevisionId: initial.catalogRevisionId, change: { op: 'settings', enabled: true } } });
+    expect(conflict.statusCode).toBe(409);
+    await send(project.id, 'Ancienne scène.');
+    const turn = (await history(project.id, branchId)).turns.at(-1)!;
+    await database.update(schema.chatTurns).set({ memorySnapshot: null }).where(eq(schema.chatTurns.id, turn.id));
+    const scoped = await memoryView(project.id, branchId);
+    await memoryChange(project.id, branchId, { op: 'saveEntry',
+      entry: { tagIds: [scoped.state.tags[0]!.id], key: 'Nouveau', content: 'Ajout après ancien tour', protected: false } });
+    const rejected = await repeat(project.id, branchId, turn.id, 'regenerate');
+    expect(rejected.statusCode).toBe(409);
+    expect(rejected.json().error.code).toBe('MEMORY_LEGACY_RESET');
+    const accepted = await app.inject({ method: 'POST', headers: { cookie },
+      url: `/api/projects/${project.id}/branches/${branchId}/turns/${turn.id}/regenerate`,
+      payload: { expectedHeadTurnId: turn.id, allowLegacyMemoryReset: true } });
+    const final = events(accepted.body).at(-1)!;
+    if (final.type !== 'chat.turn.completed') throw new Error('Missing completed legacy alternative.');
+    expect((await memoryView(project.id, final.branchId)).state.entries).toEqual([]);
+    expect((await memoryView(project.id, branchId)).state.entries).toHaveLength(1);
+    const other = await createProject('M6 Autre projet');
+    expect((await app.inject({ method: 'GET', headers: { cookie },
+      url: `/api/projects/${other.id}/branches/${branchId}/memories` })).statusCode).toBe(404);
+    expect((await app.inject({ method: 'GET', headers: { cookie },
+      url: `/api/projects/${other.id}/turns/${turn.id}/memory` })).statusCode).toBe(404);
+    expect((await app.inject({ method: 'GET',
+      url: `/api/projects/${project.id}/branches/${branchId}/memories` })).statusCode).toBe(401);
   });
 
   it('aborts generation when the client disconnects and persists the failed turn', async () => {

@@ -9,8 +9,9 @@ interface PipelineProgressProps {
 export function PipelineProgress({ progress }: PipelineProgressProps) {
   const completedAgents = Object.values(progress.analysis.agents)
     .filter((agent) => agent.status === 'completed' || agent.status === 'failed').length;
-  const currentStep = progress.activeStage === 'analysis' ? progress.analysis : progress.narrator;
-  const stageLabel = progress.activeStage === 'analysis' ? 'Analyse' : 'Narrateur';
+  const currentStep = progress[progress.activeStage ?? 'analysis'];
+  const labels = { analysis: 'Analyse', narrator: 'Narrateur', guardian: 'Gardien', reducer: 'Écriture mémoire' };
+  const stageLabel = progress.memoryOnly ? 'Mémoire' : labels[progress.activeStage ?? 'analysis'];
   const elapsed = `${(currentStep.elapsedMs / 1000).toFixed(1)} s`;
   const progressValue = progress.activeStage === 'analysis' && progress.analysis.agentCount > 0
     ? Math.round((completedAgents / progress.analysis.agentCount) * 100)
@@ -58,7 +59,7 @@ export function PipelineProgress({ progress }: PipelineProgressProps) {
             })}
           </Stack>
         )}
-        <Group justify="space-between" gap="xs">
+        {!progress.memoryOnly && <Group justify="space-between" gap="xs">
           <PipelineStep
             label="Analyse"
             status={progress.analysis.status}
@@ -71,7 +72,11 @@ export function PipelineProgress({ progress }: PipelineProgressProps) {
             duration={progress.narrator.elapsedMs}
             active={progress.activeStage === 'narrator'}
           />
-        </Group>
+          {progress.guardian.status !== 'pending' && <PipelineStep label="Gardien" status={progress.guardian.status}
+            duration={progress.guardian.elapsedMs} active={progress.activeStage === 'guardian'} />}
+          {progress.reducer.status !== 'pending' && <PipelineStep label="Mémoire" status={progress.reducer.status}
+            duration={progress.reducer.elapsedMs} active={progress.activeStage === 'reducer'} />}
+        </Group>}
       </Stack>
     </Paper>
   );

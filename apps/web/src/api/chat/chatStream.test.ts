@@ -12,6 +12,15 @@ const command = {
 };
 
 describe('chat SSE commands', () => {
+  it('sends the explicit legacy memory reset acknowledgement on regeneration', async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response('{}', { status: 409,
+      headers: { 'Content-Type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetch);
+    await expect(streamTurn({ ...command, operation: 'regenerate', turnId: 'old-turn', allowLegacyMemoryReset: true },
+      new AbortController().signal, vi.fn())).rejects.toBeInstanceOf(ClientApiError);
+    expect(fetch.mock.calls[0]![0]).toContain('/old-turn/regenerate');
+    expect(JSON.parse(fetch.mock.calls[0]![1].body)).toEqual({ expectedHeadTurnId: null, allowLegacyMemoryReset: true });
+  });
   it('rejects a connection that ends without completion instead of accepting a partial answer', async () => {
     const stream = bytesStream([new TextEncoder().encode(
       'data: {"type":"chat.message.delta","delta":"partial"}\n\n',

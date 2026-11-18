@@ -44,6 +44,12 @@ export function MessageList({
     if (lastMessage?.role === 'user') autoScrolledUserMessageId.current = lastMessage.id;
   }, [messages]);
 
+  useEffect(() => {
+    if (pipelineProgress?.memoryOnly && container.current) {
+      container.current.scrollTop = container.current.scrollHeight;
+    }
+  }, [pipelineProgress?.memoryOnly]);
+
   return (
     <ScrollArea
       h="100%"
@@ -82,12 +88,12 @@ export function MessageList({
             </Paper>
           );
         })}
-        {pipelineProgress && <PipelineProgress progress={pipelineProgress} />}
         {partial && (
           <Paper p={{ base: 'xs', sm: 'lg' }} className={styles.assistantMessage}>
             <MarkdownContent content={partial} className={styles.assistantContent} />
           </Paper>
         )}
+        {pipelineProgress && <PipelineProgress progress={pipelineProgress} />}
         {pending && !pipelineProgress && (
           <Loader size="sm" color="choral.3" aria-label="Génération en cours" />
         )}

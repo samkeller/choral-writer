@@ -32,11 +32,11 @@ export function WorkspaceLayout() {
     <AppShell
       withBorder
       padding={0}
-      header={{ height: { base: 0, sm: 64 } }}
+      header={chatRoute ? undefined : { height: { base: 0, sm: 64 } }}
       navbar={{ width: 256, breakpoint: 'sm', collapsed: { mobile: true } }}
       className={styles.shell}
     >
-      <AppShell.Header visibleFrom="sm" />
+      {!chatRoute && <AppShell.Header visibleFrom="sm" />}
       <AppShell.Navbar p="md" className={styles.navbar}>
         <Stack h="100%" gap="md">
           <Brand />
@@ -50,7 +50,7 @@ export function WorkspaceLayout() {
       </AppShell.Navbar>
       <AppShell.Main className={chatRoute ? `${styles.main} ${styles.chatMain}` : styles.main}>
         <Container
-          size="xl"
+          size={chatRoute ? '100%' : 'xl'}
           pt={chatRoute ? { base: 'xs', sm: 'xl' } : 'xl'}
           pb={{ base: 'calc(5rem + env(safe-area-inset-bottom))', sm: 'xl' }}
           px={{ base: chatRoute ? 'sm' : 'md', sm: 'xl' }}

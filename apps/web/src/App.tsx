@@ -1,10 +1,8 @@
-import { Route, Routes } from 'react-router-dom';
-import { IconBrain } from '@tabler/icons-react';
+import { Navigate, Route, Routes, useSearchParams } from 'react-router-dom';
 
 import { AuthProvider } from './auth/AuthProvider';
 import { RequireAuth, SessionBoundary } from './auth/AuthRoutes';
 import { WorkspaceLayout } from './components/WorkspaceLayout';
-import { ComingSoonPage } from './pages/ComingSoonPage';
 import { HomePage } from './pages/HomePage';
 import { LoginPage } from './pages/LoginPage';
 import { NotFoundPage } from './pages/NotFoundPage';
@@ -24,7 +22,7 @@ export function App() {
               <Route path="projects" element={<ProjectsPage />} />
               <Route path="projects/:projectId" element={<ChatPage />} />
               <Route path="agents" element={<AgentsPage />} />
-              <Route path="memories" element={<ComingSoonPage title="Mémoires" icon={IconBrain} />} />
+              <Route path="memories" element={<LegacyMemoriesRedirect />} />
               <Route path="*" element={<NotFoundPage />} />
             </Route>
           </Route>
@@ -32,4 +30,14 @@ export function App() {
       </Routes>
     </AuthProvider>
   );
+}
+
+function LegacyMemoriesRedirect() {
+  const [search] = useSearchParams();
+  const project = search.get('project');
+  if (!project) return <Navigate to="/projects" replace />;
+  const next = new URLSearchParams({ tab: 'config', section: 'memory' });
+  const branch = search.get('branch');
+  if (branch) next.set('branch', branch);
+  return <Navigate to={`/projects/${encodeURIComponent(project)}?${next}`} replace />;
 }

@@ -1,10 +1,11 @@
-import type { AnalysisEnvelope, ChatTurn, Message, ProjectAgent } from '@choral-writer/shared';
+import type { AnalysisEnvelope, ChatTurn, Message, ProjectAgent, MemoryState } from '@choral-writer/shared';
 import { analysisEnvelopeSchema } from '@choral-writer/shared';
 import { z } from 'zod';
 
 import { ApiError } from '../../../errors/errors.js';
 import type { CallLLMInput, createCallLLM } from '../../../llm/call-llm.js';
 import { conversationMessages } from './conversationMessages.js';
+import { formatMemoryContext, memoryContext } from '../../memories/services/memoryState.js';
 
 type AnalysisAgent = ProjectAgent & { phase: 'analysis'; output: 'envelope' };
 
@@ -20,6 +21,7 @@ export type AnalysisInput = {
   userMessage: Message;
   signal: AbortSignal;
   onAgentProgress?: (progress: AnalysisAgentProgress) => Promise<void>;
+  memoryState?: MemoryState;
 };
 
 export type AnalysisAgentProgress = {
@@ -61,13 +63,16 @@ export class ChatAnalysisService {
     const startedAt = Date.now();
     await input.onAgentProgress?.({ agentId: agent.agentId, name: agent.name, status: 'started' });
     try {
+      const memory = input.memoryState ? memoryContext(input.memoryState, agent) : { tags: [], entries: [] };
       const request: CallLLMInput<AnalysisEnvelope> = {
         turnId: input.turnId,
         agentId: agent.agentId,
         agentVersionId: agent.versionId,
         stage: 'analysis',
+        memory,
         messages: conversationMessages(
-          [input.systemPrompt, agent.instructions, analysisContract(agent.name, itemBudget)].filter(Boolean).join('\n\n'),
+          [input.systemPrompt, agent.instructions, analysisContract(agent.name, itemBudget),
+            formatMemoryContext(memory)].filter(Boolean).join('\n\n'),
           input.history,
           input.userMessage,
         ),

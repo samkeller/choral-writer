@@ -1,118 +1,112 @@
-import { Alert, Button, Checkbox, Divider, Group, Loader, Paper, Select, Stack, Text, Title } from '@mantine/core';
+﻿import { useEffect, useState } from 'react';
+import { Alert, Box, Button, Checkbox, Loader, Paper, Select, Text } from '@mantine/core';
 import { Link } from 'react-router-dom';
 import type { Agent } from '@choral-writer/shared';
-
-import { useProjectSetup } from '../../hooks/useProjectSetup';
-import { AgentVersionDetails } from './AgentVersionDetails';
-import styles from './AgentSurface.module.css';
 import { IconLibrary } from '@tabler/icons-react';
-import { PhaseTag } from '../phases/PhaseTag';
+import {
+  ConfigurationDetailPane,
+  ConfigurationListPane,
+  ConfigurationListItem,
+  ConfigurationScrollArea,
+  ConfigurationSection,
+  ConfigurationSplitView,
+} from '../configuration/ConfigurationLayout';
+import { useProjectSetup } from '../../hooks/useProjectSetup';
+import type { useMemories } from '../../hooks/useMemories';
+import { PromptDisplay } from '../llm/PromptDisplay';
+import { AgentMemoryEditor } from '../memories/MemoryEditors';
 import { IconAction } from '../atoms/IconAction';
 
-export function ProjectAgentSetup({ projectId, suggestedVersion }: {
-  projectId: string;
-  suggestedVersion?: string | null;
+const outputLabels: Record<Agent['output'], string> = {
+  envelope: 'Analyse',
+  narrative: 'Narrateur',
+  memory_proposals: 'Gardien',
+};
+
+export function ProjectAgentSetup({ projectId, suggestedVersion, onSaved, memory }: {
+  projectId: string; suggestedVersion?: string | null; onSaved?: () => void;
+  memory: ReturnType<typeof useMemories>;
 }) {
   const setup = useProjectSetup(projectId, suggestedVersion);
-
-  function selectRequired(output: Agent['output'], versionId: string | null) {
-    if (!versionId) return;
-    const oldIds = new Set(setup.agents.filter((agent) => agent.output === output)
-      .flatMap((agent) => agent.versions.map((version) => version.id)));
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!selectedId && setup.agents.length) {
+      const preferred = setup.agents.find((agent) => agent.versions.some((version) => version.id === suggestedVersion))
+        ?? setup.agents.find((agent) => agent.versions.some((version) => setup.versionIds.includes(version.id))) ?? setup.agents[0];
+      setSelectedId(preferred?.id ?? null);
+    }
+  }, [selectedId, setup.agents, setup.versionIds, suggestedVersion]);
+  const agent = setup.agents.find((item) => item.id === selectedId);
+  const version = agent?.versions.find((item) => setup.versionIds.includes(item.id));
+  const displayedVersion = version ?? agent?.versions[0];
+  const persisted = memory.agents.find((item) => item.agentId === agent?.id);
+  function selectRequired(output: Agent['output'], versionId: string) {
+    const oldIds = new Set(setup.agents.filter((item) => item.output === output).flatMap((item) => item.versions.map((v) => v.id)));
     setup.change([...setup.versionIds.filter((id) => !oldIds.has(id)), versionId]);
+    const next = setup.agents.find((item) => item.versions.some((v) => v.id === versionId));
+    if (next) setSelectedId(next.id);
   }
-
-  return (
-    <Stack gap="xl">
-      <Stack gap="xs">
-        <Group justify='space-between'>
-          <Text fw={600}>Agents</Text>
-          <IconAction component={Link} to="/agents" label="Voir la bibliothèque">
-            <IconLibrary size={18} aria-hidden="true" />
-          </IconAction>
-        </Group>
-      </Stack>
-      {setup.loading && <Loader aria-label="Chargement de la configuration" />}
-      {setup.error && (
-        <Alert color="red" role="alert">
-          {setup.error}<Button variant="subtle" onClick={setup.reload} disabled={setup.pending}>Recharger</Button>
-        </Alert>
-      )}
-      {!setup.loading && (
-        <>
-
-          <Stack gap="md">
-            <Group gap="sm">
-              <Title order={4} size="sm"><PhaseTag phase="analysis" /></Title>
-            </Group>
-            {setup.agents.filter((agent) => agent.output === 'envelope').map((agent) => {
-              const selected = agent.versions.find((version) => setup.versionIds.includes(version.id));
-              const latest = agent.versions[0];
-              if (!latest) return null;
-              return (
-                <Paper key={agent.id} withBorder p="md" className={styles.surface}>
-                  <Stack gap="sm">
-                    <Checkbox label={latest.name} checked={Boolean(selected)} disabled={setup.pending}
-                      onChange={(event) => setup.change(event.currentTarget.checked
-                        ? [...setup.versionIds, latest.id]
-                        : setup.versionIds.filter((id) => !agent.versions.some((version) => version.id === id)))} />
-                    {selected && (
-                      <>
-                        <Select label={`Version de ${latest.name}`} value={selected.id} allowDeselect={false}
-                          disabled={setup.pending} data={agent.versions.map((version) => ({
-                            value: version.id, label: `v${version.version} · ${version.name}`,
-                          }))} onChange={(value) => {
-                            if (value) setup.change(setup.versionIds.map((id) => id === selected.id ? value : id));
-                          }} />
-                        <Stack mt="sm"><AgentVersionDetails output={agent.output} version={selected} /></Stack>
-                      </>
-                    )}
-                  </Stack>
-                </Paper>
-              );
-            })}
-            {!setup.agents.some((agent) => agent.output === 'envelope')
-              && <Text size="sm" c="dimmed">Aucun agent d’analyse dans la bibliothèque pour le moment.</Text>}
-          </Stack>
-          <Divider />
-          <Stack gap="lg">
-            <Group gap="sm">
-              <Title order={4} size="sm"><PhaseTag phase="restitution" /></Title>
-            </Group>
-            {(['narrative', 'memory_proposals'] as const).map((output) => {
-              const eligible = setup.agents.filter((agent) => agent.output === output);
-              const agent = eligible.find((entry) => entry.versions.some((version) => setup.versionIds.includes(version.id)));
-              const version = agent?.versions.find((entry) => setup.versionIds.includes(entry.id));
-              return (
-                <Paper key={output} withBorder p="md" className={styles.surface}>
-                  <Stack gap="sm">
-                    <Select label={output === 'narrative' ? 'Réponse utilisateur · Narrateur' : 'Mémoire · Gardien'}
-                      value={version?.id ?? null} allowDeselect={false} searchable disabled={setup.pending}
-                      placeholder="Choisir un agent et sa version"
-                      data={eligible.map((entry) => ({
-                        group: entry.versions[0]?.name ?? entry.id,
-                        items: entry.versions.map((item) => ({
-                          value: item.id, label: `${item.name} · v${item.version}`,
-                        })),
-                      }))}
-                      onChange={(value) => selectRequired(output, value)} />
-                    {agent && version && (
-                      <AgentVersionDetails output={agent.output} version={version} />
-                    )}
-                  </Stack>
-                </Paper>
-              );
-            })}
-          </Stack>
-
-
-
-          {setup.saved && <Alert color="choral" role="status">Configuration enregistrée. Elle sera utilisée au prochain tour.</Alert>}
-          <Group justify="flex-end">
-            <Button loading={setup.pending} onClick={() => void setup.save()}>Enregistrer la configuration</Button>
-          </Group>
-        </>
-      )}
-    </Stack>
-  );
+  return <ConfigurationSection title="Agents"
+    primaryAction={{
+      label: 'Enregistrer l’équipe', loading: setup.pending, disabled: setup.loading,
+      onClick: () => void setup.save().then((ok) => { if (ok) onSaved?.(); })
+    }}
+    actions={<IconAction component={Link} to="/agents" label="Voir la bibliothèque"><IconLibrary size={18} /></IconAction>}
+    feedback={(setup.error || setup.saved) && <>
+      {setup.error && <Alert color="red" role="alert">{setup.error}<Button variant="subtle" onClick={setup.reload} disabled={setup.pending}>Recharger</Button></Alert>}
+      {setup.saved && <Alert color="choral" role="status">Configuration enregistrée. Elle sera utilisée au prochain tour.</Alert>}
+    </>}>
+    {setup.loading ? <ConfigurationScrollArea><Loader aria-label="Chargement de la configuration" /></ConfigurationScrollArea> :
+      <ConfigurationSplitView>
+        <ConfigurationListPane title="Bibliothèque du projet" count={setup.agents.length}>
+          {setup.agents.map((item) => {
+            const selected = item.versions.find((v) => setup.versionIds.includes(v.id));
+            const latest = item.versions[0];
+            if (!latest) return null;
+            return <ConfigurationListItem key={item.id} selected={selectedId === item.id}
+              onClick={() => setSelectedId(item.id)} label={selected?.name ?? latest.name}
+              status={selected ? { label: 'Actif', color: 'choral' } : undefined}
+              description={`${outputLabels[item.output]}${selected ? ` · v${selected.version}` : ' · Non sélectionné'}`} />;
+          })}
+          {!setup.agents.length && <Text size="sm" c="dimmed">Aucun agent dans la bibliothèque.</Text>}
+        </ConfigurationListPane>
+        <ConfigurationDetailPane>
+          {
+            agent && displayedVersion ? <>
+              {
+                agent.output === 'envelope' ? <>
+                  <Checkbox
+                    label={`Activer ${displayedVersion.name}`}
+                    checked={Boolean(version)}
+                    disabled={setup.pending}
+                    onChange={(event) => setup.change(event.currentTarget.checked
+                      ? [...setup.versionIds, displayedVersion.id]
+                      : setup.versionIds.filter((id) => !agent.versions.some((item) => item.id === id)))
+                    }
+                  />
+                  <Select 
+                  label={`Version de ${displayedVersion.name}`} value={displayedVersion.id} allowDeselect={false}
+                    disabled={setup.pending || !version} data={agent.versions.map((item) => ({ value: item.id, label: `v${item.version} · ${item.name}` }))}
+                    onChange={(value) => { if (value && version) setup.change(setup.versionIds.map((id) => id === version.id ? value : id)); }} />
+                </> : <Select label={agent.output === 'narrative' ? 'Réponse utilisateur · Narrateur' : 'Mémoire · Gardien'}
+                  value={version?.id ?? null} searchable allowDeselect={false} disabled={setup.pending}
+                  placeholder="Choisir cet agent et sa version" data={setup.agents.filter((item) => item.output === agent.output).map((item) => ({
+                    group: item.versions[0]?.name ?? item.id, items: item.versions.map((v) => ({ value: v.id, label: `${v.name} · v${v.version}` })),
+                  }))} onChange={(value) => { if (value) selectRequired(agent.output, value); }} />}
+              {persisted && memory.view && <><Text fw={600}>Accès mémoire</Text>
+                <AgentMemoryEditor key={`${persisted.agentId}:${JSON.stringify(persisted.memoryRead)}`} agent={persisted} tags={memory.view.state.tags}
+                  pending={memory.pending} save={memory.change} /></>}
+              {!persisted && <Text size="sm" c="dimmed">Enregistrez l’équipe pour configurer l’accès mémoire de cet agent.</Text>}
+              {memory.error && <Alert color="red" role="alert">{memory.error}<Button variant="subtle" onClick={memory.reload}>Recharger</Button></Alert>}
+              <Paper key={`${agent.id}:${displayedVersion.id}`
+              } component="details" withBorder p="sm">
+                <Text component="summary" fw={600} c="choral.3">Lire les instructions</Text>
+                <Box mt="sm"><PromptDisplay content={displayedVersion.instructions || 'Aucune instruction supplémentaire au prompt du projet.'} /></Box>
+              </Paper>
+            </> : <Text size="sm" c="dimmed">Sélectionnez un agent pour voir ses instructions et ses accès.</Text>
+          }
+        </ConfigurationDetailPane>
+      </ConfigurationSplitView>
+    }
+  </ConfigurationSection>;
 }

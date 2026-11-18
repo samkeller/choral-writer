@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { dateFromJsonSchema } from './dates.js';
+import { memoryReadSchema } from './memories.js';
 
 export const agentPhaseSchema = z.enum(['analysis', 'restitution']);
 export const agentOutputSchema = z.enum(['envelope', 'narrative', 'memory_proposals']);
@@ -52,6 +53,7 @@ export const projectAgentsInputSchema = z.object({
   agents: projectAgentSelectionSchema.array().max(100),
 }).strict();
 export const projectAgentSchema = projectAgentSelectionSchema.extend({
+  memoryRead: memoryReadSchema.nullish(),
   phase: agentPhaseSchema,
   output: agentOutputSchema,
   version: z.number().int().positive(),
