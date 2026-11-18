@@ -9,9 +9,9 @@ flowchart TD
     A --> W["Whiteboard · vue des enveloppes et des traces du tour"]
     W --> N["Narrateur · résolution + prose"]
     N -->|Prose seule, en streaming| C["Message assistant et historique"]
-    W -.->|prévu M6| G["Gardien · propositions mémoire"]
-    N -.->|prévu M6| G
-    G -.->|prévu M6| R["Réducteur · validation et application"]
+    W -.->|Propositions mémoire| G["Gardien · propositions mémoire"]
+    N -.->|Propositions mémoire| G
+    G -.->|Validation| R["Réducteur · validation et application"]
 ```
 
 ## Capacités principales
