@@ -1,6 +1,7 @@
 import type { AnalysisEnvelope, ChatTurn, MemoryContext, Message } from '@choral-writer/shared';
 
 export type NarratorInput = {
+  projectId: string;
   turnId: string;
   agentId: string;
   agentVersionId: string;

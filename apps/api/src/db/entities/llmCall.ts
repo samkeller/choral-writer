@@ -2,9 +2,12 @@ import { index, jsonb, text, timestamp, uuid, integer } from 'drizzle-orm/pg-cor
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 import type { MemoryContext } from '@choral-writer/shared';
 import { choralWriterSchema } from '../namespace.js';
+import { projects } from './project.js';
 
 export const llmCall = choralWriterSchema.table("llm_call",{
   id: uuid('id').primaryKey(),
+  /** Dénormalisé pour permettre de reconstruire une ligne `llm_usage` manquante. */
+  projectId: uuid('project_id').references(() => projects.id, { onDelete: 'cascade' }),
   turnId: uuid('turn_id'),
   agentId: uuid('agent_id'),
   agentVersionId: uuid('agent_version_id'),

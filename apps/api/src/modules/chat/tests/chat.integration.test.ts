@@ -17,6 +17,8 @@ import { buildApp } from '../../../app.js';
 import * as schema from '../../../db/schema.js';
 import { createTestPool } from '../../../tests/testDb.js';
 import { createCallLLM } from '../../../llm/call-llm.js';
+import { testProvider } from '../../../tests/support/callLLM.js';
+import { createUsageService } from '../../../llm/usage/usageService.js';
 import { createChatBranchService, createChatService } from '../index.js';
 import { ChatMessageService } from '../services/messageService.js';
 import { ChatTurnService } from '../services/turnService.js';
@@ -64,6 +66,8 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
   const callLLM = createCallLLM({
     client: { chat: { completions: { create } } },
     model: 'simulated-model',
+    provider: testProvider,
+    usage: createUsageService(database),
     traces: {
       insert: async ({ messages, memory, ...trace }) => {
         await database.insert(schema.llmCall).values({ ...trace, request: { messages, memory } });

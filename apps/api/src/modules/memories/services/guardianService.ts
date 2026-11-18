@@ -1,11 +1,14 @@
-import { memoryProposalsSchema, memorySetupProposalSchema, type MemoryState, type ProjectAgent } from '@choral-writer/shared';
+import { z } from 'zod';
+
+import { memoryProposalsSchema, memorySetupProposalSchema, type MemoryProposals, type MemoryState, type ProjectAgent } from '@choral-writer/shared';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
-import type { createCallLLM } from '../../../llm/call-llm.js';
+import type { CallLLMInput, createCallLLM } from '../../../llm/call-llm.js';
 import { ApiError } from '../../../errors/errors.js';
 import { applyMemorySetup, memoryContext } from './memoryState.js';
 import { v7 as uuidv7 } from 'uuid';
 
 export type GuardianInput = {
+  projectId: string;
   turnId: string; executionId: string; agent: ProjectAgent; agents: ProjectAgent[];
   state: MemoryState; systemPrompt: string;
   resolution: string; prose: string; signal: AbortSignal;
@@ -22,7 +25,7 @@ function bounded(data: unknown): string {
 export class GuardianService {
   constructor(private readonly callLLM: ReturnType<typeof createCallLLM>) {}
 
-  async proposeSetup(state: MemoryState, agents: ProjectAgent[], signal: AbortSignal) {
+  async proposeSetup(projectId: string, state: MemoryState, agents: ProjectAgent[], signal: AbortSignal) {
     const guardian = agents.find((agent) => agent.output === 'memory_proposals');
     if (!guardian) throw new ApiError(422, 'NO_GUARDIAN', 'Choisissez un Gardien avant de proposer une configuration mémoire.');
     const prompt = [
@@ -44,7 +47,7 @@ export class GuardianService {
     ].join('\n');
     for (let attempt = 0; ; attempt++) {
       try {
-        const result = await this.callLLM({ stage: 'memory_setup', agentId: guardian.agentId,
+        const result = await this.callLLM({ projectId, stage: 'memory_setup', agentId: guardian.agentId,
           agentVersionId: guardian.versionId, stageExecutionId: uuidv7(), schema: memorySetupProposalSchema,
           signal, messages: [{ role: 'system', content: prompt }] });
         if (!result.parsed) throw new Error('Memory setup output was not validated.');
@@ -102,7 +105,8 @@ export class GuardianService {
         'Return JSON only: {"v":2,"proposals":[],"tagSuggestions":[]}, with justified changes if needed. Do not write a prose field.',
       ].join('\n\n') },
     ];
-    const request = {
+    const request: CallLLMInput<MemoryProposals> = {
+      projectId: input.projectId,
       turnId: input.turnId, stageExecutionId: input.executionId,
       agentId: input.agent.agentId, agentVersionId: input.agent.versionId,
       stage: 'guardian', schema: memoryProposalsSchema, signal: input.signal,

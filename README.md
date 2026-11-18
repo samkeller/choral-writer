@@ -59,6 +59,7 @@ Pour Railway, configurez le build `pnpm build`, la commande de pré-déploiement
 
 ## Documentation technique
 
+- [`docs/projectSetup.md`](./docs/projectSetup.md) — prompts système, agents, tags et routage mémoire à créer pour un projet.
 - [`docs/pipeline.md`](./docs/pipeline.md) — étapes, entrées/sorties, erreurs et limites du pipeline actuel.
 - [`docs/api/CHAT.md`](./docs/api/CHAT.md) — branches, transactions et invariants du domaine chat.
 - [`docs/web/DESIGN_SYSTEM.md`](./docs/web/DESIGN_SYSTEM.md) et [`docs/web/FRONTEND_CONVENTIONS.md`](./docs/web/FRONTEND_CONVENTIONS.md) — interface et conventions frontend.

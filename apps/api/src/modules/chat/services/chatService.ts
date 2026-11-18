@@ -67,6 +67,7 @@ export class ChatService {
         let whiteboard: AnalysisEnvelope[];
         try {
           whiteboard = await this.dependencies.analyze({
+            projectId: command.projectId,
             turnId,
             agents: analysisAgents,
             systemPrompt: context.project.systemPrompt,
@@ -96,6 +97,7 @@ export class ChatService {
         await emit({ type: 'chat.pipeline.stage', turnId, stage: 'narrator', status: 'started' });
         try {
           narration = await this.dependencies.narrate({
+            projectId: command.projectId,
             turnId,
             agentId: narrator.agentId,
             agentVersionId: narrator.versionId,
@@ -123,7 +125,7 @@ export class ChatService {
           elapsedMs: Math.round(performance.now() - narratorStartedAt),
         });
         outcome = { status: 'completed', content: narration.prose };
-        memoryResult = await context.memory.process(input.branchId, memory, {
+        memoryResult = await context.memory.process(command.projectId, input.branchId, memory, {
           turnId, systemPrompt: context.project.systemPrompt,
           agents: context.projectAgents, resolution: narration.resolution, prose: narration.prose, signal,
         }, async (stage, status, elapsedMs) => {
@@ -154,7 +156,7 @@ export class ChatService {
       }
       const source = await context.memory.source(turnId);
       const narration = await parseNarration(source.narrator);
-      const result = await context.memory.process(branchId, view, {
+      const result = await context.memory.process(projectId, branchId, view, {
         turnId, systemPrompt: context.project.systemPrompt, agents: context.projectAgents,
         resolution: narration.resolution, prose: narration.prose, signal,
       }, async () => {});

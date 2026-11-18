@@ -84,7 +84,7 @@ export class MemoriesService {
         || view.catalogRevisionId !== expected.expectedCatalogRevisionId) {
         throw new ApiError(409, 'MEMORY_CHANGED', 'La configuration a changé. Rechargez avant de proposer une configuration.');
       }
-      return this.guardian.proposeSetup(view.state, await new AgentRepository(tx).listForProject(projectId), signal);
+      return this.guardian.proposeSetup(projectId, view.state, await new AgentRepository(tx).listForProject(projectId), signal);
     });
   }
 
@@ -103,6 +103,11 @@ export class MemorySession {
 
   source(turnId: string) {
     return new MemoryRepository(this.tx, this.projectId).source(turnId);
+  }
+
+  /** Exposé pour rattacher la consommation du Gardien et de l'écriture mémoire à leur projet. */
+  get id(): string {
+    return this.projectId;
   }
 
   async prepare(branchId: string, regeneratedFromTurnId: string | null, allowLegacyReset = false): Promise<MemoryView> {
@@ -145,7 +150,8 @@ export class MemorySession {
   }
 
   async process(
-    branchId: string, view: MemoryView, input: Omit<GuardianInput, 'state' | 'executionId' | 'agent'>,
+    projectId: string, branchId: string, view: MemoryView,
+    input: Omit<GuardianInput, 'state' | 'executionId' | 'agent' | 'projectId'>,
     progress: MemoryProgress,
   ): Promise<MemoryResult> {
     const repository = new MemoryRepository(this.tx, this.projectId);
@@ -165,7 +171,7 @@ export class MemorySession {
     try {
       await progress('guardian', 'started');
       if (read?.mode !== 'all') throw new ApiError(422, 'GUARDIAN_REQUIRES_ALL', 'Le Gardien doit lire toute la mémoire pour la maintenir.');
-      const { proposals, tagSuggestions } = await this.guardian.generate({ ...input, agent, state: view.state, executionId: runId });
+      const { proposals, tagSuggestions } = await this.guardian.generate({ ...input, projectId, agent, state: view.state, executionId: runId });
       guardianMs = Math.round(performance.now() - started);
       await progress('guardian', 'completed', guardianMs);
       stage = 'reducer';

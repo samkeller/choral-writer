@@ -5,6 +5,7 @@ import type { LlmCallTrace } from '../../llm/call-llm.js';
 export async function insertLlmCall(trace: LlmCallTrace): Promise<void> {
   await db.insert(llmCall).values({
     id: trace.id,
+    projectId: trace.projectId,
     turnId: trace.turnId,
     agentId: trace.agentId,
     agentVersionId: trace.agentVersionId,
