@@ -1,8 +1,7 @@
 # Choral Writer
 
-Choral Writer est une application de narration interactive à la troisième personne. Chaque projet définit un univers et une équipe d’agents spécialisés, dont les versions sont épinglées au projet. À chaque tour, le chat fait analyser la situation par l’équipe avant de diffuser la réponse du Narrateur.
+Choral Writer est un atelier de narration interactive. Chaque projet définit un univers et une équipe d’agents spécialisés dont les versions sont épinglées au projet. À chaque tour, les agents d’analyse examinent la situation en parallèle, puis le Narrateur diffuse la scène en streaming. Le Gardien peut maintenir une mémoire structurée par branche.
 
-## Comment fonctionne le pipeline ?
 
 ```mermaid
 flowchart TD
@@ -15,38 +14,51 @@ flowchart TD
     G -.->|prévu M6| R["Réducteur · validation et application"]
 ```
 
-- **Analyse** : chaque agent reçoit le contexte du projet, l’historique récent et la saisie, mais pas les sorties des autres agents. Ses enveloppes JSON sont validées par Zod.
-- **Whiteboard** : vue reconstruite à partir des traces et sorties associées à un tour ; ce n’est pas une table dédiée. Les traces conservent notamment les requêtes, réponses, versions d’agents, durées et erreurs.
-- **Restitution** : le Narrateur lit le whiteboard et produit une `<resolution>` (les faits) et une `<prose>` (le texte destiné au joueur). Seule la prose est envoyée au chat en SSE.
-- **Inspection** : pendant la génération, le chat affiche l’étape active et l’avancement des agents. Chaque tour permet ensuite d’ouvrir un tiroir pour consulter le whiteboard, les appels et leurs prompts/réponses.
-- **Mémoire** : le Gardien et le Réducteur sont prévus pour M6 ; ils ne font pas encore partie du pipeline exécuté.
+## Capacités principales
 
-### Vocabulaire
+- Projets avec prompt système et équipe d’agents configurable.
+- Conversations en branches, avec réessai et régénération traçables.
+- Progression du pipeline en direct et inspection des appels LLM.
+- Mémoire de projet modifiable, avec contrôle de lecture par agent.
 
-| Terme | Sens |
-|---|---|
-| **Projet** | Univers, prompt système et configuration d’agents. |
-| **Agent** | Rôle spécialisé avec des versions d’instructions immuables. |
-| **Phase** | `analysis` produit une enveloppe ; `restitution` produit une narration ou, à terme, des propositions mémoire. |
-| **Tour** | Une exécution du pipeline pour une saisie. Réessayer ou régénérer crée une nouvelle exécution traçable. |
-| **Branche** | Un chemin de conversation ; les branches alternatives partagent leur historique antérieur. |
+## Prérequis
 
-## Démarrage local
+- Node.js LTS et pnpm 12.18.
+- PostgreSQL pour l’API ; Docker Desktop est facultatif pour le démarrage local.
+- Une clé et un modèle compatibles avec l’API Chat Completions d’OpenAI.
 
-Prérequis : Node.js LTS, pnpm 12 et Docker Desktop pour PostgreSQL.
+## Installation et développement local
 
-1. Copier `.env.example` vers `.env`, puis renseigner `APP_PASSWORD`, `COOKIE_SECRET` (32 caractères minimum) et les paramètres du fournisseur LLM.
-2. Démarrer PostgreSQL avec `docker compose up -d`.
-3. Installer les dépendances : `pnpm install`.
+1. Copier `.env.example` vers `.env`, puis renseigner les valeurs requises.
+2. Installer les dépendances : `pnpm install`.
+3. Démarrer PostgreSQL : `docker compose up -d`.
 4. Appliquer les migrations : `pnpm db:migrate`.
-5. Lancer l’API et le front : `pnpm dev`, puis ouvrir l’URL affichée.
+5. Lancer l’API et le front : `pnpm dev`, puis ouvrir l’adresse Vite affichée (`http://localhost:5175` par défaut).
 
-## Commandes
+Les projets ne sont pas préchargés ; créez-en un après connexion pour commencer.
 
-- `pnpm dev` : API et front en développement
-- `pnpm build` : build de tous les workspaces
-- `pnpm typecheck` : vérification TypeScript
-- `pnpm test` : tests Vitest
-- `pnpm db:generate` / `pnpm db:migrate` : générer / appliquer les migrations
+## Configuration
 
-Pour les conventions de développement, les tests PostgreSQL et la configuration, voir [`docs/DEVELOPMENT.md`](./docs/DEVELOPMENT.md). Les décisions du domaine chat sont dans [`docs/api/CHAT.md`](./docs/api/CHAT.md) et le plan MVP dans [`docs/init/MVP.md`](./docs/init/MVP.md).
+L’API requiert `DATABASE_URL`, `APP_PASSWORD`, `COOKIE_SECRET`, `LLM_API_KEY`, `LLM_BASE_URL` et `LLM_MODEL`. `COOKIE_SECRET` doit contenir au moins 32 caractères. `PORT` est facultatif (3001 par défaut en local) et `NODE_ENV` vaut `development`, `test` ou `production`.
+
+Ne commitez jamais `.env` et ne réutilisez pas les valeurs d’exemple en production. Configurez les secrets dans l’environnement d’exécution.
+
+## Vérification
+
+```sh
+pnpm typecheck
+pnpm test
+pnpm build
+```
+
+Les tests PostgreSQL d’intégration utilisent `DATABASE_URL` dans `.env.tests` (fichier local ignoré par Git) et exigent une base jetable. Vitest charge ce fichier automatiquement. Les commandes disponibles et les conventions sont détaillées dans [`docs/DEVELOPMENT.md`](./docs/DEVELOPMENT.md).
+
+## Déploiement
+
+Pour Railway, configurez le build `pnpm build`, la commande de pré-déploiement `pnpm db:migrate`, le démarrage `pnpm start` et le health check `/healthz`. L’API sert le build web sur la même origine ; aucun serveur Vite de développement n’est requis en production. Créez une base PostgreSQL Railway et configurez les variables requises dans Railway. Les détails et limites figurent dans [`docs/DEVELOPMENT.md`](./docs/DEVELOPMENT.md#déploiement-railway).
+
+## Documentation technique
+
+- [`docs/pipeline.md`](./docs/pipeline.md) — étapes, entrées/sorties, erreurs et limites du pipeline actuel.
+- [`docs/api/CHAT.md`](./docs/api/CHAT.md) — branches, transactions et invariants du domaine chat.
+- [`docs/web/DESIGN_SYSTEM.md`](./docs/web/DESIGN_SYSTEM.md) et [`docs/web/FRONTEND_CONVENTIONS.md`](./docs/web/FRONTEND_CONVENTIONS.md) — interface et conventions frontend.

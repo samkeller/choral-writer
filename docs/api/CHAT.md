@@ -140,9 +140,10 @@ brutes ne sont renvoyés qu'à la demande, sans exposer l'erreur fournisseur sto
 Les routes sont `GET /api/projects/:projectId/turns/:turnId/traces` pour le résumé
 et `GET /api/projects/:projectId/turns/:turnId/traces/:callId` pour le détail.
 
-L'orchestration du tour coordonne l'analyse puis la restitution. Les services
-d'étape portent la validation des enveloppes et le parsing en flux ; le Réducteur
-transactionnel reste hors périmètre M4 et sera ajouté avec la mémoire en M6.
+L'orchestration du tour coordonne l'analyse, la restitution, puis la mémoire M6.
+Les propositions du Gardien sont réduites dans un savepoint ; un échec de mémoire
+est enregistré sans annuler une narration terminée. Les détails d'exécution et
+les limites figurent dans [`pipeline.md`](../pipeline.md).
 
 **Conséquences et limites.** Le verrou et une connexion restent occupés pendant
 l'appel LLM. Les événements de début, progression d'étape/agent et delta sont

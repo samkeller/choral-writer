@@ -8,6 +8,7 @@
     "build": "pnpm --filter @choral-writer/shared build && pnpm --filter @choral-writer/api build && pnpm --filter @choral-writer/web build",
     "typecheck": "pnpm --filter @choral-writer/shared typecheck && pnpm --filter @choral-writer/api typecheck && pnpm --filter @choral-writer/web typecheck",
     "test": "pnpm --filter @choral-writer/api --filter @choral-writer/web test",
+    "start": "pnpm --filter @choral-writer/api start",
     "db:generate": "pnpm --filter @choral-writer/api db:generate",
     "db:migrate": "pnpm --filter @choral-writer/api db:migrate"
   },

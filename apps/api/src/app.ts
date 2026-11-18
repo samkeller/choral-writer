@@ -1,3 +1,7 @@
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
+import fastifyStatic from '@fastify/static';
 import cookie from '@fastify/cookie';
 import Fastify, { FastifyServerOptions, LogController } from 'fastify';
 import { apiErrorSchema, healthSchema } from '@choral-writer/shared';
@@ -23,10 +27,15 @@ export function buildApp(
   config: AuthConfig,
   services?: { projects: ProjectsService; agents: AgentsService; chat: ChatService; traces: TraceService; memories?: MemoriesService },
 ) {
-
   const isDevelopment = config.nodeEnv === 'development';
+  const servesWeb = config.nodeEnv === 'production';
+  const webRoot = fileURLToPath(new URL('../../web/dist', import.meta.url));
 
-  let logger: FastifyServerOptions["logger"] | undefined = {
+  if (servesWeb && !existsSync(new URL('../../web/dist/index.html', import.meta.url))) {
+    throw new Error('The production web build is missing. Build apps/web before starting the API.');
+  }
+
+  const logger: FastifyServerOptions["logger"] | undefined = {
     level: isDevelopment ? 'debug' : 'info',
     /**
     * Dev: prettify logs with pino-pretty
@@ -52,6 +61,14 @@ export function buildApp(
   });
 
   app.register(cookie, { secret: config.cookieSecret });
+  if (servesWeb) {
+    app.register(fastifyStatic, {
+      root: webRoot,
+      prefix: '/',
+      maxAge: '1y',
+      immutable: true,
+    });
+  }
 
   app.setErrorHandler((error, request, reply) => {
     const publicError = toPublicError(error);
@@ -62,11 +79,23 @@ export function buildApp(
     return reply.code(publicError.status).send(parseResponseDto(apiErrorSchema, { error: publicError }));
   });
 
-  app.setNotFoundHandler((_request, reply) => {
-    notfoundError('Route not found.');
+  app.setNotFoundHandler((request, reply) => {
+    const pathname = request.url.split('?')[0];
+    const isApiRoute = pathname === '/api' || pathname.startsWith('/api/');
+    if (servesWeb && request.method === 'GET' && !isApiRoute
+      && request.headers.accept?.includes('text/html')) {
+      return reply.type('text/html').sendFile('index.html', { maxAge: 0, immutable: false });
+    }
+    throw notfoundError('Route not found.');
   });
 
   app.get('/healthz', async () => parseResponseDto(healthSchema, { status: 'ok' }));
+  if (servesWeb) {
+    app.get('/', (_request, reply) =>
+      reply.type('text/html').sendFile('index.html', { maxAge: 0, immutable: false }));
+    app.get('/index.html', (_request, reply) =>
+      reply.type('text/html').sendFile('index.html', { maxAge: 0, immutable: false }));
+  }
   registerAuthRoutes(app, config);
   if (services) {
     registerProjectRoutes(app, services.projects);

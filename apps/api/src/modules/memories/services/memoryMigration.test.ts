@@ -2,12 +2,14 @@ import { readFile } from 'node:fs/promises';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
-import { Pool, type PoolClient } from 'pg';
+import type { PoolClient } from 'pg';
 import { v7 as uuid } from 'uuid';
 import { memoryReadSchema, memoryStateSchema } from '@choral-writer/shared';
 
-describe.skipIf(!process.env.TEST_DATABASE_URL)('v1 memory migration on PostgreSQL', () => {
-  const pool = new Pool({ connectionString: process.env.TEST_DATABASE_URL });
+import { createTestPool } from '../../../tests/testDb.js';
+
+describe.skipIf(!process.env.DATABASE_URL)('v1 memory migration on PostgreSQL', () => {
+  const pool = createTestPool();
   let client: PoolClient;
   let migration: string;
 

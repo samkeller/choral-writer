@@ -2,7 +2,6 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { eq } from 'drizzle-orm';
-import { Pool } from 'pg';
 import type {
   ChatCompletion, ChatCompletionChunk, ChatCompletionCreateParamsNonStreaming, ChatCompletionCreateParamsStreaming,
 } from 'openai/resources/chat/completions';
@@ -16,6 +15,7 @@ import {
 
 import { buildApp } from '../../../app.js';
 import * as schema from '../../../db/schema.js';
+import { createTestPool } from '../../../tests/testDb.js';
 import { createCallLLM } from '../../../llm/call-llm.js';
 import { createChatBranchService, createChatService } from '../index.js';
 import { ChatMessageService } from '../services/messageService.js';
@@ -28,8 +28,8 @@ import { createTraceService } from '../../traces/index.js';
 import { MemoriesService } from '../../memories/services/memoriesService.js';
 
 // Only run against an explicitly supplied disposable PostgreSQL database.
-describe.skipIf(!process.env.TEST_DATABASE_URL)('projects and chat with PostgreSQL', () => {
-  const pool = new Pool({ connectionString: process.env.TEST_DATABASE_URL });
+describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', () => {
+  const pool = createTestPool();
   const database = drizzle(pool, { schema });
   const analysisContent = JSON.stringify({
     v: 1, agent: 'Chaos', summary: 'There may be a trap.', items: [
@@ -247,7 +247,10 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('projects and chat with PostgreS
       .where(eq(schema.agentVersions.id, initial.id))).rejects.toThrow();
     await send(project.id, 'Avant mise à jour.');
     expect(create).toHaveBeenLastCalledWith(expect.objectContaining({
-      messages: expect.arrayContaining([{ role: 'system', content: `${project.systemPrompt}\n\nTon initial.` }]),
+      messages: expect.arrayContaining([{
+        role: 'system',
+        content: expect.stringContaining(`${project.systemPrompt}\n\nTon initial.`),
+      }]),
     }), expect.anything());
     const nextVersion = published.versions[0]!;
     expect((await app.inject({
@@ -257,7 +260,10 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('projects and chat with PostgreS
     })).statusCode).toBe(200);
     await send(project.id, 'La porte s’ouvre.');
     expect(create).toHaveBeenLastCalledWith(expect.objectContaining({
-      messages: expect.arrayContaining([{ role: 'system', content: `${project.systemPrompt}\n\nTon enjoué.` }]),
+      messages: expect.arrayContaining([{
+        role: 'system',
+        content: expect.stringContaining(`${project.systemPrompt}\n\nTon enjoué.`),
+      }]),
     }), expect.anything());
     const other = await agents.listForProject(second.id);
     expect(other.find((agent) => agent.agentId === newAgent.id)?.versionId).toBe(initial.id);
@@ -360,11 +366,15 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('projects and chat with PostgreS
       headers: { cookie },
     });
     expect(traceDetailResponse.statusCode).toBe(200);
-    expect(traceCallDetailSchema.parse(traceDetailResponse.json())).toMatchObject({
+    const traceDetail = traceCallDetailSchema.parse(traceDetailResponse.json());
+    expect(traceDetail).toMatchObject({
       id: trace.id,
-      request: { messages: [{ role: 'system' }] },
       response: '<resolution>La porte s’ouvre.</resolution><prose>Bonjour Mara.</prose>',
     });
+    expect(traceDetail.request.messages).toEqual(expect.arrayContaining([
+      { role: 'system', content: expect.any(String) },
+      { role: 'user', content: 'Mara entre.' },
+    ]));
     const foreignTrace = await app.inject({
       method: 'GET', url: `/api/projects/${second.id}/turns/${start.turnId}/traces`, headers: { cookie },
     });

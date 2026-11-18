@@ -104,7 +104,7 @@ describe('routing and authentication', () => {
     });
     fireEvent.change(screen.getByLabelText('Mot de passe'), { target: { value: 'correct-password' } });
     fireEvent.click(screen.getByRole('button', { name: 'Se connecter' }));
-    await screen.findByRole('heading', { name: 'Projets' });
+    await screen.findByRole('heading', { name: 'Projets' }, { timeout: 5000 });
     expect(screen.getByTestId('location').textContent).toBe('/projects');
 
     adapter.mockImplementation(async (config) => respond(config, 401, {

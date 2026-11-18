@@ -6,46 +6,14 @@ import { ClientApiError, getErrorMessage } from '../api/client';
 import { getProject } from '../api/projects/projectsApi';
 import { getBranches, getChatHistory, streamTurn } from '../api/chat/chatApi';
 import { getMemory, retryMemory } from '../api/memories/memoriesApi';
+import { initialPipelineProgress, updatePipelineProgress } from './chatPipelineProgress';
+import type { ChatPipelineProgress } from './chatPipelineProgress';
+
+export type { ChatPipelineProgress } from './chatPipelineProgress';
 
 type ChatAction =
   | { operation: 'send'; content: string }
   | { operation: 'regenerate' | 'retry' };
-
-type PipelineStage = 'analysis' | 'narrator' | 'guardian' | 'reducer';
-type PipelineStepStatus = 'pending' | 'running' | 'completed' | 'failed';
-
-export type ChatPipelineProgress = {
-  turnId: string;
-  memoryOnly?: boolean;
-  activeStage: PipelineStage | null;
-  activeStageStartedAt: number | null;
-  analysis: {
-    status: PipelineStepStatus;
-    elapsedMs: number;
-    agentCount: number;
-    agents: Record<string, {
-      name: string;
-      status: 'started' | 'completed' | 'failed';
-      startedAt: number | null;
-      durationMs: number | null;
-    }>;
-  };
-  narrator: { status: PipelineStepStatus; elapsedMs: number };
-  guardian: { status: PipelineStepStatus; elapsedMs: number };
-  reducer: { status: PipelineStepStatus; elapsedMs: number };
-};
-
-function initialPipelineProgress(turnId: string): ChatPipelineProgress {
-  return {
-    turnId,
-    activeStage: null,
-    activeStageStartedAt: null,
-    analysis: { status: 'pending', elapsedMs: 0, agentCount: 0, agents: {} },
-    narrator: { status: 'pending', elapsedMs: 0 },
-    guardian: { status: 'pending', elapsedMs: 0 },
-    reducer: { status: 'pending', elapsedMs: 0 },
-  };
-}
 
 /**
  * Owns branch selection, provisional streaming and reconciliation with committed
@@ -165,55 +133,8 @@ export function useChat(projectId: string) {
           userMessageId = event.message.id;
           if (action.operation === 'send') setOptimisticUser(event.message);
           setPipelineProgress(initialPipelineProgress(event.turnId));
-        } else if (event.type === 'chat.pipeline.stage') {
-          setPipelineProgress((current) => {
-            if (!current || current.turnId !== event.turnId) return current;
-            if (event.status === 'started') {
-              return {
-                ...current,
-                activeStage: event.stage,
-                activeStageStartedAt: Date.now(),
-                [event.stage]: {
-                  ...current[event.stage],
-                  status: 'running',
-                  ...(event.stage === 'analysis' ? { agentCount: event.agentCount ?? 0 } : {}),
-                },
-              };
-            }
-            return {
-              ...current,
-              activeStage: current.activeStage === event.stage ? null : current.activeStage,
-              activeStageStartedAt: current.activeStage === event.stage ? null : current.activeStageStartedAt,
-              [event.stage]: {
-                ...current[event.stage],
-                status: event.status,
-                elapsedMs: event.elapsedMs ?? current[event.stage].elapsedMs,
-              },
-            };
-          });
-        } else if (event.type === 'chat.pipeline.agent') {
-          setPipelineProgress((current) => {
-            if (!current || current.turnId !== event.turnId) return current;
-            return {
-              ...current,
-              analysis: {
-                ...current.analysis,
-                agents: {
-                  ...current.analysis.agents,
-                  [event.agentId]: {
-                    name: event.name,
-                    status: event.status,
-                    startedAt: event.status === 'started'
-                      ? Date.now()
-                      : current.analysis.agents[event.agentId]?.startedAt ?? null,
-                    durationMs: event.durationMs
-                      ?? current.analysis.agents[event.agentId]?.durationMs
-                      ?? null,
-                  },
-                },
-              },
-            };
-          });
+        } else if (event.type === 'chat.pipeline.stage' || event.type === 'chat.pipeline.agent') {
+          setPipelineProgress((current) => updatePipelineProgress(current, event));
         } else if (event.type === 'chat.message.delta') {
           setPartial((text) => text + event.delta);
         } else if (event.type === 'chat.turn.completed') {

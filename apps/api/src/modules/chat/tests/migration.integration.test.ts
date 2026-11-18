@@ -1,14 +1,16 @@
 import { readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { afterAll, describe, expect, it } from 'vitest';
-import { Pool, type PoolClient } from 'pg';
+import type { PoolClient } from 'pg';
+
+import { createTestPool } from '../../../tests/testDb.js';
 
 /**
  * Replay the real migration SQL in a transaction-local, uniquely named schema.
  * Never touch the application's schema, even when sharing a disposable test DB.
  */
-describe.skipIf(!process.env.TEST_DATABASE_URL)('chat migration with legacy data', () => {
-  const pool = new Pool({ connectionString: process.env.TEST_DATABASE_URL });
+describe.skipIf(!process.env.DATABASE_URL)('chat migration with legacy data', () => {
+  const pool = createTestPool();
   afterAll(() => pool.end());
 
   async function withLegacy(run: (

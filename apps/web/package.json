@@ -12,7 +12,6 @@
   "dependencies": {
     "@choral-writer/shared": "workspace:*",
     "@mantine/core": "^8.2.0",
-    "@mantine/hooks": "^8.2.0",
     "@tabler/icons-react": "^3.31.0",
     "axios": "^1.13.0",
     "react": "^19.1.0",

@@ -1,5 +1,4 @@
-import { Box, Group, Text } from '@mantine/core';
-import { IconTerminal2 } from '@tabler/icons-react';
+import { Box, Text } from '@mantine/core';
 
 import { MarkdownContent } from './MarkdownContent';
 import styles from './PromptDisplay.module.css';

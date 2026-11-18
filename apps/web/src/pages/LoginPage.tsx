@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { Alert, Button, Center, Paper, PasswordInput, Stack, Text } from '@mantine/core';
+import { Alert, Button, Center, Paper, PasswordInput, Stack } from '@mantine/core';
 import { Navigate, useLocation } from 'react-router-dom';
 import { loginRequestSchema } from '@choral-writer/shared';
 

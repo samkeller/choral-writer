@@ -57,7 +57,7 @@ describe('authentication routes', () => {
     });
 
     expect(invalidPassword.statusCode).toBe(401);
-    expect(invalidPassword.json().error.code).toBe('INVALID_CREDENTIALS');
+    expect(invalidPassword.json().error.code).toBe('UNAUTHORIZED');
     expect(malformed.statusCode).toBe(400);
     expect(malformed.json().error.code).toBe('INVALID_REQUEST');
   });

@@ -44,6 +44,19 @@ Les variables d'exemple dans `.env.example` sont destinées au développement et
 
 Ne jamais committer de secrets. L'API et le frontend conservent leurs scripts et dépendances dans leurs manifestes respectifs.
 
+## Déploiement Railway
+
+Déployer le dépôt comme un service Railway unique. Définir les commandes du service dans les paramètres Railway : build `pnpm build`, pré-déploiement `pnpm db:migrate`, démarrage `pnpm start`, health check `/healthz` (timeout conseillé : 300 s). Le build compile `shared`, l'API et le frontend ; le serveur Fastify sert ensuite `apps/web/dist` et les routes `/api` depuis la même origine. Le serveur requiert le build frontend en mode `production` et échoue au démarrage s'il manque.
+
+Créer une base PostgreSQL Railway et définir les variables suivantes dans le service applicatif :
+
+- `DATABASE_URL` : référence à `DATABASE_URL` du service PostgreSQL Railway.
+- `APP_PASSWORD` et `COOKIE_SECRET` : secrets uniques de production ; le secret de cookie doit avoir au moins 32 caractères.
+- `LLM_API_KEY`, `LLM_BASE_URL` et `LLM_MODEL` : identifiants et cible du fournisseur LLM.
+- `NODE_ENV=production` ; Railway fournit `PORT` au processus.
+
+La commande `pnpm db:migrate` s'exécute en pré-déploiement. Les migrations peuvent nécessiter un instant de connexion à la base ; ne déployez pas si elles échouent. PostgreSQL est le seul stockage persistant ; le système de fichiers du conteneur ne doit pas contenir de données utilisateur. Les sauvegardes et la disponibilité de PostgreSQL, ainsi que l'accès réseau sortant vers le fournisseur LLM, restent à configurer/vérifier dans le projet Railway.
+
 ## Instructions pour les agents
 
 Lire [`apps/web/AGENTS.md`](../apps/web/AGENTS.md) pour les consignes frontend et [`FRONTEND_CONVENTIONS.md`](./web/FRONTEND_CONVENTIONS.md) pour l'organisation des changements UI.
@@ -52,8 +65,7 @@ Lire [`apps/web/AGENTS.md`](../apps/web/AGENTS.md) pour les consignes frontend e
 
 Le domaine conversationnel utilise le préfixe SQL `chat_` et les dossiers
 `modules/chat`, `db/entities/chat` et `packages/shared/src/chat`.
-Voir [CHAT.md](./api/CHAT.md) pour les décisions, les invariants, la migration
-M2.1 et les conséquences pour la mémoire future.
+Voir [CHAT.md](./api/CHAT.md) pour ses décisions et invariants.
 
 Dans le chat, les routes délèguent aux contrôleurs pour la validation et le transport ;
 les services portent les cas d'usage et collaborent entre eux ;
@@ -69,7 +81,9 @@ fonction. Les décisions transversales et limites connues vont dans la documenta
 
 ## Tests PostgreSQL
 
-Les tests d'intégration sont activés uniquement avec `TEST_DATABASE_URL` vers une
-base PostgreSQL jetable, puis `pnpm test`. Ils appliquent les migrations et créent
-leurs propres projets ; ne jamais utiliser une base de production. Les appels LLM
-sont simulés. Sans cette variable, Vitest signale ces tests comme ignorés.
+Les tests d'intégration lisent `DATABASE_URL` depuis `.env.tests` à la racine du
+dépôt, puis `pnpm test`. Vitest charge ce fichier automatiquement et ne transmet
+cette URL qu'aux tests PostgreSQL. Il doit pointer vers une base jetable : les
+tests appliquent les migrations et créent leurs propres projets ; ne jamais
+utiliser une base de production. Les appels LLM sont simulés. Sans cette variable,
+Vitest signale ces tests comme ignorés.
