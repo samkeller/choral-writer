@@ -480,12 +480,15 @@ describe('projects and chat screens', () => {
     const memorySection = within(screen.getByRole('region', { name: 'Mémoire' }));
     expect(memorySection.getAllByRole('toolbar')).toHaveLength(1);
     const toolbar = within(memorySection.getByRole('toolbar', { name: 'Actions Mémoire' }));
-    expect(toolbar.getByRole('button', { name: 'Modifier Mara' })).toBeTruthy();
-    expect(toolbar.getByRole('button', { name: 'Archiver Mara' })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Modifier Max' })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: /Max.*Texte initial/ }));
+    // Les actions unitaires appartiennent au détail de l'entrée sélectionnée, pas à la barre d'outils.
     expect(toolbar.queryByRole('button', { name: 'Modifier Mara' })).toBeNull();
-    fireEvent.click(toolbar.getByRole('button', { name: 'Modifier Max' }));
+    expect(toolbar.queryByRole('button', { name: 'Archiver Mara' })).toBeNull();
+    expect(memorySection.getByRole('button', { name: 'Modifier Mara' })).toBeTruthy();
+    expect(memorySection.getByRole('button', { name: 'Archiver Mara' })).toBeTruthy();
+    expect(memorySection.queryByRole('button', { name: 'Modifier Max' })).toBeNull();
+    fireEvent.click(memorySection.getByRole('button', { name: /Max.*Texte initial/ }));
+    expect(memorySection.queryByRole('button', { name: 'Modifier Mara' })).toBeNull();
+    fireEvent.click(memorySection.getByRole('button', { name: 'Modifier Max' }));
     expect(screen.getByTestId('location').textContent).toBe(`/projects/${project.id}?tab=config&section=memory&branch=${branch.id}`);
     const dialog = within(screen.getByRole('dialog'));
     fireEvent.change(dialog.getByRole('textbox', { name: 'Texte mémoire' }), { target: { value: 'Correction conservée' } });

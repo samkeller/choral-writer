@@ -55,10 +55,6 @@ export function ProjectMemories({ memory, selectBranch }: {
       primaryAction={{ label: 'Proposer la configuration', accessibleLabel: 'Proposer la configuration mémoire', loading: memory.pending,
         onClick: () => void memory.propose().then((proposal) => { if (proposal) { setDraftBase(view); setDraft(proposal); } }) }}
       actions={<>
-        {selected && <>
-          <IconAction label={`Modifier ${selected.key}`} disabled={memory.pending} onClick={() => setEditor({ kind: 'entry', value: selected })}><IconEdit size={18} /></IconAction>
-          <IconAction label={`${selected.archived ? 'Restaurer' : 'Archiver'} ${selected.key}`} disabled={memory.pending} onClick={() => setConfirmation({ label: `${selected.archived ? 'Restaurer' : 'Archiver'} « ${selected.key} » ?`, change: { op: 'archiveEntry', id: selected.id, archived: !selected.archived } })}><IconArchive size={18} /></IconAction>
-        </>}
         <IconAction label={`Tags (${view.state.tags.length})`} onClick={() => setTagsOpen(true)}><IconTags size={18} /></IconAction>
         <IconAction label="Import / export CSV" disabled={memory.pending} onClick={() => setTransferOpen(true)}><IconFileSpreadsheet size={18} /></IconAction>
         {memory.lastResult && <IconAction onClick={() => setResultOpen(true)}
@@ -94,11 +90,17 @@ export function ProjectMemories({ memory, selectBranch }: {
         </ConfigurationListPane>
         <ConfigurationDetailPane>
           {selected ? <>
-            <Stack gap="xs">
-              <Title order={3} size="h4" style={{ overflowWrap: 'anywhere' }}>{selected.key}</Title>
-              <Text size="xs" c="dimmed">{selected.source === 'user' ? 'Correction manuelle' : 'Gardien'}{selectedStatus ? ` · ${selectedStatus}` : ''}</Text>
-              <Group gap={4}>{selected.tagIds.map((id) => <Badge key={id} variant="light" color="gray">{view.state.tags.find((tag) => tag.id === id)?.name ?? id}</Badge>)}</Group>
-            </Stack>
+            <Group justify="space-between" align="flex-start" gap="sm" wrap="wrap">
+              <Stack gap="xs" miw={0} style={{ flex: '1 1 14rem' }}>
+                <Title order={3} size="h4" style={{ overflowWrap: 'anywhere' }}>{selected.key}</Title>
+                <Text size="xs" c="dimmed">{selected.source === 'user' ? 'Correction manuelle' : 'Gardien'}{selectedStatus ? ` · ${selectedStatus}` : ''}</Text>
+                <Group gap={4}>{selected.tagIds.map((id) => <Badge key={id} variant="light" color="gray">{view.state.tags.find((tag) => tag.id === id)?.name ?? id}</Badge>)}</Group>
+              </Stack>
+              <Group gap="xs" wrap="nowrap">
+                <IconAction label={`Modifier ${selected.key}`} disabled={memory.pending} onClick={() => setEditor({ kind: 'entry', value: selected })}><IconEdit size={18} /></IconAction>
+                <IconAction label={`${selected.archived ? 'Restaurer' : 'Archiver'} ${selected.key}`} disabled={memory.pending} onClick={() => setConfirmation({ label: `${selected.archived ? 'Restaurer' : 'Archiver'} « ${selected.key} » ?`, change: { op: 'archiveEntry', id: selected.id, archived: !selected.archived } })}><IconArchive size={18} /></IconAction>
+              </Group>
+            </Group>
             <MarkdownContent content={selected.content} />
           </> : <Text c="dimmed" size="sm">Sélectionnez une entrée dans la liste. Le Gardien enrichit la mémoire après les scènes ; vous pouvez aussi la corriger ici.</Text>}
         </ConfigurationDetailPane>
