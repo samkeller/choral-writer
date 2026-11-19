@@ -1,12 +1,11 @@
 import { Button, Stack, Text, ThemeIcon, Title } from '@mantine/core';
-import { IconFeather } from '@tabler/icons-react';
 import { Link } from 'react-router-dom';
 
 export function HomePage() {
   return (
     <Stack gap="md" maw={580} pt={{ base: 'lg', sm: '3rem' }}>
       <ThemeIcon size={52} radius="lg" variant="light" color="choral">
-        <IconFeather size={26} stroke={1.6} />
+        <img src="/assets/logo.png" alt="" width={34} height={34} aria-hidden="true" />
       </ThemeIcon>
       <Text c="choral.3" size="sm" fw={600} tt="uppercase">
         Atelier de narration

@@ -95,6 +95,9 @@ export function buildApp(
       reply.type('text/html').sendFile('index.html', { maxAge: 0, immutable: false }));
     app.get('/index.html', (_request, reply) =>
       reply.type('text/html').sendFile('index.html', { maxAge: 0, immutable: false }));
+    // Le manifeste pilote l'installation : il ne doit pas être figé un an comme les assets hachés.
+    app.get('/manifest.webmanifest', (_request, reply) =>
+      reply.type('application/manifest+json').sendFile('manifest.webmanifest', { maxAge: 0, immutable: false }));
   }
   registerAuthRoutes(app, config);
   if (services) {

@@ -1,10 +1,9 @@
 import { Group, Stack, Text, ThemeIcon } from '@mantine/core';
-import { IconFeather } from '@tabler/icons-react';
 
 export function Brand({ iconOnly = false }: { iconOnly?: boolean }) {
   const mark = (
     <ThemeIcon size={40} radius="md" variant="light" color="choral">
-      <IconFeather size={20} stroke={1.8} aria-hidden="true" />
+      <img src="/assets/logo.png" alt="" width={26} height={26} aria-hidden="true" />
     </ThemeIcon>
   );
 

@@ -57,6 +57,10 @@ Créer une base PostgreSQL Railway et définir les variables suivantes dans le s
 
 La commande `pnpm db:migrate` s'exécute en pré-déploiement. Les migrations peuvent nécessiter un instant de connexion à la base ; ne déployez pas si elles échouent. PostgreSQL est le seul stockage persistant ; le système de fichiers du conteneur ne doit pas contenir de données utilisateur. Les sauvegardes et la disponibilité de PostgreSQL, ainsi que l'accès réseau sortant vers le fournisseur LLM, restent à configurer/vérifier dans le projet Railway.
 
+## Application installable (PWA)
+
+Le frontend est installable sur Android depuis Chrome et Firefox. Aucun service worker n'est enregistré : l'installation ne l'exige pas et l'application n'a pas de stratégie hors ligne.
+
 ## Instructions pour les agents
 
 Lire [`apps/web/AGENTS.md`](../apps/web/AGENTS.md) pour les consignes frontend et [`FRONTEND_CONVENTIONS.md`](./web/FRONTEND_CONVENTIONS.md) pour l'organisation des changements UI.
