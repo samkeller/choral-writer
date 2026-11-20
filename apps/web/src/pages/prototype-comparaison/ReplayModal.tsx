@@ -3,11 +3,11 @@ import { Button, Checkbox, Group, Modal, Select, Stack, Text, Textarea } from '@
 
 export function ReplayModal({ opened, onClose, onLaunch }: { opened: boolean; onClose: () => void; onLaunch: () => void }) {
   return (
-    <Modal opened={opened} onClose={onClose} title="Rejouer ce tour avec une autre configuration" size="lg">
+    <Modal opened={opened} onClose={onClose} title="Rejouer le dernier tour avec une autre configuration" size="lg">
       <Stack gap="sm">
         <Text size="xs" c="dimmed">
-          Même saisie, même mémoire qu’avant le tour. Le résultat devient une nouvelle branche ; la configuration
-          du projet n’est pas modifiée.
+          Même saisie, même mémoire qu’avant le tour. Le résultat devient une nouvelle branche. La configuration
+          du projet ne change que si tu adoptes la variante.
         </Text>
         <Text size="sm" fw={600}>Agents d’analyse</Text>
         {[['Marchand', 'v2'], ['Cohérence', 'v1'], ['Hors champ', 'v1'], ['Agent du chaos', 'v1']].map(([name, version]) => (

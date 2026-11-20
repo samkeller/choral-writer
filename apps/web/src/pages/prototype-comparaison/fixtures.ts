@@ -29,7 +29,20 @@ export interface TurnVersion {
 
 export const userInput = 'Le joueur demande au marchand d’où vient la carte.';
 
-const filler = 'Texte fictif de démonstration. La prose complète du tour apparaîtrait ici, sur plusieurs paragraphes, sans rien révéler du récit réel.';
+// Prose fictive et neutre, écrite pour le prototype : elle n'a qu'à occuper la place d'un vrai tour.
+const proseOriginal = [
+  'Le marchand repose la carte sur l’étal, la lisse du plat de la main, comme s’il voulait en effacer les plis. Il sourit sans regarder le joueur et désigne d’un geste vague les rouleaux de tissu empilés derrière lui.',
+  '« D’où elle vient ? D’un vieux fonds de boutique, comme tout le reste. » Il enchaîne aussitôt sur le prix des étoffes, la saison des pluies qui approche, la rareté des teintures bleues cette année.',
+  'Autour d’eux, le marché suit son cours. Une marchande de fruits appelle les passants, deux enfants se disputent une pièce tombée entre les pavés, et l’odeur du pain chaud monte d’une échoppe voisine.',
+  'Le marchand finit par replier la carte et la glisser sous une pile de tissus. « Si elle vous intéresse, revenez demain. J’aurai peut-être retrouvé le carnet où je note mes achats. »',
+  'Le soleil décline lentement sur les toits. Rien ne presse ; la journée s’achève comme elle a commencé, dans le bruit tranquille des marchandages.',
+];
+const proseVariant = [
+  'Le marchand repose la carte sur l’étal un peu trop vite. « Un vieux fonds de boutique », dit-il, et sa voix monte d’un ton sur le dernier mot. Ses doigts tapotent le bois, nerveux.',
+  'Au bout de la rue, des éclats de voix interrompent les marchandages. Trois gardes en manteau gris avancent d’étal en étal, soulèvent les bâches, ouvrent les coffres sans demander la permission.',
+  'Le marchand les a vus aussi. Il plie la carte en quatre d’un geste sec et la pousse vers le joueur. « Gardez-la. Vous ne l’avez pas eue ici. Partez par la ruelle des tanneurs, maintenant. »',
+  'Un garde lève la tête, croise un instant le regard du joueur, puis se retourne vers un étal voisin. La foule commence à s’écarter, et le marché tout entier semble retenir son souffle.',
+];
 
 export const original: TurnVersion = {
   label: 'Original',
@@ -45,7 +58,7 @@ export const original: TurnVersion = {
   durationS: 38.2,
   words: 1180,
   memoryChanges: ['+ Le marchand évite le sujet de la carte'],
-  prose: [filler, filler, filler],
+  prose: proseOriginal,
 };
 
 export const variant: TurnVersion = {
@@ -63,7 +76,7 @@ export const variant: TurnVersion = {
   durationS: 44.9,
   words: 1310,
   memoryChanges: ['+ La garde a vu le joueur avec le marchand', '+ Le marchand a menti sur la carte'],
-  prose: [filler, filler, filler],
+  prose: proseVariant,
 };
 
 export const totalCost = (version: TurnVersion) =>

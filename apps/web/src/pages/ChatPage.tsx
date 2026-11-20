@@ -78,7 +78,7 @@ function ProjectChat({ projectId }: { projectId: string }) {
         </Alert>
       )}
       {search.get('compare') && <ComparisonPrototype />}
-      {chat.project && !search.get('compare') && (
+      {chat.project && (
         <>
           {setupOpen && <ProjectConfiguration project={chat.project}
             branchId={chat.history?.branch.id ?? search.get('branch')} selectBranch={chat.selectBranch}
