@@ -8,20 +8,31 @@ import type {
 import { v7 as uuidv7 } from 'uuid';
 import { z } from 'zod';
 import { APIError } from 'openai/error';
-import type { MemoryContext } from '@choral-writer/shared';
+import { isPlausibleTokens, type LlmStage, type MemoryContext, type PriceWindow } from '@choral-writer/shared';
 
 import { ApiError } from '../errors/errors.js';
 import { normalizeLlmError } from '../errors/llmErrors.js';
+import type { ProviderStrategy } from './providers/index.js';
 
 export interface CallLLMInput<T = unknown> {
+  /**
+   * Obligatoire : sans lui, un appel ne peut être ni rattaché à un projet ni facturé.
+   * Rendre ce champ requis rend l'oubli impossible à la compilation.
+   */
+  projectId: string;
   turnId?: string;
   agentId?: string;
   agentVersionId?: string;
   stageExecutionId?: string;
-  stage: string;
+  stage: LlmStage;
   messages: ChatCompletionMessageParam[];
   memory?: MemoryContext;
-  schema?: z.ZodType<T>;
+  /**
+   * L'entrée est volontairement `any` : la validation s'applique au résultat de
+   * `JSON.parse`, et un schéma avec valeur par défaut a une entrée plus large que sa
+   * sortie (`memoryProposalsSchema`). Typer l'entrée en `unknown` rejetterait ce cas légitime.
+   */
+  schema?: z.ZodType<T, z.ZodTypeDef, any>;
   validateResponse?: (content: string) => void;
   onDelta?: (delta: string) => void | Promise<void>;
   signal?: AbortSignal;
@@ -29,11 +40,12 @@ export interface CallLLMInput<T = unknown> {
 
 export interface LlmCallTrace {
   id: string;
+  projectId: string;
   turnId: string | null;
   agentId: string | null;
   agentVersionId: string | null;
   stageExecutionId?: string | null;
-  stage: string;
+  stage: LlmStage;
   model: string;
   messages: ChatCompletionMessageParam[];
   memory?: MemoryContext;
@@ -54,6 +66,27 @@ export interface LLMResult<T> {
   durationMs: number;
 }
 
+/** Fait d'usage transmis au registre comptable, déjà normalisé par la stratégie fournisseur. */
+export interface LlmUsageFact {
+  callId: string;
+  projectId: string;
+  turnId: string | null;
+  stage: LlmStage;
+  stageExecutionId: string | null;
+  agentId: string | null;
+  agentVersionId: string | null;
+  provider: string;
+  model: string;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  cachedInputTokens: number | null;
+  providerCostUsd: number | null;
+  durationMs: number;
+  status: 'success' | 'error';
+  at: Date;
+  priceWindow: PriceWindow;
+}
+
 interface LLMClient {
   chat: {
     completions: {
@@ -69,34 +102,98 @@ interface TraceRepository {
   insert(trace: LlmCallTrace): Promise<void>;
 }
 
+/** Écrit le registre financier. Optionnel : la trace reste la source de vérité du débogage. */
+export interface UsageRecorder {
+  record(fact: LlmUsageFact): Promise<void>;
+}
+
 interface CallLLMDependencies {
   client: LLMClient;
   traces: TraceRepository;
   model: string;
+  provider: ProviderStrategy;
   now?: () => number;
   apiKey?: string;
+  usage?: UsageRecorder;
 }
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** Un token non plausible est une anomalie de contrat fournisseur, pas une consommation réelle. */
+function plausible(value: number | null): number | null {
+  return value !== null && isPlausibleTokens(value) ? value : null;
+}
+
 /**
- * Single provider boundary for completion/streaming, output validation and traces.
- * A result is returned only after its trace is saved; partial output never counts
- * as success. Domain orchestration and retry policy remain with the caller.
+ * Frontière unique vers le fournisseur : complétion, streaming, validation et traces.
+ * Un résultat n'est rendu qu'après l'écriture de sa trace ; une sortie partielle n'est
+ * jamais un succès. L'orchestration métier et la politique de retry restent chez l'appelant.
+ *
+ * La comptabilité est écrite après la trace, sur un chemin distinct : un échec du registre
+ * est journalisé mais jamais propagé, car il ne doit pas transformer une narration réussie
+ * en échec utilisateur. La ligne manquante reste reconstructible depuis `llm_call`, qui
+ * conserve les tokens, et l'unicité de `call_id` rend cette reconstruction idempotente.
  */
-export function createCallLLM({ client, traces, model, now = Date.now, apiKey }: CallLLMDependencies) {
+export function createCallLLM({
+  client, traces, model, provider, now = Date.now, apiKey, usage,
+}: CallLLMDependencies) {
   return async function callLLM<T = unknown>(input: CallLLMInput<T>): Promise<LLMResult<T>> {
     const callId = uuidv7();
     const startedAt = now();
-    let response: ChatCompletion | null = null;
     let content: string | null = null;
     let parsed: T | undefined;
     let inputTokens: number | null = null;
     let outputTokens: number | null = null;
+    let cachedInputTokens: number | null = null;
+    let providerCostUsd: number | null = null;
     const timeout = AbortSignal.timeout(120_000);
     const signal = input.signal ? AbortSignal.any([input.signal, timeout]) : timeout;
+
+    /** Normalise la consommation via la stratégie fournisseur : aucune lecture directe de `usage`. */
+    function applyUsage(raw: unknown): void {
+      const extracted = provider.extractUsage(raw);
+      inputTokens = extracted.inputTokens;
+      outputTokens = extracted.outputTokens;
+      cachedInputTokens = extracted.cachedInputTokens;
+      providerCostUsd = provider.providerCostUsd(raw);
+    }
+
+    /**
+     * Awaited so a turn's cost is complete when the turn ends. A bookkeeping failure is
+     * logged but never fails the narration that was already produced.
+     */
+    async function recordUsage(status: 'success' | 'error', durationMs: number): Promise<void> {
+      if (!usage) return;
+      const at = new Date();
+      const fact: LlmUsageFact = {
+        callId,
+        projectId: input.projectId,
+        turnId: input.turnId ?? null,
+        stage: input.stage,
+        stageExecutionId: input.stageExecutionId ?? null,
+        agentId: input.agentId ?? null,
+        agentVersionId: input.agentVersionId ?? null,
+        provider: provider.name,
+        model,
+        inputTokens: plausible(inputTokens),
+        outputTokens: plausible(outputTokens),
+        cachedInputTokens: plausible(cachedInputTokens),
+        providerCostUsd,
+        durationMs,
+        status,
+        at,
+        priceWindow: provider.priceWindow(at),
+      };
+      try {
+        await usage.record(fact);
+      } catch (error) {
+        console.error('Could not record LLM usage.', {
+          callId, projectId: input.projectId, stage: input.stage, error: errorMessage(error),
+        });
+      }
+    }
 
     try {
       const result = await client.chat.completions.create({
@@ -120,10 +217,7 @@ export function createCallLLM({ client, traces, model, now = Date.now, apiKey }:
               undefined,
             );
           }
-          if (chunk.usage) {
-            inputTokens = chunk.usage.prompt_tokens;
-            outputTokens = chunk.usage.completion_tokens;
-          }
+          if (chunk.usage) applyUsage(chunk);
           const choice = chunk.choices[0];
           if (choice?.delta.content) {
             content += choice.delta.content;
@@ -145,11 +239,9 @@ export function createCallLLM({ client, traces, model, now = Date.now, apiKey }:
           });
         }
       } else {
-        response = result;
-        content = response.choices[0]?.message.content ?? null;
-        inputTokens = response.usage?.prompt_tokens ?? null;
-        outputTokens = response.usage?.completion_tokens ?? null;
-        if (response.choices[0]?.finish_reason !== 'stop') {
+        content = result.choices[0]?.message.content ?? null;
+        applyUsage(result);
+        if (result.choices[0]?.finish_reason !== 'stop') {
           throw new ApiError(502, 'LLM_INCOMPLETE_RESPONSE', 'Le fournisseur LLM a interrompu la réponse avant sa fin.', {
             source: 'llm',
           });
@@ -171,32 +263,33 @@ export function createCallLLM({ client, traces, model, now = Date.now, apiKey }:
       }
       input.validateResponse?.(content);
     } catch (error) {
-      const trace: LlmCallTrace = {
-        id: callId,
-        turnId: input.turnId ?? null,
-        agentId: input.agentId ?? null,
-        agentVersionId: input.agentVersionId ?? null,
-        stageExecutionId: input.stageExecutionId ?? null,
-        stage: input.stage,
-        model,
-        messages: input.messages,
-        memory: input.memory,
-        response: content,
-        inputTokens,
-        outputTokens,
-        durationMs: Math.max(0, now() - startedAt),
-        status: 'error',
-        error: errorMessage(error),
-      };
-
+      const durationMs = Math.max(0, now() - startedAt);
       try {
-        await traces.insert(trace);
+        await traces.insert({
+          id: callId,
+          projectId: input.projectId,
+          turnId: input.turnId ?? null,
+          agentId: input.agentId ?? null,
+          agentVersionId: input.agentVersionId ?? null,
+          stageExecutionId: input.stageExecutionId ?? null,
+          stage: input.stage,
+          model,
+          messages: input.messages,
+          memory: input.memory,
+          response: content,
+          inputTokens,
+          outputTokens,
+          durationMs,
+          status: 'error',
+          error: errorMessage(error),
+        });
       } catch (traceError) {
         throw new AggregateError(
           [error, traceError],
           'The LLM call failed and its trace could not be saved.',
         );
       }
+      await recordUsage('error', durationMs);
       throw normalizeLlmError(error, apiKey, signal);
     }
 
@@ -207,6 +300,7 @@ export function createCallLLM({ client, traces, model, now = Date.now, apiKey }:
     const durationMs = Math.max(0, now() - startedAt);
     await traces.insert({
       id: callId,
+      projectId: input.projectId,
       turnId: input.turnId ?? null,
       agentId: input.agentId ?? null,
       agentVersionId: input.agentVersionId ?? null,
@@ -222,6 +316,7 @@ export function createCallLLM({ client, traces, model, now = Date.now, apiKey }:
       status: 'success',
       error: null,
     });
+    await recordUsage('success', durationMs);
 
     return {
       callId,

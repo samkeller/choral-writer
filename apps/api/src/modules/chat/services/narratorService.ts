@@ -8,12 +8,13 @@ export class ChatNarratorService {
   constructor(private readonly callLLM: ReturnType<typeof createCallLLM>) {}
 
   async generate({
-    turnId, agentId, agentVersionId, systemPrompt, whiteboard, history, userMessage, signal, onDelta, memoryContext,
+    projectId, turnId, agentId, agentVersionId, systemPrompt, whiteboard, history, userMessage, signal, onDelta, memoryContext,
   }: NarratorInput): Promise<NarratorOutput> {
     const parser = new NarratorStreamParser(onDelta);
     const memory = memoryContext ?? { tags: [], entries: [] };
     let narration: ReturnType<NarratorStreamParser['finish']> | undefined;
     const result = await this.callLLM({
+      projectId,
       turnId,
       agentId,
       agentVersionId,

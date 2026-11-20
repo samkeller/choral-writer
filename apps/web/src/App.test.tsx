@@ -1046,15 +1046,17 @@ describe('projects and chat screens', () => {
           agentVersionId: '019ad30c-19b0-7000-8000-000000000304',
           agentName: 'Chaos', agentVersion: 1, model: 'test-model', status: 'success',
           inputTokens: 812, outputTokens: 240, durationMs: 800,
-          createdAt: project.createdAt, error: null,
+          createdAt: project.createdAt, error: null, costMicroUsd: 210, costBasis: 'priced',
         },
         {
           id: narratorCallId, turnId, stage: 'narrator',
           agentId: null, agentVersionId: null, agentName: 'Narrateur', agentVersion: 1,
           model: 'test-model', status: 'success', inputTokens: 900, outputTokens: 100,
           durationMs: 1500, createdAt: project.createdAt, error: null,
+          costMicroUsd: 195, costBasis: 'priced',
         },
       ],
+      cost: { microUsd: 405, complete: true },
     };
     const callDetail: TraceCallDetail = {
       ...summary.calls[0]!,

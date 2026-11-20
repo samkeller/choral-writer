@@ -135,6 +135,7 @@ export const memoryProposalsSchema = z.object({
   tagSuggestions: memoryTagSuggestionSchema.array().max(10).default([]),
 }).strict();
 export type MemoryProposal = z.infer<typeof memoryProposalSchema>;
+export type MemoryProposals = z.infer<typeof memoryProposalsSchema>;
 export const memoryChangeSchema = z.object({
   op: z.string(), targetId: id, reason: z.string(),
   before: z.string().nullable(), after: z.string().nullable(),

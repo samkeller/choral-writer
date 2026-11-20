@@ -26,11 +26,25 @@ function trace(overrides: Partial<TraceDetailRecord> = {}): TraceDetailRecord {
     durationMs: 1250,
     status: 'error',
     createdAt: new Date('2025-01-01T00:00:00.000Z'),
+    costMicroUsd: null,
+    costBasis: null,
     ...overrides,
   };
 }
 
 describe('trace DTO mapping', () => {
+  it('totals the cost of a turn and flags it as partial when a call has no known amount', async () => {
+    const priced = trace({ id: analysisCallId, stage: 'analysis', costMicroUsd: 1200, costBasis: 'priced' });
+    const narrator = trace({ costMicroUsd: 3400, costBasis: 'priced' });
+    const unpriced = trace({ id: '019ad30c-19b0-7000-8000-000000000106', costBasis: 'unpriced' });
+
+    expect((await toTurnTraceSummaryDto(turnId, [priced, narrator])).cost)
+      .toEqual({ microUsd: 4600, complete: true });
+    expect((await toTurnTraceSummaryDto(turnId, [priced, unpriced])).cost)
+      .toEqual({ microUsd: 1200, complete: false });
+    expect(toTraceCallSummaryDto(narrator, turnId)).toMatchObject({ costMicroUsd: 3400, costBasis: 'priced' });
+  });
+
   it('reconstructs the analysis whiteboard and narrator sections from persisted calls', async () => {
     const analysis = trace({
       id: analysisCallId,

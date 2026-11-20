@@ -46,9 +46,14 @@ export class ProjectRepository {
     if (!row) throw new Error('Missing locked project while recording its activity.');
   }
 
+  /**
+   * `no key update` still excludes concurrent turns and deletion of the project, but lets
+   * other connections insert rows referencing it (LLM traces and usage written mid-turn);
+   * a plain `update` lock would block those foreign-key checks until the turn ends.
+   */
   async lock(id: string): Promise<Project | null> {
     const [row] = await this.database.select().from(projects).where(eq(projects.id, id))
-      .for('update', { noWait: true });
+      .for('no key update', { noWait: true });
     return row ?? null;
   }
 }

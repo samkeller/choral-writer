@@ -4,6 +4,7 @@ import type { ChatCompletionMessageParam } from 'openai/resources/chat/completio
 import type { Database } from '../../../db/client.js';
 import { agentVersions } from '../../../db/entities/agents/agent.js';
 import { llmCall } from '../../../db/entities/llmCall.js';
+import { llmUsage } from '../../../db/entities/llmUsage.js';
 
 function summaryColumns() {
   return {
@@ -21,6 +22,8 @@ function summaryColumns() {
     durationMs: llmCall.durationMs,
     status: llmCall.status,
     createdAt: llmCall.createdAt,
+    costMicroUsd: llmUsage.costMicroUsd,
+    costBasis: llmUsage.costBasis,
   };
 }
 
@@ -31,6 +34,7 @@ export class TraceRepository {
     return await this.database.select(summaryColumns())
       .from(llmCall)
       .leftJoin(agentVersions, eq(llmCall.agentVersionId, agentVersions.id))
+      .leftJoin(llmUsage, eq(llmUsage.callId, llmCall.id))
       .where(eq(llmCall.turnId, turnId))
       .orderBy(asc(llmCall.createdAt), asc(llmCall.id));
   }
@@ -42,6 +46,7 @@ export class TraceRepository {
     })
       .from(llmCall)
       .leftJoin(agentVersions, eq(llmCall.agentVersionId, agentVersions.id))
+      .leftJoin(llmUsage, eq(llmUsage.callId, llmCall.id))
       .where(and(eq(llmCall.id, id), eq(llmCall.turnId, turnId)))
       .limit(1);
     return trace ?? null;

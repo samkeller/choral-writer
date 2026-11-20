@@ -22,6 +22,8 @@ export function toTraceCallSummaryDto(trace: TraceSummaryRecord, turnId: string)
     durationMs: trace.durationMs,
     createdAt: trace.createdAt.toISOString(),
     error: trace.status === 'error' ? 'L’appel LLM a échoué.' : null,
+    costMicroUsd: trace.costMicroUsd,
+    costBasis: trace.costBasis,
   };
 }
 
@@ -85,6 +87,15 @@ export async function toTurnTraceSummaryDto(
     analysis,
     narrator,
     calls: traces.map((trace) => toTraceCallSummaryDto(trace, turnId)),
+    cost: toTurnCost(traces),
+  };
+}
+
+/** Somme des montants connus ; un appel sans montant rend le total partiel plutôt que faux. */
+function toTurnCost(traces: readonly TraceSummaryRecord[]): TurnTraceSummary['cost'] {
+  return {
+    microUsd: traces.reduce((total, trace) => total + (trace.costMicroUsd ?? 0), 0),
+    complete: traces.every((trace) => trace.costMicroUsd !== null),
   };
 }
 

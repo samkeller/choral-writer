@@ -6,6 +6,7 @@ import type { ProjectAgent } from '@choral-writer/shared';
 
 import type { LlmCallTrace } from '../../../llm/call-llm.js';
 import { createCallLLM } from '../../../llm/call-llm.js';
+import { testProvider } from '../../../tests/support/callLLM.js';
 import { ChatAnalysisService } from './analysisService.js';
 
 function completion(content: string): ChatCompletion {
@@ -43,6 +44,7 @@ function setup(create: (
     client: { chat: { completions: { create: async (params) => create(params) } } },
     traces: { insert: async (trace) => { traces.push(trace); } },
     model: 'test-model',
+    provider: testProvider,
   });
   return { service: new ChatAnalysisService(callLLM), traces };
 }
@@ -70,7 +72,7 @@ describe('ChatAnalysisService', () => {
     });
 
     const result = await service.generate({
-      turnId: 'turn', agents, systemPrompt: 'Project prompt.', history: [],
+      projectId: 'project', turnId: 'turn', agents, systemPrompt: 'Project prompt.', history: [],
       userMessage: {
         id: 'user', projectId: 'project', role: 'user', content: 'Open the door.', createdAt: new Date(),
       },
@@ -109,7 +111,7 @@ describe('ChatAnalysisService', () => {
 
     const progress: Array<{ agentId: string; status: string }> = [];
     const result = await service.generate({
-      turnId: 'turn',
+      projectId: 'project', turnId: 'turn',
       agents: [agent('Chaos'), agent('Coherence')],
       systemPrompt: 'Project prompt.',
       history: [],
@@ -149,7 +151,7 @@ describe('ChatAnalysisService', () => {
     const { service, traces } = setup(async () => completion(responses[calls++]!));
 
     const result = await service.generate({
-      turnId: 'turn',
+      projectId: 'project', turnId: 'turn',
       agents: [agent('Chaos')],
       systemPrompt: 'Project prompt.',
       history: [],
@@ -177,7 +179,7 @@ describe('ChatAnalysisService', () => {
 
     const progress: Array<{ agentId: string; status: string }> = [];
     await expect(service.generate({
-      turnId: 'turn',
+      projectId: 'project', turnId: 'turn',
       agents: [agent('Chaos'), agent('Coherence')],
       systemPrompt: 'Project prompt.',
       history: [],
@@ -205,7 +207,7 @@ describe('ChatAnalysisService', () => {
     const { service } = setup(create);
 
     await expect(service.generate({
-      turnId: 'turn', agents: [], systemPrompt: 'Project prompt.', history: [],
+      projectId: 'project', turnId: 'turn', agents: [], systemPrompt: 'Project prompt.', history: [],
       userMessage: {
         id: 'user', projectId: 'project', role: 'user', content: 'Open the door.', createdAt: new Date(),
       },

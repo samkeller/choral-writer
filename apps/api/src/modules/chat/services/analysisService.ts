@@ -14,6 +14,7 @@ export function isAnalysisAgent(agent: ProjectAgent): agent is AnalysisAgent {
 }
 
 export type AnalysisInput = {
+  projectId: string;
   turnId: string;
   agents: readonly AnalysisAgent[];
   systemPrompt: string;
@@ -65,6 +66,7 @@ export class ChatAnalysisService {
     try {
       const memory = input.memoryState ? memoryContext(input.memoryState, agent) : { tags: [], entries: [] };
       const request: CallLLMInput<AnalysisEnvelope> = {
+        projectId: input.projectId,
         turnId: input.turnId,
         agentId: agent.agentId,
         agentVersionId: agent.versionId,
