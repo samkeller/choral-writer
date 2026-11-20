@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { analysisEnvelopeSchema } from '../../pipeline.js';
 import { chatExecutionParamsSchema } from './turn.js';
 import { memoryContextSchema } from '../../memories.js';
+import { costBasisSchema } from '../../usage/index.js';
 
 export const traceStageSchema = z.enum(['analysis', 'narrator', 'guardian', 'reducer']);
 export const traceStatusSchema = z.enum(['success', 'error']);
@@ -23,6 +24,16 @@ export const traceCallSummarySchema = z.object({
   durationMs: z.number().int().nonnegative(),
   createdAt: z.string().datetime(),
   error: z.string().nullable(),
+  /** Coût en micro-dollars ; nul si l'appel n'a pas pu être tarifé ou précède le suivi des coûts. */
+  costMicroUsd: z.number().int().nonnegative().nullable(),
+  /** Origine du montant ; nulle si aucune ligne de consommation n'existe pour cet appel. */
+  costBasis: costBasisSchema.nullable(),
+});
+
+/** Coût d'un tour. `complete` est faux dès qu'un appel du tour n'a pas de montant connu. */
+export const turnCostSchema = z.object({
+  microUsd: z.number().int().nonnegative(),
+  complete: z.boolean(),
 });
 
 export const traceCallDetailSchema = traceCallSummarySchema.extend({
@@ -58,4 +69,5 @@ export const turnTraceSummarySchema = z.object({
   analysis: z.array(analysisTraceSchema),
   narrator: narratorTraceSchema.nullable(),
   calls: z.array(traceCallSummarySchema),
+  cost: turnCostSchema,
 });

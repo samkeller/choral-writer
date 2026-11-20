@@ -24,6 +24,8 @@ function trace(): TraceDetailRecord {
     durationMs: 20,
     status: 'success',
     createdAt: new Date(),
+    costMicroUsd: null,
+    costBasis: null,
   };
 }
 

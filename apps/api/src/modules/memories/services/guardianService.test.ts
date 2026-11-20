@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ChatCompletion } from 'openai/resources/chat/completions';
 import { emptyMemoryState, type ProjectAgent } from '@choral-writer/shared';
 import { createCallLLM, type CallLLMInput, type LlmCallTrace } from '../../../llm/call-llm.js';
+import { testProvider } from '../../../tests/support/callLLM.js';
 import { GuardianService, type GuardianInput } from './guardianService.js';
 
 const guardian: ProjectAgent = {
@@ -22,13 +23,17 @@ function setup(responses: string[]) {
     };
   });
   const insert = vi.fn<(trace: LlmCallTrace) => Promise<void>>().mockResolvedValue(undefined);
-  const callLLM = createCallLLM({ client: { chat: { completions: { create } } }, model: 'test', traces: { insert } });
+  const callLLM = createCallLLM({
+    client: { chat: { completions: { create } } }, model: 'test',
+    traces: { insert }, provider: testProvider,
+  });
   const requests: CallLLMInput[] = [];
   const service = new GuardianService((input) => {
     requests.push(input);
     return callLLM(input);
   });
   const input: GuardianInput = {
+    projectId: 'project',
     turnId: 'turn', executionId: 'run', agent: guardian, agents: [guardian],
     state: emptyMemoryState(), systemPrompt: 'Continue the story in prose.',
     resolution: 'Mara opens the door.', prose: 'The door creaks.', signal: new AbortController().signal,
