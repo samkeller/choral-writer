@@ -14,6 +14,7 @@ import { useChat } from '../hooks/useChat';
 import { NotFoundPage } from './NotFoundPage';
 import { IconAction } from '../components/atoms/IconAction';
 import styles from './ChatPage.module.css';
+import { ComparisonPrototype } from './prototype-comparaison/ComparisonPrototype'; // PROTOTYPE
 
 export function ChatPage() {
   const params = projectParamsSchema.safeParse(useParams());
@@ -76,7 +77,8 @@ function ProjectChat({ projectId }: { projectId: string }) {
           </Stack>
         </Alert>
       )}
-      {chat.project && (
+      {search.get('compare') && <ComparisonPrototype />}
+      {chat.project && !search.get('compare') && (
         <>
           {setupOpen && <ProjectConfiguration project={chat.project}
             branchId={chat.history?.branch.id ?? search.get('branch')} selectBranch={chat.selectBranch}
