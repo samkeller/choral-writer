@@ -17,6 +17,7 @@ Vocabulaire du domaine. Ce fichier ne décrit pas l'implémentation.
 - **Whiteboard** : la vue partagée, pour un tour, des contributions des agents d'analyse que reçoit le Narrateur.
 - **Direction** : phase facultative entre l'analyse et la restitution, qui oriente le tour sans en fixer l'issue.
 - **Directeur** : l'agent de la direction. Il retient ou écarte les contributions du whiteboard et oriente la scène, y compris contre la saisie ; il ne fixe pas le dénouement et ne passe jamais outre ce qu'un agent d'analyse dit du personnage qu'il incarne.
+- **Nudge** : une pression typée que le Directeur exerce sur un tour (rendre saillant, retarder, mettre une intention au premier plan, introduire un événement, compliquer une issue, relancer) sans en fixer l'issue.
 - **Narrateur** : l'agent de restitution qui écrit la prose montrée à l'utilisateur.
 - **Gardien** : l'agent de restitution qui propose des modifications de la mémoire.
 - **Tour** : une exécution du pipeline pour une saisie utilisateur.
