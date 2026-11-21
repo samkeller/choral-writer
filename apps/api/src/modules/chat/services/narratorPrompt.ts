@@ -2,12 +2,6 @@ import type { AnalysisEnvelope, MemoryContext } from '@choral-writer/shared';
 
 import { formatMemoryContext } from '../../memories/services/memoryState.js';
 
-/**
- * Garde-fou, pas une cible de longueur : les narrations mesurées plafonnent vers 5 800 tokens.
- * Une réponse qui l'atteint échoue au lieu d'être affichée tronquée.
- */
-export const NARRATOR_MAX_TOKENS = 8_192;
-
 const narratorRules = [
   'Écris directement la suite du récit, en prose : ni balise, ni titre, ni commentaire hors du récit.',
   'Les analyses ci-dessous sont de la matière à exploiter, pas un plan à exécuter ni une issue imposée.',

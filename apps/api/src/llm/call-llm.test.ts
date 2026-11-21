@@ -120,17 +120,6 @@ describe('callLLM', () => {
     }));
   });
 
-  it('forwards the output ceiling only when one is requested', async () => {
-    const create = vi.fn(async (_params: ChatCompletionCreateParamsNonStreaming) => completion('story'));
-    const { callLLM } = setup(create);
-
-    await callLLM({ projectId, stage: 'narrator', messages: [{ role: 'user', content: 'begin' }], maxTokens: 8_192 });
-    await callLLM({ projectId, stage: 'guardian', messages: [{ role: 'user', content: 'memorize' }] });
-
-    expect(create.mock.calls[0]![0]).toMatchObject({ max_tokens: 8_192 });
-    expect(create.mock.calls[1]![0]).not.toHaveProperty('max_tokens');
-  });
-
   it('records provider errors in the trace', async () => {
     const { callLLM, insert } = setup(async () => {
       throw new Error('provider unavailable');

@@ -1,6 +1,6 @@
 import type { createCallLLM } from '../../../llm/call-llm.js';
 import { conversationMessages } from './conversationMessages.js';
-import { NARRATOR_MAX_TOKENS, narratorSystemPrompt } from './narratorPrompt.js';
+import { narratorSystemPrompt } from './narratorPrompt.js';
 import type { NarratorInput, NarratorOutput } from '../types/narrator.types.js';
 
 export class ChatNarratorService {
@@ -18,7 +18,6 @@ export class ChatNarratorService {
       stage: 'narrator',
       memory,
       signal,
-      maxTokens: NARRATOR_MAX_TOKENS,
       messages: conversationMessages(narratorSystemPrompt(systemPrompt, whiteboard, memory), history, userMessage),
       onDelta,
     });
