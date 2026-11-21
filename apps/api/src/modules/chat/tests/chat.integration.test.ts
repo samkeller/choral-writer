@@ -145,11 +145,12 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
 
   async function repeat(
     projectId: string, branchId: string, turnId: string, operation: 'regenerate' | 'retry',
+    input: Record<string, unknown> = {},
   ) {
     return app.inject({
       method: 'POST',
       url: `/api/projects/${projectId}/branches/${branchId}/turns/${turnId}/${operation}`,
-      headers: { cookie }, payload: { expectedHeadTurnId: turnId },
+      headers: { cookie }, payload: { expectedHeadTurnId: turnId, ...input },
     });
   }
 
@@ -584,6 +585,50 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
     } finally {
       generate = normal;
     }
+  });
+
+  it('replays the last turn with a replacement configuration without changing the project', async () => {
+    const project = await createProject('Variante', 'Prompt du projet.');
+    const original = events((await send(project.id, 'Même saisie.')).body).at(-1);
+    if (original?.type !== 'chat.turn.completed') throw new Error('Missing source turn.');
+    const team = await agents.listForProject(project.id);
+    const variantNarrator = agentSchema.parse((await app.inject({
+      method: 'POST', url: '/api/agents', headers: { cookie },
+      payload: { name: 'Narrateur variante', phase: 'restitution', output: 'narrative', instructions: 'Ton variante.' },
+    })).json());
+    const variantAgents = team.map((agent) => agent.output === 'narrative'
+      ? { agentId: variantNarrator.id, versionId: variantNarrator.versions[0]!.id }
+      : { agentId: agent.agentId, versionId: agent.versionId });
+
+    const invalid = await repeat(project.id, original.branchId, original.turnId, 'regenerate', {
+      configuration: { systemPrompt: 'Prompt variante.', agents: variantAgents.filter((agent) => agent.agentId !== variantNarrator.id) },
+    });
+    expect(invalid.statusCode).toBe(400);
+    expect(invalid.json()).toMatchObject({ error: { code: 'REQUIRED_AGENT_OUTPUTS' } });
+    expect(await database.select().from(schema.chatBranches).where(eq(schema.chatBranches.projectId, project.id)))
+      .toHaveLength(1);
+
+    const variant = events((await repeat(project.id, original.branchId, original.turnId, 'regenerate', {
+      configuration: { systemPrompt: 'Prompt variante.', agents: variantAgents },
+    })).body).at(-1);
+    if (variant?.type !== 'chat.turn.completed') throw new Error('Missing variant turn.');
+
+    expect(variant.branchId).not.toBe(original.branchId);
+    expect(create).toHaveBeenLastCalledWith(expect.objectContaining({
+      messages: expect.arrayContaining([{
+        role: 'system', content: expect.stringContaining('Prompt variante.\n\nTon variante.'),
+      }]),
+    }), expect.anything());
+    const summary = await app.inject({
+      method: 'GET', url: `/api/projects/${project.id}/turns/${variant.turnId}/traces`, headers: { cookie },
+    });
+    const { configuration } = turnTraceSummarySchema.parse(summary.json());
+    expect(configuration?.systemPrompt).toBe('Prompt variante.');
+    expect(configuration?.agents).toContainEqual(expect.objectContaining({
+      agentId: variantNarrator.id, name: 'Narrateur variante', output: 'narrative', memoryRead: { mode: 'all', tagIds: [] },
+    }));
+    expect((await projects.get(project.id)).systemPrompt).toBe('Prompt du projet.');
+    expect(await agents.listForProject(project.id)).toEqual(team);
   });
 
   it('preserves a failed alternative and retries it without overwriting or repeating the user input', async () => {

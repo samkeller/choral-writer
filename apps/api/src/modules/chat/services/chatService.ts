@@ -1,5 +1,5 @@
 import type {
-  AnalysisEnvelope, ChatBranch, ChatCommand, ChatHistory, ChatTurn, MemoryResult, TurnConfiguration,
+  AnalysisEnvelope, ChatBranch, ChatCommand, ChatHistory, ChatTurn, MemoryResult, ProjectAgent, TurnConfiguration,
 } from '@choral-writer/shared';
 
 import { prepareTurn } from './prepareTurn.js';
@@ -48,14 +48,15 @@ export class ChatService {
     signal: AbortSignal,
   ): Promise<ChatRunResult> {
     return this.dependencies.withProjectTransaction(command.projectId, async (context) => {
+      const pipeline = await pipelineConfiguration(context, command);
       const input = await prepareTurn(context, command);
       const memory = await context.memory.prepare(input.branchId, input.regeneratedFromTurnId, command.allowLegacyMemoryReset);
       const history = await context.turns.path(input.parentTurnId, NARRATOR_CONTEXT_TURN_LIMIT);
-      const narrator = context.projectAgents.find((agent) => agent.output === 'narrative');
+      const narrator = pipeline.agents.find((agent) => agent.output === 'narrative');
       if (!narrator) throw new Error('Project has no narrator assignment.');
       const turnId = await context.turns.start({
         ...input, memorySnapshot: memory.state,
-        configuration: turnConfiguration(context.project.systemPrompt, context.projectAgents),
+        configuration: turnConfiguration(pipeline.systemPrompt, pipeline.agents),
       });
 
       let outcome: GenerationOutcome;
@@ -66,7 +67,7 @@ export class ChatService {
           type: 'chat.turn.started', turnId, branchId: input.branchId,
           operation: command.operation, message: input.userMessage,
         });
-        const analysisAgents = context.projectAgents.filter(isAnalysisAgent);
+        const analysisAgents = pipeline.agents.filter(isAnalysisAgent);
         const analysisStartedAt = performance.now();
         await emit({
           type: 'chat.pipeline.stage', turnId, stage: 'analysis', status: 'started',
@@ -78,7 +79,7 @@ export class ChatService {
             projectId: command.projectId,
             turnId,
             agents: analysisAgents,
-            systemPrompt: context.project.systemPrompt,
+            systemPrompt: pipeline.systemPrompt,
             history,
             userMessage: input.userMessage,
             signal,
@@ -109,7 +110,7 @@ export class ChatService {
             turnId,
             agentId: narrator.agentId,
             agentVersionId: narrator.versionId,
-            systemPrompt: [context.project.systemPrompt, narrator.instructions]
+            systemPrompt: [pipeline.systemPrompt, narrator.instructions]
               .filter(Boolean)
               .join('\n\n'),
             whiteboard,
@@ -134,8 +135,8 @@ export class ChatService {
         });
         outcome = { status: 'completed', content: narration.prose };
         memoryResult = await context.memory.process(command.projectId, input.branchId, memory, {
-          turnId, systemPrompt: context.project.systemPrompt,
-          agents: context.projectAgents, prose: narration.prose, signal,
+          turnId, systemPrompt: pipeline.systemPrompt,
+          agents: pipeline.agents, prose: narration.prose, signal,
         }, async (stage, status, elapsedMs) => {
           if (!signal.aborted) await emit({ type: 'chat.pipeline.stage', turnId, stage, status, elapsedMs });
         });
@@ -184,4 +185,19 @@ export class ChatService {
     await context.recordActivity(at);
     return result;
   }
+}
+
+type PipelineConfiguration = { systemPrompt: string; agents: ProjectAgent[] };
+
+/** A regeneration may run with a replacement configuration; every other run uses the project's. */
+async function pipelineConfiguration(
+  context: ChatTransactionContext, command: ChatCommand,
+): Promise<PipelineConfiguration> {
+  if (command.operation === 'regenerate' && command.configuration) {
+    return {
+      systemPrompt: command.configuration.systemPrompt,
+      agents: await context.resolveAgents(command.configuration.agents),
+    };
+  }
+  return { systemPrompt: context.project.systemPrompt, agents: context.projectAgents };
 }
