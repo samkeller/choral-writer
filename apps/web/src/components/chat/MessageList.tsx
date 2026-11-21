@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { Group, Loader, Paper, ScrollArea, Stack, Text } from '@mantine/core';
 import { IconRoute } from '@tabler/icons-react';
 import type { ChatTurn, Message } from '@choral-writer/shared';
@@ -15,11 +15,14 @@ interface MessageListProps {
   partial: string;
   pending: boolean;
   pipelineProgress: ChatPipelineProgress | null;
-  onInspectTurn: (turnId: string) => void;
+  onInspectTurn?: (turnId: string) => void;
+  /** PROTOTYPE mode Debug : contenu affiché sous la réponse d'un tour, et en fin de liste. */
+  renderTurnFooter?: (turnId: string) => ReactNode;
+  footer?: ReactNode;
 }
 
 export function MessageList({
-  messages, turns, partial, pending, pipelineProgress, onInspectTurn,
+  messages, turns, partial, pending, pipelineProgress, onInspectTurn, renderTurnFooter, footer,
 }: MessageListProps) {
   const container = useRef<HTMLDivElement>(null);
   const initializedScroll = useRef(false);
@@ -74,7 +77,7 @@ export function MessageList({
                 <Text size="xs" c={message.role === 'user' ? 'choral.3' : 'dimmed'} fw={600}>
                   {message.role === 'user' ? 'Vous' : 'Assistant'}
                 </Text>
-                {turnId && (
+                {turnId && onInspectTurn && (
                   <IconAction label="Inspecter les traces de ce tour" onClick={() => onInspectTurn(turnId)}>
                     <IconRoute size={16} aria-hidden="true" />
                   </IconAction>
@@ -85,6 +88,7 @@ export function MessageList({
               ) : (
                 <Text className={styles.messageContent}>{message.content}</Text>
               )}
+              {turnId && message.role === 'assistant' && renderTurnFooter?.(turnId)}
             </Paper>
           );
         })}
@@ -94,6 +98,7 @@ export function MessageList({
           </Paper>
         )}
         {pipelineProgress && <PipelineProgress progress={pipelineProgress} />}
+        {footer}
         {pending && !pipelineProgress && (
           <Loader size="sm" color="choral.3" aria-label="Génération en cours" />
         )}

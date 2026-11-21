@@ -14,6 +14,7 @@ import { useChat } from '../hooks/useChat';
 import { NotFoundPage } from './NotFoundPage';
 import { IconAction } from '../components/atoms/IconAction';
 import styles from './ChatPage.module.css';
+import { DebugPrototype, ModeToggle } from './prototype-debug/DebugPrototype'; // PROTOTYPE
 
 export function ChatPage() {
   const params = projectParamsSchema.safeParse(useParams());
@@ -39,6 +40,7 @@ function ProjectChat({ projectId }: { projectId: string }) {
       <PageHeader
         title={chat.project?.name ?? 'Conversation'}
         actions={<Group gap="xs">
+          {search.get('debug') && <ModeToggle />}
           <BranchSwitcher branches={chat.branches} currentId={chat.history?.branch.id ?? null}
             disabled={chat.pending || !chat.history} onChange={chat.selectBranch} />
           <IconAction component={Link} to="/projects" label="Tous les projets">
@@ -85,14 +87,15 @@ function ProjectChat({ projectId }: { projectId: string }) {
             onProjectSaved={chat.reload} />}
           <Stack className={styles.story} gap="xs" style={{ display: setupOpen ? 'none' : undefined, flex: 1, minHeight: 0 }}>
           <Box className={styles.conversation}>
-            <MessageList
+            {search.get('debug') ? <DebugPrototype messages={chat.messages} turns={chat.history?.turns ?? []}
+              partial={chat.partial} pending={chat.pending} /> : <MessageList
               messages={chat.messages}
               turns={chat.history?.turns ?? []}
               partial={chat.partial}
               pending={chat.pending}
               pipelineProgress={chat.pipelineProgress}
               onInspectTurn={setTraceTurnId}
-            />
+            />}
           </Box>
           {head?.status === 'failed' && <Text c="red" size="xs" role="alert">{head.error}</Text>}
           {head?.memory?.status === 'failed' && !chat.pending && <Alert color="yellow" title="Mémoire à relancer">
