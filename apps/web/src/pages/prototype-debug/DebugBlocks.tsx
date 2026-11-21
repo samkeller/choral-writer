@@ -1,9 +1,9 @@
 // PROTOTYPE — blocs du mode Debug, partagés par les variantes A, B et C (seule la mise en page varie).
 import { useEffect, useState, type ReactNode } from 'react';
-import { Badge, Box, Group, Loader, Paper, Progress, SimpleGrid, Stack, Table, Text, Tooltip, UnstyledButton } from '@mantine/core';
+import { Anchor, Badge, SegmentedControl, Box, Group, Loader, Paper, Progress, SimpleGrid, Stack, Table, Text, Tooltip, UnstyledButton } from '@mantine/core';
 
 import {
-  type DebugTurn, changeColor, contextParts, costByPhase, partColor, phaseColor, seconds, storyRates, tokens,
+  type AnalysisItem, type DebugTurn, type ItemKind, changeColor, tensionLevels, contextParts, costByPhase, partColor, phaseColor, seconds, storyRates, tokens,
   totalInput, usd, verdictColor,
 } from './fixtures';
 
@@ -164,39 +164,114 @@ export function CostBlock({ turn, dense }: { turn: DebugTurn; dense?: boolean })
   );
 }
 
+/** Échelle nommée : on lit « montée », pas « 3/5 ». Le marqueur creux est le tour précédent, le plein la cible de ce tour. */
+export function TensionScale({ previous, target }: { previous: number; target: number }) {
+  return (
+    <Stack gap={4}>
+      <Group gap={2} wrap="nowrap">
+        {tensionLevels.slice(1).map((level, i) => {
+          const value = i + 1;
+          return (
+            <Box key={level} style={{ flex: 1 }}>
+              <Box h={8} style={{
+                borderRadius: 2,
+                background: value <= target ? `var(--mantine-color-orange-${4 + value})` : 'var(--mantine-color-dark-5)',
+                outline: value === previous && previous !== target ? '1px dashed var(--mantine-color-gray-4)' : undefined, outlineOffset: 2,
+              }} />
+              <Text size="xs" ta="center" mt={2} fw={value === target ? 700 : 400} c={value === target ? undefined : 'dimmed'}>{level}</Text>
+            </Box>
+          );
+        })}
+      </Group>
+      <Text size="xs" c="dimmed">
+        {target > previous ? `Le Directeur fait monter la tension d’un cran : de ${tensionLevels[previous]} à ${tensionLevels[target]}.`
+          : target < previous ? `Le Directeur relâche la tension : de ${tensionLevels[previous]} à ${tensionLevels[target]}.`
+            : `Le Directeur maintient la tension : ${tensionLevels[target]}.`}
+        {' '}Le Narrateur dose conflit et rythme d’après cette cible.
+      </Text>
+    </Stack>
+  );
+}
+
 export function DirectionBlock({ turn, dense }: { turn: DebugTurn; dense?: boolean }) {
   const direction = turn.direction;
   if (!direction) {
     return <Block title="Direction" dense={dense}><Text size="xs" c="dimmed">Directeur désactivé pour ce tour : toutes les contributions passent au Narrateur.</Text></Block>;
   }
-  const { tension, nudges, items } = direction;
+  const { tension, nudges } = direction;
   return (
-    <Block title="Direction" dense={dense}
-      aside={<Group gap={4}><Text size="xs" c="dimmed">tension</Text><Badge size="xs" variant="outline">{tension.previous}/5</Badge><Text size="xs">→</Text>
-        <Badge size="xs" color={tension.target > tension.previous ? 'orange' : 'gray'}>{tension.target}/5</Badge></Group>}>
-      <Stack gap={6}>
-        {nudges.length === 0
-          ? <Text size="xs" c="dimmed">Le Directeur n’est pas intervenu sur la suite.</Text>
-          : <Stack gap={2}>{nudges.map((nudge) => (
-            <Text key={nudge.type} size="xs">Le Directeur pousse vers <b>{nudge.type}</b> <Text span size="xs" c="dimmed">, parce que : {nudge.basis.toLowerCase()}</Text></Text>
-          ))}</Stack>}
-        {turn.thwarted && <Text size="xs" c="red.3">Une tentative du protagoniste a été contrariée.</Text>}
-        <Text size="xs" fw={600} mt={4}>Contributions transmises au Narrateur</Text>
-        <Table verticalSpacing={2} horizontalSpacing="xs" fz="xs">
-          <Table.Tbody>
-            {items.map((item) => (
-              <Table.Tr key={item.agent} opacity={item.kept ? 1 : 0.6}>
-                <Table.Td w={24}><Badge size="xs" circle color={item.kept ? 'green' : 'gray'}>{item.kept ? '✓' : '×'}</Badge></Table.Td>
-                <Table.Td w={90}>{item.agent}</Table.Td>
-                <Table.Td>{item.item}</Table.Td>
-                <Table.Td w={80}><Badge size="xs" variant="outline" color={item.scope === 'scene' ? 'blue' : 'cyan'}>{item.scope === 'scene' ? 'scène' : 'hors champ'}</Badge></Table.Td>
-                <Table.Td w={190} c="dimmed">{item.reason ?? ''}</Table.Td>
-              </Table.Tr>
+    <Stack gap="sm">
+      <Block title="Tension visée" dense={dense}><TensionScale previous={tension.previous} target={tension.target} /></Block>
+      <Block title="Interventions du Directeur" dense={dense}>
+        <Stack gap={4}>
+          {nudges.length === 0
+            ? <Text size="xs" c="dimmed">Le Directeur n’est pas intervenu sur la suite.</Text>
+            : nudges.map((nudge) => (
+              <Text key={nudge.type} size="sm">Pousse vers <b>{nudge.type}</b> <Text span size="xs" c="dimmed">, parce que : {nudge.basis.toLowerCase()}</Text></Text>
             ))}
-          </Table.Tbody>
-        </Table>
-      </Stack>
-    </Block>
+          {turn.thwarted && <Text size="xs" c="red.3">Une tentative du protagoniste a été contrariée.</Text>}
+        </Stack>
+      </Block>
+    </Stack>
+  );
+}
+
+const kindColor: Record<ItemKind, string> = { développement: 'cyan', suggestion: 'blue', alerte: 'orange' };
+
+function ItemFate({ item }: { item: AnalysisItem }) {
+  if (!item.transmitted) return <Text size="xs" c="dimmed">écarté · {item.discardReason}</Text>;
+  if (item.scope === 'offscreen') return <Text size="xs" c="cyan.3">transmis · hors champ, fait connu du Gardien</Text>;
+  return (
+    <Group gap={4} wrap="nowrap">
+      <Text size="xs" c="dimmed">transmis →</Text>
+      <Badge size="xs" variant="light" color={verdictColor[item.prose!]}>{item.prose === 'ignoré' ? 'absent de la prose' : `${item.prose} dans la prose`}</Badge>
+    </Group>
+  );
+}
+
+export function analysisCounts(turn: DebugTurn) {
+  const items = turn.analysis.flatMap((output) => output.items);
+  return {
+    produced: items.length,
+    transmitted: items.filter((item) => item.transmitted).length,
+    inProse: items.filter((item) => item.prose === 'retenu' || item.prose === 'partiel').length,
+    offscreen: items.filter((item) => item.transmitted && item.scope === 'offscreen').length,
+  };
+}
+
+/** Ce que chaque agent d'analyse a produit, et le sort de chaque item jusqu'à la prose. */
+export function AnalysisBlock({ turn, onOpenRaw }: { turn: DebugTurn; onOpenRaw: () => void }) {
+  const [filter, setFilter] = useState<'all' | 'transmitted' | 'discarded'>('all');
+  return (
+    <Stack gap="sm">
+      <SegmentedControl size="xs" w="fit-content" value={filter} onChange={(value) => setFilter(value as typeof filter)} data={[
+        { value: 'all', label: 'Tous les items' }, { value: 'transmitted', label: 'Transmis' }, { value: 'discarded', label: 'Écartés' },
+      ]} />
+      {turn.analysis.map((output) => {
+        const items = output.items.filter((item) => filter === 'all' || (filter === 'transmitted') === item.transmitted);
+        const kept = output.items.filter((item) => item.transmitted).length;
+        return (
+          <Paper key={output.agent} withBorder radius="md" p="sm" bg="dark.7" style={{ borderLeft: '3px solid var(--mantine-color-blue-7)' }}>
+            <Group justify="space-between" mb={6}>
+              <Group gap="xs"><Text fw={700} size="sm">{output.agent}</Text>
+                <Text size="xs" c="dimmed">{output.items.length} items · {kept} transmis · {seconds(output.durationMs)}</Text></Group>
+              <Anchor size="xs" onClick={onOpenRaw}>Réponse brute →</Anchor>
+            </Group>
+            {items.length === 0 ? <Text size="xs" c="dimmed">Aucun item dans ce filtre.</Text> : (
+              <Stack gap={4}>
+                {items.map((item) => (
+                  <Group key={item.text} gap="xs" wrap="nowrap" opacity={item.transmitted ? 1 : 0.6}>
+                    <Badge size="xs" variant="light" color={kindColor[item.kind]} w={100}>{item.kind}</Badge>
+                    <Text size="sm" style={{ flex: 1 }}>{item.text}</Text>
+                    <ItemFate item={item} />
+                  </Group>
+                ))}
+              </Stack>
+            )}
+          </Paper>
+        );
+      })}
+    </Stack>
   );
 }
 

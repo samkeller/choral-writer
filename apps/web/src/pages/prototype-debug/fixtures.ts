@@ -38,12 +38,22 @@ export interface Attribution {
   why: string;
 }
 
-export interface DirectionItem {
-  agent: string;
-  item: string;
+export type ItemKind = 'développement' | 'suggestion' | 'alerte';
+
+/** Parcours d'un item d'analyse : produit par un agent, transmis ou écarté par le Directeur, puis repris ou non dans la prose. */
+export interface AnalysisItem {
+  kind: ItemKind;
+  text: string;
   scope: 'scene' | 'offscreen';
-  kept: boolean;
-  reason?: string;
+  transmitted: boolean;
+  discardReason?: string;
+  prose?: Verdict;
+}
+
+export interface AgentOutput {
+  agent: string;
+  durationMs: number;
+  items: AnalysisItem[];
 }
 
 export interface Nudge {
@@ -63,7 +73,8 @@ export interface DebugTurn {
   whatHappened: string;
   attribution: Attribution[];
   calls: Call[];
-  direction: { items: DirectionItem[]; tension: { target: number; previous: number }; nudges: Nudge[] } | null;
+  analysis: AgentOutput[];
+  direction: { tension: { target: number; previous: number }; nudges: Nudge[] } | null;
   thwarted: boolean;
   configChanges: ConfigChange[];
 }
@@ -82,7 +93,7 @@ const proposals: Record<string, string[]> = {
   Monde: ['Une patrouille change d’itinéraire (hors champ)', 'La météo se dégrade', 'Une rumeur circule (hors champ)'],
   Rythme: ['Couper la scène plus tôt', 'Ralentir : laisser respirer', 'Accélérer vers la confrontation'],
 };
-const reasons = ['redondant avec Cohérence', 'contredit un acte du protagoniste', 'trop tôt dans l’arc', 'hors de la scène, gardé pour le Gardien'];
+const reasons = ['redondant avec un autre agent', 'contredit un acte du protagoniste', 'trop tôt dans l’arc', 'hors sujet pour cette scène'];
 const nudgeTypes: NudgeType[] = ['saillance', 'retard', 'pression', 'complication', 'relance', 'événement', 'interdit'];
 const models = { small: 'haiku', large: 'sonnet' };
 
@@ -129,11 +140,22 @@ export function buildTurn(index: number): DebugTurn {
     };
   });
 
-  const items: DirectionItem[] = activeAgents.flatMap((agent, a) => {
-    const kept = rand(index * 3 + a) > 0.35;
-    return [{ agent, item: pick(proposals[agent], index + a), scope: agent === 'Monde' ? 'offscreen' : 'scene', kept,
-      reason: kept ? undefined : pick(reasons, index + a) } satisfies DirectionItem];
-  });
+  const kinds: ItemKind[] = ['développement', 'suggestion', 'suggestion', 'alerte'];
+  const analysis: AgentOutput[] = activeAgents.map((agent, a) => ({
+    agent,
+    durationMs: analysisCalls[a].durationMs,
+    items: proposals[agent].slice(0, 2 + Math.floor(rand(index * 13 + a) * 2)).map((text, i) => {
+      const seed = index * 31 + a * 7 + i;
+      const scope = agent === 'Monde' && i !== 1 ? 'offscreen' : 'scene';
+      const transmitted = index === 6 || rand(seed) > 0.3;
+      return {
+        kind: agent === 'Cohérence' ? 'alerte' : agent === 'Monde' ? 'développement' : kinds[(seed) % kinds.length],
+        text, scope, transmitted,
+        discardReason: transmitted ? undefined : pick(reasons, seed),
+        prose: transmitted && scope === 'scene' ? pick<Verdict>(['retenu', 'retenu', 'partiel', 'ignoré'], seed + 1) : undefined,
+      } satisfies AnalysisItem;
+    }),
+  }));
   const nudgeCount = Math.floor(rand(index + 9) * 3);
   const previous = Math.min(5, 1 + Math.floor(index / 2));
 
@@ -152,8 +174,8 @@ export function buildTurn(index: number): DebugTurn {
     whatHappened: pick(happenings, index),
     attribution,
     calls: directed ? calls : calls.filter((call) => call.phase !== 'Direction'),
+    analysis,
     direction: directed ? {
-      items,
       tension: { previous, target: Math.min(5, previous + (rand(index + 2) > 0.4 ? 1 : 0)) },
       nudges: Array.from({ length: nudgeCount }, (_, n) => ({
         type: nudgeTypes[(index + n * 2) % nudgeTypes.length],
@@ -164,6 +186,8 @@ export function buildTurn(index: number): DebugTurn {
     configChanges,
   };
 }
+
+export const tensionLevels = ['', 'calme', 'frémissement', 'montée', 'crise', 'paroxysme'];
 
 export const totalInput = (call: Call) => Object.values(call.input).reduce((sum, value) => sum + (value ?? 0), 0);
 export const usd = (value: number) => `${value.toFixed(3).replace('.', ',')} $`;

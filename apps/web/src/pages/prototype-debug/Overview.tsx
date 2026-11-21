@@ -3,10 +3,10 @@ import type { ReactNode } from 'react';
 import { Anchor, Box, Group, Paper, SimpleGrid, Stack, Text, Tooltip, UnstyledButton } from '@mantine/core';
 import { IconAdjustments, IconAlertTriangle, IconArrowRight, IconCoin, IconCompass, IconStack2 } from '@tabler/icons-react';
 
-import { Block, WhatHappenedBlock } from './DebugBlocks';
-import { type DebugTurn, type Phase, phaseColor, seconds, tokens, totalInput, usd } from './fixtures';
+import { Block, WhatHappenedBlock, analysisCounts } from './DebugBlocks';
+import { type DebugTurn, type Phase, phaseColor, seconds, tensionLevels, tokens, totalInput, usd } from './fixtures';
 
-export type DebugTab = 'overview' | 'context' | 'cost' | 'direction' | 'config' | 'story' | 'raw';
+export type DebugTab = 'overview' | 'analysis' | 'context' | 'cost' | 'direction' | 'config' | 'story' | 'raw';
 
 const narratorInput = (turn: DebugTurn) => turn.calls.find((call) => call.label === 'Narrateur')!;
 
@@ -31,12 +31,15 @@ export function Overview({ turns, index, onOpenTab }: { turns: DebugTurn[]; inde
         <Stat label="Entrée du Narrateur" value={`${tokens(narratorTotal)} tokens`}
           hint={previous ? `${percentDelta(narratorTotal, totalInput(narratorInput(previous)))} vs tour précédent` : 'premier tour'}
           onClick={() => onOpenTab('context')} />
-        <Stat label="Tension" value={turn.direction ? `${turn.direction.tension.previous} → ${turn.direction.tension.target} / 5` : '—'}
-          hint={turn.direction ? `${turn.direction.nudges.length} intervention${turn.direction.nudges.length > 1 ? 's' : ''} du Directeur` : 'sans Directeur'}
+        <Stat label="Tension visée"
+          value={turn.direction ? tensionLevels[turn.direction.tension.target] : 'sans Directeur'}
+          hint={turn.direction ? tensionHint(turn.direction.tension.previous, turn.direction.tension.target) : 'aucune cible fixée'}
           onClick={() => onOpenTab('direction')} />
       </SimpleGrid>
 
       <WhatHappenedBlock turn={turn} />
+
+      <AnalysisFunnel turn={turn} onOpen={() => onOpenTab('analysis')} />
 
       <Block title="Points d’attention">
         <Stack gap={6}>
@@ -123,5 +126,37 @@ function PipelineStrip({ turn }: { turn: DebugTurn }) {
         </Tooltip>
       ))}
     </Group>
+  );
+}
+
+function tensionHint(previous: number, target: number) {
+  if (target > previous) return `en hausse, depuis ${tensionLevels[previous]}`;
+  if (target < previous) return `en baisse, depuis ${tensionLevels[previous]}`;
+  return 'stable';
+}
+
+/** Des items produits par l'analyse à ceux qui se retrouvent dans la prose. */
+function AnalysisFunnel({ turn, onOpen }: { turn: DebugTurn; onOpen: () => void }) {
+  const counts = analysisCounts(turn);
+  const step = (value: number, label: string, color: string) => (
+    <Stack gap={0} align="center" style={{ flex: 1 }}>
+      <Text size="xl" fw={700} c={color}>{value}</Text>
+      <Text size="xs" c="dimmed" ta="center">{label}</Text>
+    </Stack>
+  );
+  const arrow = <IconArrowRight size={16} color="var(--mantine-color-dark-2)" />;
+  return (
+    <Block title="De l’analyse à la prose" aside={<Anchor size="xs" onClick={onOpen}>Détail par agent →</Anchor>}>
+      <UnstyledButton onClick={onOpen} w="100%">
+        <Group gap="xs" wrap="nowrap">
+          {step(counts.produced, `items produits par ${turn.analysis.length} agents`, 'blue.4')}
+          {arrow}
+          {step(counts.transmitted, 'transmis par le Directeur', 'indigo.3')}
+          {arrow}
+          {step(counts.inProse, 'visibles dans la prose', 'violet.3')}
+          {counts.offscreen > 0 && <>{arrow}{step(counts.offscreen, 'hors champ, connus du Gardien', 'teal.4')}</>}
+        </Group>
+      </UnstyledButton>
+    </Block>
   );
 }

@@ -11,7 +11,7 @@ import type { ChatTurn, Message } from '@choral-writer/shared';
 
 import { MessageList } from '../../components/chat/MessageList';
 import {
-  Block, ConfigBlock, ContextBlock, ContextEvolution, ContextLegend, CostBlock, DirectionBlock, StoryRatesBlock,
+  AnalysisBlock, Block, ConfigBlock, ContextBlock, ContextEvolution, ContextLegend, CostBlock, DirectionBlock, StoryRatesBlock,
 } from './DebugBlocks';
 import { buildTurn, type DebugTurn } from './fixtures';
 import { type DebugTab, Overview } from './Overview';
@@ -78,6 +78,7 @@ function TurnDrawer({ turns, index, onSelect }: { turns: DebugTurn[]; index: num
     <Tabs value={tab} onChange={(value) => setTab((value as DebugTab | null) ?? 'overview')} keepMounted={false}>
       <Tabs.List mb="sm">
         <Tabs.Tab value="overview">Synthèse</Tabs.Tab>
+        <Tabs.Tab value="analysis">Analyse</Tabs.Tab>
         <Tabs.Tab value="context">Contexte</Tabs.Tab>
         <Tabs.Tab value="cost">Coût et durée</Tabs.Tab>
         <Tabs.Tab value="direction">Direction</Tabs.Tab>
@@ -86,6 +87,7 @@ function TurnDrawer({ turns, index, onSelect }: { turns: DebugTurn[]; index: num
         <Tabs.Tab value="raw">Appels bruts</Tabs.Tab>
       </Tabs.List>
       <Tabs.Panel value="overview"><Overview turns={turns} index={index} onOpenTab={setTab} /></Tabs.Panel>
+      <Tabs.Panel value="analysis"><AnalysisBlock turn={turn} onOpenRaw={() => setTab('raw')} /></Tabs.Panel>
       <Tabs.Panel value="context"><Stack gap="sm">
         <ContextBlock turn={turn} />
         <Block title="Entrée du Narrateur au fil des tours" aside={<ContextLegend />}><ContextEvolution turns={turns} current={index} onSelect={onSelect} height={70} /></Block>
