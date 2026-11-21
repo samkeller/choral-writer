@@ -6,6 +6,7 @@ Vocabulaire du domaine. Ce fichier ne décrit pas l'implémentation.
 
 - **Récit** : l'histoire produite au fil des tours d'un projet, dans une branche donnée.
 - **Personnage** : un être qui existe *dans la narration* (protagoniste joué par l'utilisateur, PNJ, figure hors champ). Un personnage n'est pas un agent ; il peut être porté par un agent, par plusieurs, ou par aucun.
+- **Protagoniste** : le personnage joué par l'utilisateur. La saisie décide de ce qu'il tente, dit ou fait ; le récit décide de ce qui en résulte.
 - **PNJ** : personnage non joué par l'utilisateur.
 - **Hors champ** : ce qui existe et évolue dans le monde du récit sans apparaître dans la scène en cours.
 
@@ -14,6 +15,8 @@ Vocabulaire du domaine. Ce fichier ne décrit pas l'implémentation.
 - **Agent** : un rôle LLM configuré (instructions, version, accès mémoire) qui intervient dans le pipeline. Un agent est un outil, jamais un être du récit.
 - **Agent d'analyse** : agent *générique* qui examine la situation avant la narration et apporte une perspective au Narrateur. Il peut incarner un personnage, l'ensemble des personnages absents de la scène, une force narrative (« agent du chaos »), un vérificateur de cohérence, ou toute autre perspective : son rôle n'est fixé que par ses instructions. C'est notamment le moyen de faire exister des personnages hors champ.
 - **Whiteboard** : la vue partagée, pour un tour, des contributions des agents d'analyse que reçoit le Narrateur.
+- **Direction** : phase facultative entre l'analyse et la restitution, qui oriente le tour sans en fixer l'issue.
+- **Directeur** : l'agent de la direction. Il retient ou écarte les contributions du whiteboard et oriente la scène, y compris contre la saisie ; il ne fixe pas le dénouement et ne passe jamais outre ce qu'un agent d'analyse dit du personnage qu'il incarne.
 - **Narrateur** : l'agent de restitution qui écrit la prose montrée à l'utilisateur.
 - **Gardien** : l'agent de restitution qui propose des modifications de la mémoire.
 - **Tour** : une exécution du pipeline pour une saisie utilisateur.
