@@ -23,6 +23,12 @@ Vocabulaire du domaine. Ce fichier ne décrit pas l'implémentation.
 - **Narrateur** : l'agent de restitution qui écrit la prose montrée à l'utilisateur.
 - **Gardien** : l'agent de restitution qui propose des modifications de la mémoire.
 - **Tour** : une exécution du pipeline pour une saisie utilisateur.
+- **Bibliothèque d'agents** : l'ensemble des agents génériques préconfigurés, de chaque rôle, dans lesquels un projet choisit son équipe.
+
+## Mise en place d'un projet
+
+- **Constructeur** : l'assistant qui, à partir d'un prompt unique, propose la configuration d'un projet : il répartit le prompt entre le prompt système (l'immuable), la mémoire (l'état du récit, dont les Intentions) et le prompt du Narrateur (la forme du récit), choisit ou propose les agents, et propose tags et routage. Il produit un brouillon que l'utilisateur modifie et valide ; rien n'est appliqué sans validation.
+- **Tags de départ** : le jeu commun de tags mémoire (par nature de contenu : faits, monde, Intentions, fils ouverts) avec lequel naît chaque projet, pour que la mémoire fonctionne dès le premier tour.
 
 ## Interface
 
