@@ -1,4 +1,4 @@
-import type { ChatTurn, TurnTraceSummary, TraceCallDetail } from '@choral-writer/shared';
+import type { ChatTurn, TraceCallDetail, TurnConfiguration, TurnTraceSummary } from '@choral-writer/shared';
 
 import { notfoundError } from '../../../errors/errors.js';
 import type { TraceRepository } from '../repositories/traceRepository.js';
@@ -6,6 +6,7 @@ import { toTraceCallDetailDto, toTurnTraceSummaryDto } from '../mappers/traceDto
 
 type TurnLookup = {
   turn(projectId: string, turnId: string): Promise<Pick<ChatTurn, 'id'>>;
+  turnConfiguration(projectId: string, turnId: string): Promise<TurnConfiguration | null>;
 };
 
 export class TraceService {
@@ -16,8 +17,10 @@ export class TraceService {
 
   async summary(projectId: string, turnId: string): Promise<TurnTraceSummary> {
     const turn = await this.chat.turn(projectId, turnId);
-    const traces = await this.repository.listByTurn(turn.id);
-    return toTurnTraceSummaryDto(turn.id, traces);
+    const [traces, configuration] = await Promise.all([
+      this.repository.listByTurn(turn.id), this.chat.turnConfiguration(projectId, turn.id),
+    ]);
+    return toTurnTraceSummaryDto(turn.id, traces, configuration);
   }
 
   async call(projectId: string, turnId: string, callId: string): Promise<TraceCallDetail> {

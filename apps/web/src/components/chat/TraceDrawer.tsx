@@ -12,6 +12,7 @@ import { LLMResponseDisplay } from '../llm/LLMResponseDisplay';
 import { PromptDisplay } from '../llm/PromptDisplay';
 import { MarkdownContent } from '../llm/MarkdownContent';
 import { MemoryTracePanel } from '../memories/MemoryTracePanel';
+import { TurnConfigurationPanel } from './TurnConfigurationPanel';
 import styles from './TraceDrawer.module.css';
 
 interface TraceDrawerProps {
@@ -128,6 +129,7 @@ function TraceSummaryView({
         <Tabs.Tab value="whiteboard">Whiteboard</Tabs.Tab>
         <Tabs.Tab value="calls">Appels ({summary.calls.length})</Tabs.Tab>
         <Tabs.Tab value="memory">Mémoire</Tabs.Tab>
+        <Tabs.Tab value="configuration">Configuration du tour</Tabs.Tab>
       </Tabs.List>
       <Tabs.Panel value="pipeline" pt="md">
         <PipelinePanel summary={summary} onSelectCall={onSelectCall} />
@@ -140,6 +142,9 @@ function TraceSummaryView({
       </Tabs.Panel>
       <Tabs.Panel value="memory" pt="md">
         <MemoryTracePanel projectId={projectId} turnId={summary.turnId} />
+      </Tabs.Panel>
+      <Tabs.Panel value="configuration" pt="md">
+        <TurnConfigurationPanel configuration={summary.configuration} />
       </Tabs.Panel>
     </Tabs>
   );

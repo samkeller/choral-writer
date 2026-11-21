@@ -1,8 +1,9 @@
 import type {
-  AnalysisEnvelope, ChatBranch, ChatCommand, ChatHistory, ChatTurn, MemoryResult,
+  AnalysisEnvelope, ChatBranch, ChatCommand, ChatHistory, ChatTurn, MemoryResult, TurnConfiguration,
 } from '@choral-writer/shared';
 
 import { prepareTurn } from './prepareTurn.js';
+import { turnConfiguration } from './turnConfiguration.js';
 import type {
   ChatProgressEvent, ChatRunResult, ChatServiceDependencies, ChatTransactionContext, GenerationOutcome,
 } from '../types/chat.types.js';
@@ -36,6 +37,11 @@ export class ChatService {
     return this.dependencies.servicesForProject(projectId).turns.get(turnId);
   }
 
+  async turnConfiguration(projectId: string, turnId: string): Promise<TurnConfiguration | null> {
+    await this.dependencies.projects.get(projectId);
+    return this.dependencies.servicesForProject(projectId).turns.configuration(turnId);
+  }
+
   async run(
     command: ChatCommand,
     emit: (event: ChatProgressEvent) => Promise<void>,
@@ -47,7 +53,10 @@ export class ChatService {
       const history = await context.turns.path(input.parentTurnId, NARRATOR_CONTEXT_TURN_LIMIT);
       const narrator = context.projectAgents.find((agent) => agent.output === 'narrative');
       if (!narrator) throw new Error('Project has no narrator assignment.');
-      const turnId = await context.turns.start({ ...input, memorySnapshot: memory.state });
+      const turnId = await context.turns.start({
+        ...input, memorySnapshot: memory.state,
+        configuration: turnConfiguration(context.project.systemPrompt, context.projectAgents),
+      });
 
       let outcome: GenerationOutcome;
       let narration: NarratorOutput | undefined;

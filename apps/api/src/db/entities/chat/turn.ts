@@ -8,7 +8,7 @@ import { choralWriterSchema } from '../../namespace.js';
 import { projects } from '../project.js';
 import { chatMessages } from './message.js';
 import { chatBranches } from './branch.js';
-import type { MemoryResult, MemoryState } from '@choral-writer/shared';
+import type { MemoryResult, MemoryState, TurnConfiguration } from '@choral-writer/shared';
 
 /**
  * One execution of the narrative pipeline for a user message.
@@ -31,6 +31,8 @@ export const chatTurns = choralWriterSchema.table('chat_turn', {
   error: text('error'),
   memorySnapshot: jsonb('memory_snapshot').$type<MemoryState>(),
   memoryResult: jsonb('memory_result').$type<MemoryResult>(),
+  /** Null only for turns started before configurations were recorded. */
+  configuration: jsonb('configuration').$type<TurnConfiguration>(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   completedAt: timestamp('completed_at', { withTimezone: true }),
 }, (table): PgTableExtraConfigValue[] => [
