@@ -33,19 +33,19 @@ function trace(overrides: Partial<TraceDetailRecord> = {}): TraceDetailRecord {
 }
 
 describe('trace DTO mapping', () => {
-  it('totals the cost of a turn and flags it as partial when a call has no known amount', async () => {
+  it('totals the cost of a turn and flags it as partial when a call has no known amount', () => {
     const priced = trace({ id: analysisCallId, stage: 'analysis', costMicroUsd: 1200, costBasis: 'priced' });
     const narrator = trace({ costMicroUsd: 3400, costBasis: 'priced' });
     const unpriced = trace({ id: '019ad30c-19b0-7000-8000-000000000106', costBasis: 'unpriced' });
 
-    expect((await toTurnTraceSummaryDto(turnId, [priced, narrator])).cost)
+    expect(toTurnTraceSummaryDto(turnId, [priced, narrator]).cost)
       .toEqual({ microUsd: 4600, complete: true });
-    expect((await toTurnTraceSummaryDto(turnId, [priced, unpriced])).cost)
+    expect(toTurnTraceSummaryDto(turnId, [priced, unpriced]).cost)
       .toEqual({ microUsd: 1200, complete: false });
     expect(toTraceCallSummaryDto(narrator, turnId)).toMatchObject({ costMicroUsd: 3400, costBasis: 'priced' });
   });
 
-  it('reconstructs the analysis whiteboard and narrator sections from persisted calls', async () => {
+  it('reconstructs the analysis whiteboard and narrator prose from persisted calls', () => {
     const analysis = trace({
       id: analysisCallId,
       agentId: analysisAgentId,
@@ -61,10 +61,10 @@ describe('trace DTO mapping', () => {
     });
     const narrator = trace({
       status: 'success',
-      response: '<resolution>The wire is real.</resolution><prose>Mara stops.</prose>',
+      response: 'Mara stops.',
     });
 
-    const summary = await toTurnTraceSummaryDto(turnId, [analysis, narrator]);
+    const summary = toTurnTraceSummaryDto(turnId, [analysis, narrator]);
 
     expect(summary.analysis).toEqual([{
       agentId: analysisAgentId,
@@ -79,18 +79,18 @@ describe('trace DTO mapping', () => {
       },
     }]);
     expect(summary.narrator).toEqual({
-      status: 'success', durationMs: 1250, resolution: 'The wire is real.', prose: 'Mara stops.',
+      status: 'success', durationMs: 1250, prose: 'Mara stops.',
     });
     expect(summary.calls.map((call) => call.stage)).toEqual(['analysis', 'narrator']);
   });
 
-  it('keeps malformed and failed outputs inspectable without exposing stored provider errors', async () => {
+  it('keeps malformed and failed outputs inspectable without exposing stored provider errors', () => {
     const failed = trace({
       id: analysisCallId, stage: 'analysis', agentId: analysisAgentId,
       agentVersionId: analysisVersionId, agentName: 'Chaos', response: '{"v":2}',
     });
 
-    const summary = await toTurnTraceSummaryDto(turnId, [failed]);
+    const summary = toTurnTraceSummaryDto(turnId, [failed]);
     const call = toTraceCallSummaryDto(trace(), turnId);
     const detail = toTraceCallDetailDto(trace({
       status: 'success', response: 'Raw response.',
@@ -103,7 +103,7 @@ describe('trace DTO mapping', () => {
     expect(detail.response).toBe('Raw response.');
   });
 
-  it('groups validation retries under one agent and sums their latency', async () => {
+  it('groups validation retries under one agent and sums their latency', () => {
     const invalid = trace({
       id: analysisCallId,
       agentId: analysisAgentId,
@@ -125,7 +125,7 @@ describe('trace DTO mapping', () => {
       response: JSON.stringify({ v: 1, agent: 'Chaos', summary: 'Validated.', items: [] }),
     });
 
-    const summary = await toTurnTraceSummaryDto(turnId, [invalid, retry]);
+    const summary = toTurnTraceSummaryDto(turnId, [invalid, retry]);
 
     expect(summary.analysis).toHaveLength(1);
     expect(summary.analysis[0]).toMatchObject({

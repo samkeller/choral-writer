@@ -21,6 +21,7 @@ import { testProvider } from '../../../tests/support/callLLM.js';
 import { createUsageService } from '../../../llm/usage/usageService.js';
 import { createChatBranchService, createChatService } from '../index.js';
 import { ChatMessageService } from '../services/messageService.js';
+import { narratorSystemPrompt } from '../services/narratorPrompt.js';
 import { ChatTurnService } from '../services/turnService.js';
 import { ChatMessageRepository } from '../repositories/messageRepository.js';
 import { ChatTurnRepository } from '../repositories/turnRepository.js';
@@ -41,8 +42,8 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
   let guardianOutput: string | null = null;
   let setupOutput: string | null = null;
   let generate: (signal?: AbortSignal) => AsyncGenerator<ChatCompletionChunk> = async function* () {
-    yield chunk('<resolution>La porte s’ouvre.</resolution><prose>Bonjour ');
-    yield chunk('Mara.</prose>');
+    yield chunk('Bonjour ');
+    yield chunk('Mara.');
     yield chunk('', 'stop');
   };
   const create = vi.fn(async (
@@ -121,11 +122,8 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
     const project = await projects.get(projectId);
     const narrator = (await agents.listForProject(projectId)).find((agent) => agent.output === 'narrative');
     if (!narrator) throw new Error('Missing narrator assignment.');
-    return [
-      [project.systemPrompt, narrator.instructions].filter(Boolean).join('\n\n'),
-      'Use the validated analysis envelopes below as context. Return exactly one <resolution> section followed by one <prose> section, with no text outside those tags.',
-      '[]',
-    ].filter(Boolean).join('\n\n');
+    const systemPrompt = [project.systemPrompt, narrator.instructions].filter(Boolean).join('\n\n');
+    return narratorSystemPrompt(systemPrompt, [], { tags: [], entries: [] });
   }
 
   async function sendOnBranch(projectId: string, branchId: string, content: string) {
@@ -350,7 +348,7 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
     const [trace] = await database.select().from(schema.llmCall).where(eq(schema.llmCall.turnId, start.turnId));
     const narrator = (await agents.listForProject(first.id)).find((agent) => agent.output === 'narrative');
     expect(trace).toMatchObject({
-      response: '<resolution>La porte s’ouvre.</resolution><prose>Bonjour Mara.</prose>',
+      response: 'Bonjour Mara.',
       agentId: narrator?.agentId, agentVersionId: narrator?.versionId,
       status: 'success', model: 'simulated-model', inputTokens: 20,
     });
@@ -362,7 +360,7 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
     expect(traceSummary).toMatchObject({
       turnId: start.turnId,
       analysis: [],
-      narrator: { status: 'success', resolution: 'La porte s’ouvre.', prose: 'Bonjour Mara.' },
+      narrator: { status: 'success', prose: 'Bonjour Mara.' },
     });
     // The simulated model has no price grid: its usage is recorded, but the turn total is partial.
     expect(traceSummary.calls.map((call) => call.costBasis)).toEqual(traceSummary.calls.map(() => 'unpriced'));
@@ -376,7 +374,7 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
     const traceDetail = traceCallDetailSchema.parse(traceDetailResponse.json());
     expect(traceDetail).toMatchObject({
       id: trace.id,
-      response: '<resolution>La porte s’ouvre.</resolution><prose>Bonjour Mara.</prose>',
+      response: 'Bonjour Mara.',
     });
     expect(traceDetail.request.messages).toEqual(expect.arrayContaining([
       { role: 'system', content: expect.any(String) },
@@ -453,14 +451,14 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
       { name: 'Chaos', status: 'success', envelope: { summary: 'There may be a trap.' } },
     ]);
     const narratorCall = create.mock.calls.at(-1)?.[0];
-    expect(String(narratorCall?.messages[0]?.content)).toContain('"agent":"Chaos"');
+    expect(String(narratorCall?.messages[0]?.content)).toContain('## Chaos');
   });
 
   it('retains the user message and failure trace but never persists a partial assistant reply', async () => {
     const project = await createProject('Erreur fournisseur');
     const normal = generate;
     generate = async function* () {
-      yield chunk('<resolution>Faits.</resolution><prose>Réponse partielle');
+      yield chunk('Réponse partielle');
       throw APIError.generate(402, { error: { message: 'Insufficient Balance' } }, undefined, new Headers({
         'x-request-id': 'simulated-provider-request',
       }));
@@ -481,7 +479,7 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
       const [trace] = await database.select().from(schema.llmCall).where(eq(schema.llmCall.turnId, turn.id));
       expect(trace).toMatchObject({
         status: 'error',
-        response: '<resolution>Faits.</resolution><prose>Réponse partielle',
+        response: 'Réponse partielle',
       });
     } finally {
       generate = normal;
@@ -524,8 +522,7 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
       const previousCalls = create.mock.calls.length;
       await projects.update(project.id, { name: project.name, systemPrompt: 'Prompt modifié.' });
       generate = async function* () {
-        yield chunk('<resolution>Alternative.</resolution><prose>Réponse alternative.');
-        yield chunk('</prose>');
+        yield chunk('Réponse alternative.');
         yield chunk('', 'stop');
       };
       const regenerated = events((await repeat(
@@ -586,7 +583,7 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
     let failedTurnId: string;
     let alternativeId: string;
     generate = async function* () {
-      yield chunk('<resolution>Faits.</resolution><prose>Partiel.');
+      yield chunk('Partiel.');
       throw new Error('simulated failure');
     };
     try {
@@ -729,9 +726,9 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
     let release!: () => void;
     const gate = new Promise<void>((resolve) => { release = resolve; });
     generate = async function* () {
-      yield chunk('<resolution>Faits.</resolution><prose>Début');
+      yield chunk('Début');
       await gate;
-      yield chunk(' de la réponse.</prose>');
+      yield chunk(' de la réponse.');
       yield chunk('', 'stop');
     };
     try {
@@ -1146,7 +1143,7 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
     const normal = generate;
     const controller = new AbortController();
     generate = async function* (signal) {
-      yield chunk('<resolution>Faits.</resolution><prose>Début de réponse');
+      yield chunk('Début de réponse');
       if (!signal) throw new Error('Missing LLM abort signal.');
       await new Promise<void>((resolve) => {
         signal.addEventListener('abort', () => resolve(), { once: true });

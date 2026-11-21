@@ -208,12 +208,7 @@ function PipelinePanel({
         </Group>
         {summary.narrator
           ? (
-            <Stack gap="xs">
-              {summary.narrator.resolution && (
-                <Text size="sm" c="dimmed">Résolution · {summary.narrator.resolution}</Text>
-              )}
-              <Text size="sm">{summary.narrator.prose ?? 'Réponse narrative indisponible.'}</Text>
-            </Stack>
+            <Text size="sm">{summary.narrator.prose ?? 'Réponse narrative indisponible.'}</Text>
           )
           : <Text size="sm" c="dimmed">Aucun appel narrateur enregistré.</Text>}
       </Paper>

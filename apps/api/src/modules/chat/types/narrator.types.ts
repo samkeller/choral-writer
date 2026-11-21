@@ -14,5 +14,5 @@ export type NarratorInput = {
   memoryContext?: MemoryContext;
 };
 
-export type NarratorOutput = { resolution: string; prose: string; callId: string };
+export type NarratorOutput = { prose: string; callId: string };
 export type Narrator = (input: NarratorInput) => Promise<NarratorOutput>;

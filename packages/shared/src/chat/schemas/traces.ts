@@ -60,7 +60,6 @@ export const analysisTraceSchema = z.object({
 export const narratorTraceSchema = z.object({
   status: traceStatusSchema,
   durationMs: z.number().int().nonnegative(),
-  resolution: z.string().nullable(),
   prose: z.string().nullable(),
 });
 

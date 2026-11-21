@@ -33,7 +33,6 @@ export interface CallLLMInput<T = unknown> {
    * sortie (`memoryProposalsSchema`). Typer l'entrée en `unknown` rejetterait ce cas légitime.
    */
   schema?: z.ZodType<T, z.ZodTypeDef, any>;
-  validateResponse?: (content: string) => void;
   onDelta?: (delta: string) => void | Promise<void>;
   signal?: AbortSignal;
 }
@@ -261,7 +260,6 @@ export function createCallLLM({
           });
         }
       }
-      input.validateResponse?.(content);
     } catch (error) {
       const durationMs = Math.max(0, now() - startedAt);
       try {

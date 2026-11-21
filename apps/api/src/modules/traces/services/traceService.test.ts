@@ -18,7 +18,7 @@ function trace(): TraceDetailRecord {
     stage: 'narrator',
     model: 'test-model',
     request: { messages: [{ role: 'system', content: 'Prompt.' }] },
-    response: '<resolution>Facts.</resolution><prose>Story.</prose>',
+    response: 'Story.',
     inputTokens: 2,
     outputTokens: 3,
     durationMs: 20,
