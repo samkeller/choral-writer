@@ -1057,6 +1057,13 @@ describe('projects and chat screens', () => {
         },
       ],
       cost: { microUsd: 405, complete: true },
+      configuration: {
+        systemPrompt: 'Prompt figé du tour.',
+        agents: [{
+          agentId: '019ad30c-19b0-7000-8000-000000000303', versionId: '019ad30c-19b0-7000-8000-000000000304',
+          version: 1, name: 'Chaos', phase: 'analysis', output: 'envelope', memoryRead: { mode: 'all', tagIds: [] },
+        }],
+      },
     };
     const callDetail: TraceCallDetail = {
       ...summary.calls[0]!,
@@ -1099,6 +1106,9 @@ describe('projects and chat screens', () => {
     await screen.findByRole('heading', { name: 'Traces du tour' });
     fireEvent.click(screen.getByRole('tab', { name: 'Whiteboard' }));
     await screen.findByText('Chercher la clé.');
+    fireEvent.click(screen.getByRole('tab', { name: 'Configuration du tour' }));
+    await screen.findByText('Prompt figé du tour.');
+    expect(screen.getByText('Enveloppe whiteboard · Toute la mémoire')).toBeTruthy();
     fireEvent.click(screen.getByRole('tab', { name: 'Appels (2)' }));
     fireEvent.click(screen.getByRole('button', { name: /Chaos · Analyse/ }));
     await screen.findByRole('heading', { name: 'Détail de l’appel' });

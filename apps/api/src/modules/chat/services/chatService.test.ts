@@ -51,6 +51,7 @@ function setup() {
       path: vi.fn<ChatTransactionContext['turns']['path']>().mockResolvedValue([]),
       start: vi.fn<ChatTransactionContext['turns']['start']>().mockResolvedValue('turn'),
       finish: vi.fn<ChatTransactionContext['turns']['finish']>(),
+      configuration: vi.fn<ChatTransactionContext['turns']['configuration']>(),
     },
     recordActivity: vi.fn<ChatTransactionContext['recordActivity']>(),
   } satisfies ChatTransactionContext;
@@ -87,6 +88,29 @@ describe('chat orchestration without infrastructure', () => {
     expect(await run()).toMatchObject({ status: 'completed', memory });
     expect(context.memory.process).not.toHaveBeenCalled();
     expect(context.turns.finish).toHaveBeenCalledWith('turn', 'branch', expect.objectContaining({ status: 'completed', memory }), expect.any(Date));
+  });
+
+  it('records the configuration the turn starts with, without copying versioned instructions', async () => {
+    const { context, narrate, run } = setup();
+    context.projectAgents.push({
+      agentId: 'analyst', versionId: 'analyst-version', phase: 'analysis', output: 'envelope',
+      version: 3, name: 'Chaos', instructions: 'Find uncertainty.', memoryRead: { mode: 'selected', tagIds: ['tag'] },
+    });
+    narrate.mockResolvedValue({ prose: 'The door opens.', callId: 'narrator-call' });
+
+    await run();
+
+    expect(context.turns.start).toHaveBeenCalledWith(expect.objectContaining({
+      configuration: {
+        systemPrompt: 'Current prompt.',
+        agents: [
+          { agentId: 'narrator', versionId: 'narrator-version', version: 1, name: 'Narrator',
+            phase: 'restitution', output: 'narrative', memoryRead: null },
+          { agentId: 'analyst', versionId: 'analyst-version', version: 3, name: 'Chaos',
+            phase: 'analysis', output: 'envelope', memoryRead: { mode: 'selected', tagIds: ['tag'] } },
+        ],
+      },
+    }));
   });
 
   it('adds enabled narrator instructions to the project prompt', async () => {

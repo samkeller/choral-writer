@@ -1,5 +1,5 @@
 import type {
-  AnalysisTrace, NarratorTrace, TraceCallDetail, TraceCallSummary, TurnTraceSummary,
+  AnalysisTrace, NarratorTrace, TraceCallDetail, TraceCallSummary, TurnConfiguration, TurnTraceSummary,
 } from '@choral-writer/shared';
 import { analysisEnvelopeSchema, traceCallDetailSchema } from '@choral-writer/shared';
 
@@ -35,7 +35,7 @@ export function toTraceCallDetailDto(trace: TraceDetailRecord, turnId: string): 
 }
 
 export function toTurnTraceSummaryDto(
-  turnId: string, traces: readonly TraceSummaryRecord[],
+  turnId: string, traces: readonly TraceSummaryRecord[], configuration: TurnConfiguration | null,
 ): TurnTraceSummary {
   const analysisTraces = traces.filter((trace) => trace.stage === 'analysis');
   const groups = new Map<string, TraceSummaryRecord[]>();
@@ -79,6 +79,7 @@ export function toTurnTraceSummaryDto(
     narrator,
     calls: traces.map((trace) => toTraceCallSummaryDto(trace, turnId)),
     cost: toTurnCost(traces),
+    configuration,
   };
 }
 

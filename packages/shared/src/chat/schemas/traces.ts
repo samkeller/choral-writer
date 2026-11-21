@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 import { analysisEnvelopeSchema } from '../../pipeline.js';
-import { chatExecutionParamsSchema } from './turn.js';
+import { chatExecutionParamsSchema, turnConfigurationSchema } from './turn.js';
 import { memoryContextSchema } from '../../memories.js';
 import { costBasisSchema } from '../../usage/index.js';
 
@@ -69,4 +69,6 @@ export const turnTraceSummarySchema = z.object({
   narrator: narratorTraceSchema.nullable(),
   calls: z.array(traceCallSummarySchema),
   cost: turnCostSchema,
+  /** Null for a turn that started before configurations were recorded. */
+  configuration: turnConfigurationSchema.nullable(),
 });

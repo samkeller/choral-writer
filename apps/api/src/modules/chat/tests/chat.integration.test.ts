@@ -452,6 +452,17 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
     ]);
     const narratorCall = create.mock.calls.at(-1)?.[0];
     expect(String(narratorCall?.messages[0]?.content)).toContain('## Chaos');
+
+    await agents.configure(project.id, { agents: defaults.map(({ agentId, versionId }) => ({ agentId, versionId })) });
+    const later = await app.inject({
+      method: 'GET', url: `/api/projects/${project.id}/turns/${start.turnId}/traces`, headers: { cookie },
+    });
+    const { configuration } = turnTraceSummarySchema.parse(later.json());
+    expect(configuration?.systemPrompt).toBe(project.systemPrompt);
+    expect(configuration?.agents).toHaveLength(defaults.length + 1);
+    expect(configuration?.agents).toContainEqual(expect.objectContaining({
+      agentId: analyst.id, versionId: analysisVersion.id, version: 1, name: 'Chaos', phase: 'analysis', output: 'envelope',
+    }));
   });
 
   it('retains the user message and failure trace but never persists a partial assistant reply', async () => {
