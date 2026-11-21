@@ -8,13 +8,15 @@ export type ChangeKind = 'added' | 'removed' | 'changed';
 export type NudgeType = 'saillance' | 'retard' | 'interdit' | 'pression' | 'événement' | 'complication' | 'relance';
 
 export const contextParts: ContextPart[] = ['Prompt du projet', 'Instructions', 'Whiteboard', 'Mémoire', 'Historique', 'Développements', 'Saisie'];
-// Teintes désaturées : lisibles sur fond sombre sans attirer l'œil plus que le texte.
-export const partColor: Record<ContextPart, string> = {
-  'Prompt du projet': '#7d7297', Instructions: '#6a7699', Whiteboard: '#5f8590', Mémoire: '#6a8d76',
-  Historique: '#a8875e', Développements: '#6c8ea0', Saisie: '#8b9168',
-};
+// Phases : charte de phasePresentation (Analyse bleu, Restitution violet), étendue aux phases V2.
+// Nuance 7 : assez saturée pour distinguer, assez sombre pour ne pas crier sur fond sombre.
 export const phaseColor: Record<Phase, string> = {
-  Analyse: '#5d7a9c', Direction: '#7d7297', Narrateur: '#a8875e', Gardien: '#6a8d76', Mémoire: '#6e7480',
+  Analyse: 'blue.7', Direction: 'indigo.7', Narrateur: 'violet.7', Gardien: 'teal.7', Mémoire: 'teal.9',
+};
+// Parties du contexte : l'historique, principal suspect de la dérive, en couleur chaude ; le reste en tons froids.
+export const partColor: Record<ContextPart, string> = {
+  'Prompt du projet': 'violet.8', Instructions: 'indigo.7', Whiteboard: 'blue.7', Mémoire: 'teal.7',
+  Historique: 'orange.7', Développements: 'cyan.8', Saisie: 'lime.8',
 };
 export const verdictColor: Record<Verdict, string> = { retenu: 'green', partiel: 'yellow', ignoré: 'gray' };
 export const changeColor: Record<ChangeKind, string> = { added: 'green', removed: 'red', changed: 'blue' };

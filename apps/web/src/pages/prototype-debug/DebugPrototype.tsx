@@ -1,7 +1,7 @@
 // PROTOTYPE — « Prototype : forme du mode Debug ».
 // Itération 2 : la variante A (tiroir) retenue, montée sur la vraie page du récit : /projects/:projectId?debug=1
 // - Pas de bascule Lecture/Debug : la ligne discrète sous chaque réponse ouvre toujours le tiroir du tour.
-// - Synthèse toujours visible en tête du tiroir, détail en onglets.
+// - Itération 3 : onglet Synthèse (indicateurs, ce qui s'est passé, points d'attention, déroulé) qui renvoie aux onglets de détail.
 // Les variantes B (tableau de bord) et C (écran partagé) sont dans l'historique de la branche.
 // Les données du tiroir sont fictives (fixtures.ts) ; seuls les messages viennent du vrai récit.
 import { useMemo, useState } from 'react';
@@ -11,9 +11,10 @@ import type { ChatTurn, Message } from '@choral-writer/shared';
 
 import { MessageList } from '../../components/chat/MessageList';
 import {
-  Block, ConfigBlock, ContextBlock, ContextEvolution, ContextLegend, CostBlock, DirectionBlock, StoryRatesBlock, WhatHappenedBlock,
+  Block, ConfigBlock, ContextBlock, ContextEvolution, ContextLegend, CostBlock, DirectionBlock, StoryRatesBlock,
 } from './DebugBlocks';
 import { buildTurn, type DebugTurn } from './fixtures';
+import { type DebugTab, Overview } from './Overview';
 import { LiveProgress, TurnLine, useSimulatedTurn } from './TurnProgress';
 
 interface DebugPrototypeProps {
@@ -69,33 +70,34 @@ function TurnNavigation({ index, count, onChange }: { index: number; count: numb
   );
 }
 
-/** Synthèse toujours visible (ce qui s'est passé, configuration), puis le détail par onglet. */
+/** Onglet Synthèse par défaut : l'essentiel du tour, avec un lien vers l'onglet qui détaille chaque point. */
 function TurnDrawer({ turns, index, onSelect }: { turns: DebugTurn[]; index: number; onSelect: (index: number) => void }) {
   const turn = turns[index];
+  const [tab, setTab] = useState<DebugTab>('overview');
   return (
-    <Stack gap="sm">
-      <WhatHappenedBlock turn={turn} />
-      <ConfigBlock turn={turn} />
-      <Tabs defaultValue="context" keepMounted={false}>
-        <Tabs.List mb="sm">
-          <Tabs.Tab value="context">Contexte</Tabs.Tab>
-          <Tabs.Tab value="cost">Coût</Tabs.Tab>
-          <Tabs.Tab value="direction">Direction</Tabs.Tab>
-          <Tabs.Tab value="story">Récit</Tabs.Tab>
-          <Tabs.Tab value="raw">Appels bruts</Tabs.Tab>
-        </Tabs.List>
-        <Tabs.Panel value="context"><Stack gap="sm">
-          <ContextBlock turn={turn} />
-          <Block title="Entrée du Narrateur au fil des tours"><ContextEvolution turns={turns} current={index} onSelect={onSelect} height={70} /></Block>
-        </Stack></Tabs.Panel>
-        <Tabs.Panel value="cost"><CostBlock turn={turn} /></Tabs.Panel>
-        <Tabs.Panel value="direction"><DirectionBlock turn={turn} /></Tabs.Panel>
-        <Tabs.Panel value="story"><Stack gap="sm">
-          <StoryRatesBlock turns={turns} />
-          <Block title="Entrée du Narrateur" aside={<ContextLegend />}><ContextEvolution turns={turns} current={index} onSelect={onSelect} /></Block>
-        </Stack></Tabs.Panel>
-        <Tabs.Panel value="raw"><Text size="sm" c="dimmed">Les prompts et réponses de chaque appel, comme dans le tiroir de traces actuel.</Text></Tabs.Panel>
-      </Tabs>
-    </Stack>
+    <Tabs value={tab} onChange={(value) => setTab((value as DebugTab | null) ?? 'overview')} keepMounted={false}>
+      <Tabs.List mb="sm">
+        <Tabs.Tab value="overview">Synthèse</Tabs.Tab>
+        <Tabs.Tab value="context">Contexte</Tabs.Tab>
+        <Tabs.Tab value="cost">Coût et durée</Tabs.Tab>
+        <Tabs.Tab value="direction">Direction</Tabs.Tab>
+        <Tabs.Tab value="config">Configuration</Tabs.Tab>
+        <Tabs.Tab value="story">Récit</Tabs.Tab>
+        <Tabs.Tab value="raw">Appels bruts</Tabs.Tab>
+      </Tabs.List>
+      <Tabs.Panel value="overview"><Overview turns={turns} index={index} onOpenTab={setTab} /></Tabs.Panel>
+      <Tabs.Panel value="context"><Stack gap="sm">
+        <ContextBlock turn={turn} />
+        <Block title="Entrée du Narrateur au fil des tours" aside={<ContextLegend />}><ContextEvolution turns={turns} current={index} onSelect={onSelect} height={70} /></Block>
+      </Stack></Tabs.Panel>
+      <Tabs.Panel value="cost"><CostBlock turn={turn} /></Tabs.Panel>
+      <Tabs.Panel value="direction"><DirectionBlock turn={turn} /></Tabs.Panel>
+      <Tabs.Panel value="config"><ConfigBlock turn={turn} /></Tabs.Panel>
+      <Tabs.Panel value="story"><Stack gap="sm">
+        <StoryRatesBlock turns={turns} />
+        <Block title="Entrée du Narrateur" aside={<ContextLegend />}><ContextEvolution turns={turns} current={index} onSelect={onSelect} /></Block>
+      </Stack></Tabs.Panel>
+      <Tabs.Panel value="raw"><Text size="sm" c="dimmed">Les prompts et réponses de chaque appel, comme dans le tiroir de traces actuel.</Text></Tabs.Panel>
+    </Tabs>
   );
 }
