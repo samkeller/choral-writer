@@ -32,5 +32,5 @@ Vocabulaire du domaine. Ce fichier ne décrit pas l'implémentation.
 
 ## Interface
 
-- **Mode Lecture** : la manière immersive de suivre un récit (saisie, texte, progression discrète du tour). Il ne révèle rien de ce que le récit cache.
-- **Mode Debug** : la manière d'analyser un récit (attribution des contributions, composition du contexte, coûts, changements de configuration, état caché du monde). Il « spoile » par nature et ne montre qu'une synthèse hiérarchisée : trop de données tuent la donnée.
+- **Mode Lecture** : la manière immersive de suivre un récit : la saisie, le texte, la progression du tour en une ligne puis, sous chaque réponse, une ligne discrète (durée, coût). Il ne révèle rien de ce que le récit cache.
+- **Mode Debug** : la manière d'analyser un récit, par le **tiroir du tour** qu'ouvre la ligne discrète sous chaque réponse (attribution des contributions, composition du contexte, coûts, direction, changements de configuration, état caché du monde). Il « spoile » par nature et s'ouvre sur une synthèse qui renvoie au détail : trop de données tuent la donnée. Ce n'est pas un état de l'interface à basculer : la ligne est toujours cliquable.
