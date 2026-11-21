@@ -120,20 +120,15 @@ describe('callLLM', () => {
     }));
   });
 
-  it('traces custom response validation failures as errors', async () => {
-    const { callLLM, insert } = setup(async () => completion('untagged'));
+  it('forwards the output ceiling only when one is requested', async () => {
+    const create = vi.fn(async (_params: ChatCompletionCreateParamsNonStreaming) => completion('story'));
+    const { callLLM } = setup(create);
 
-    await expect(callLLM({
-      projectId, stage: 'narrator',
-      messages: [{ role: 'user', content: 'begin' }],
-      validateResponse: () => { throw new Error('Missing narrator sections.'); },
-    })).rejects.toThrow('Missing narrator sections.');
+    await callLLM({ projectId, stage: 'narrator', messages: [{ role: 'user', content: 'begin' }], maxTokens: 8_192 });
+    await callLLM({ projectId, stage: 'guardian', messages: [{ role: 'user', content: 'memorize' }] });
 
-    expect(insert).toHaveBeenCalledWith(expect.objectContaining({
-      response: 'untagged',
-      status: 'error',
-      error: 'Missing narrator sections.',
-    }));
+    expect(create.mock.calls[0]![0]).toMatchObject({ max_tokens: 8_192 });
+    expect(create.mock.calls[1]![0]).not.toHaveProperty('max_tokens');
   });
 
   it('records provider errors in the trace', async () => {

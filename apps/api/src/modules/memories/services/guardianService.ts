@@ -11,7 +11,7 @@ export type GuardianInput = {
   projectId: string;
   turnId: string; executionId: string; agent: ProjectAgent; agents: ProjectAgent[];
   state: MemoryState; systemPrompt: string;
-  resolution: string; prose: string; signal: AbortSignal;
+  prose: string; signal: AbortSignal;
 };
 
 function bounded(data: unknown): string {
@@ -73,7 +73,7 @@ export class GuardianService {
       projectContext: input.systemPrompt,
       tags: input.state.tags,
       entries: input.state.entries.filter((entry) => !entry.archived),
-      resolution: input.resolution, prose: input.prose,
+      prose: input.prose,
     });
     const contract = [
       'Maintain memory from established narrative events, not from unfulfilled analysis recommendations.',

@@ -36,7 +36,7 @@ function setup(responses: string[]) {
     projectId: 'project',
     turnId: 'turn', executionId: 'run', agent: guardian, agents: [guardian],
     state: emptyMemoryState(), systemPrompt: 'Continue the story in prose.',
-    resolution: 'Mara opens the door.', prose: 'The door creaks.', signal: new AbortController().signal,
+    prose: 'The door creaks.', signal: new AbortController().signal,
   };
   return { service, input, create, requests, insert };
 }
@@ -51,7 +51,7 @@ describe('Guardian JSON task', () => {
       expect(first.messages).toHaveLength(2);
       expect(first.messages[0]!.content).not.toContain('Continue the story in prose.');
       expect(first.messages[1]!.content).toContain('"projectContext":"Continue the story in prose."');
-      expect(first.messages[1]!.content).toContain('"resolution":"Mara opens the door."');
+      expect(first.messages[1]!.content).toContain('"prose":"The door creaks."');
       expect(first.messages[1]!.content).toContain('Return JSON only');
       expect(requests[1]!.messages.at(-1)?.content).toContain('previous attempt');
       expect(insert.mock.calls.map(([trace]) => trace.status)).toEqual(['error', 'success']);

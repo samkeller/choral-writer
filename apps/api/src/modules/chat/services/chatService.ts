@@ -12,7 +12,6 @@ import type { NarratorOutput } from '../types/narrator.types.js';
 import { ApiError } from '../../../errors/errors.js';
 import type { z } from 'zod';
 import type { memoryExpectedSchema } from '@choral-writer/shared';
-import { parseNarration } from './narratorParser.js';
 
 const NARRATOR_CONTEXT_TURN_LIMIT = 20;
 
@@ -127,7 +126,7 @@ export class ChatService {
         outcome = { status: 'completed', content: narration.prose };
         memoryResult = await context.memory.process(command.projectId, input.branchId, memory, {
           turnId, systemPrompt: context.project.systemPrompt,
-          agents: context.projectAgents, resolution: narration.resolution, prose: narration.prose, signal,
+          agents: context.projectAgents, prose: narration.prose, signal,
         }, async (stage, status, elapsedMs) => {
           if (!signal.aborted) await emit({ type: 'chat.pipeline.stage', turnId, stage, status, elapsedMs });
         });
@@ -155,10 +154,9 @@ export class ChatService {
         throw new ApiError(409, 'MEMORY_CHANGED', 'La mémoire a changé. Rechargez avant de relancer.');
       }
       const source = await context.memory.source(turnId);
-      const narration = await parseNarration(source.narrator);
       const result = await context.memory.process(projectId, branchId, view, {
         turnId, systemPrompt: context.project.systemPrompt, agents: context.projectAgents,
-        resolution: narration.resolution, prose: narration.prose, signal,
+        prose: source.narrator, signal,
       }, async () => {});
       await context.recordActivity(new Date());
       return result;

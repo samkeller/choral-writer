@@ -3,7 +3,6 @@ import type {
 } from '@choral-writer/shared';
 import { analysisEnvelopeSchema, traceCallDetailSchema } from '@choral-writer/shared';
 
-import { NarratorParseError, parseNarration } from '../../chat/services/narratorParser.js';
 import type { TraceDetailRecord, TraceSummaryRecord } from '../repositories/traceRepository.js';
 
 export function toTraceCallSummaryDto(trace: TraceSummaryRecord, turnId: string): TraceCallSummary {
@@ -35,9 +34,9 @@ export function toTraceCallDetailDto(trace: TraceDetailRecord, turnId: string): 
   });
 }
 
-export async function toTurnTraceSummaryDto(
+export function toTurnTraceSummaryDto(
   turnId: string, traces: readonly TraceSummaryRecord[],
-): Promise<TurnTraceSummary> {
+): TurnTraceSummary {
   const analysisTraces = traces.filter((trace) => trace.stage === 'analysis');
   const groups = new Map<string, TraceSummaryRecord[]>();
   for (const trace of analysisTraces) {
@@ -66,19 +65,11 @@ export async function toTurnTraceSummaryDto(
   const narratorCall = narratorCalls.at(-1);
   let narrator: NarratorTrace | null = null;
   if (narratorCall) {
-    let narration = null;
-    if (narratorCall.status === 'success' && narratorCall.response) {
-      try {
-        narration = await parseNarration(narratorCall.response);
-      } catch (error) {
-        if (!(error instanceof NarratorParseError)) throw error;
-      }
-    }
+    const prose = narratorCall.status === 'success' ? narratorCall.response : null;
     narrator = {
-      status: narration ? 'success' : 'error',
+      status: prose ? 'success' : 'error',
       durationMs: narratorCalls.reduce((total, call) => total + call.durationMs, 0),
-      resolution: narration?.resolution ?? null,
-      prose: narration?.prose ?? null,
+      prose,
     };
   }
 

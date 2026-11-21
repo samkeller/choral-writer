@@ -33,7 +33,8 @@ export interface CallLLMInput<T = unknown> {
    * sortie (`memoryProposalsSchema`). Typer l'entrée en `unknown` rejetterait ce cas légitime.
    */
   schema?: z.ZodType<T, z.ZodTypeDef, any>;
-  validateResponse?: (content: string) => void;
+  /** Plafond de sortie : l'atteindre fait échouer l'appel (`LLM_INCOMPLETE_RESPONSE`) plutôt que tronquer en silence. */
+  maxTokens?: number;
   onDelta?: (delta: string) => void | Promise<void>;
   signal?: AbortSignal;
 }
@@ -200,6 +201,7 @@ export function createCallLLM({
         model,
         messages: input.messages,
         stream: Boolean(input.onDelta),
+        ...(input.maxTokens ? { max_tokens: input.maxTokens } : {}),
         ...(input.onDelta ? { stream_options: { include_usage: true } } : {}),
         ...(input.schema ? { response_format: { type: 'json_object' } } : {}),
       }, { signal });
@@ -261,7 +263,6 @@ export function createCallLLM({
           });
         }
       }
-      input.validateResponse?.(content);
     } catch (error) {
       const durationMs = Math.max(0, now() - startedAt);
       try {

@@ -1038,7 +1038,7 @@ describe('projects and chat screens', () => {
           items: [{ kind: 'recommendation', text: 'Chercher la clé.', importance: 'HIGH' }],
         },
       }],
-      narrator: { status: 'success', durationMs: 1500, resolution: 'Une porte est verrouillée.', prose: 'La porte résiste.' },
+      narrator: { status: 'success', durationMs: 1500, prose: 'La porte résiste.' },
       calls: [
         {
           id: analysisCallId, turnId, stage: 'analysis',
