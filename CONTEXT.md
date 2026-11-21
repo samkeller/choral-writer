@@ -17,3 +17,8 @@ Vocabulaire du domaine. Ce fichier ne décrit pas l'implémentation.
 - **Narrateur** : l'agent de restitution qui écrit la prose montrée à l'utilisateur.
 - **Gardien** : l'agent de restitution qui propose des modifications de la mémoire.
 - **Tour** : une exécution du pipeline pour une saisie utilisateur.
+
+## Interface
+
+- **Mode Lecture** : la manière immersive de suivre un récit (saisie, texte, progression discrète du tour). Il ne révèle rien de ce que le récit cache.
+- **Mode Debug** : la manière d'analyser un récit (attribution des contributions, composition du contexte, coûts, changements de configuration, état caché du monde). Il « spoile » par nature et ne montre qu'une synthèse hiérarchisée : trop de données tuent la donnée.
