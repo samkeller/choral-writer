@@ -63,7 +63,7 @@ export function ContextLegend() {
   return (
     <Group gap={8}>
       {contextParts.map((part) => (
-        <Group key={part} gap={4}><Box w={8} h={8} bg={`${partColor[part]}.6`} style={{ borderRadius: 2 }} /><Text size="xs" c="dimmed">{part}</Text></Group>
+        <Group key={part} gap={4}><Box w={8} h={8} bg={partColor[part]} style={{ borderRadius: 2 }} /><Text size="xs" c="dimmed">{part}</Text></Group>
       ))}
     </Group>
   );
@@ -71,10 +71,10 @@ export function ContextLegend() {
 
 function StackedTokens({ input, max, height = 14 }: { input: DebugTurn['calls'][number]['input']; max: number; height?: number }) {
   return (
-    <Progress.Root size={height} style={{ flex: 1 }}>
+    <Progress.Root size={height} bg="transparent" style={{ width: `${(Object.values(input).reduce((sum, value) => sum + (value ?? 0), 0) / max) * 100}%` }}>
       {contextParts.filter((part) => input[part]).map((part) => (
         <Tooltip key={part} label={`${part} : ${tokens(input[part]!)} tokens`}>
-          <Progress.Section value={(input[part]! / max) * 100} color={`${partColor[part]}.6`} />
+          <Progress.Section value={(input[part]! / Object.values(input).reduce((sum, value) => sum + (value ?? 0), 0)) * 100} color={partColor[part]} />
         </Tooltip>
       ))}
     </Progress.Root>
@@ -92,7 +92,7 @@ export function ContextBlock({ turn, dense }: { turn: DebugTurn; dense?: boolean
         {turn.calls.map((call) => (
           <Group key={call.label} gap="xs" wrap="nowrap">
             <Text size="xs" w={90} fw={call.label === 'Narrateur' ? 700 : 400}>{call.label}</Text>
-            <StackedTokens input={call.input} max={max} height={call.label === 'Narrateur' ? 16 : 10} />
+            <Box style={{ flex: 1 }}><StackedTokens input={call.input} max={max} height={call.label === 'Narrateur' ? 16 : 10} /></Box>
             <Text size="xs" c="dimmed" w={50} ta="right">{tokens(totalInput(call))}</Text>
           </Group>
         ))}
@@ -120,7 +120,7 @@ export function ContextEvolution({ turns, current, onSelect, height = 90 }: {
               opacity: index === current ? 1 : 0.65,
             }}>
               {contextParts.filter((part) => input[part]).map((part) => (
-                <Box key={part} bg={`${partColor[part]}.6`} style={{ height: `${(input[part]! / total) * 100}%` }} />
+                <Box key={part} bg={partColor[part]} style={{ height: `${(input[part]! / total) * 100}%` }} />
               ))}
             </UnstyledButton>
           </Tooltip>
@@ -138,7 +138,7 @@ export function CostBlock({ turn, dense }: { turn: DebugTurn; dense?: boolean })
         <Progress.Root size={14}>
           {phases.map(({ phase, cost }) => (
             <Tooltip key={phase} label={`${phase} : ${usd(cost)}`}>
-              <Progress.Section value={(cost / turn.costUsd) * 100} color={`${phaseColor[phase]}.6`}>
+              <Progress.Section value={(cost / turn.costUsd) * 100} color={phaseColor[phase]}>
                 <Progress.Label>{phase}</Progress.Label>
               </Progress.Section>
             </Tooltip>
@@ -149,7 +149,7 @@ export function CostBlock({ turn, dense }: { turn: DebugTurn; dense?: boolean })
           <Table.Tbody>
             {turn.calls.map((call) => (
               <Table.Tr key={call.label}>
-                <Table.Td><Group gap={6}><Box w={8} h={8} bg={`${phaseColor[call.phase]}.6`} style={{ borderRadius: 2 }} />{call.label}</Group></Table.Td>
+                <Table.Td><Group gap={6}><Box w={8} h={8} bg={phaseColor[call.phase]} style={{ borderRadius: 2 }} />{call.label}</Group></Table.Td>
                 <Table.Td c="dimmed">{call.model}</Table.Td>
                 <Table.Td ta="right">{tokens(totalInput(call))}</Table.Td>
                 <Table.Td ta="right">{tokens(call.outputTokens)}</Table.Td>
@@ -175,14 +175,13 @@ export function DirectionBlock({ turn, dense }: { turn: DebugTurn; dense?: boole
       aside={<Group gap={4}><Text size="xs" c="dimmed">tension</Text><Badge size="xs" variant="outline">{tension.previous}/5</Badge><Text size="xs">→</Text>
         <Badge size="xs" color={tension.target > tension.previous ? 'orange' : 'gray'}>{tension.target}/5</Badge></Group>}>
       <Stack gap={6}>
-        <Group gap={6}>
-          <Text size="xs" fw={600}>Nudges</Text>
-          {nudges.length === 0 ? <Text size="xs" c="dimmed">aucun</Text> : nudges.map((nudge) => (
-            <Tooltip key={nudge.type} label={`basis : ${nudge.basis}`}><Badge size="sm" variant="light" color="violet">{nudge.type}</Badge></Tooltip>
-          ))}
-          {turn.thwarted && <Badge size="xs" color="red" variant="dot">tentative du protagoniste contrariée</Badge>}
-        </Group>
-        {nudges.length > 0 && <Stack gap={0}>{nudges.map((nudge) => <Text key={nudge.type} size="xs" c="dimmed">{nudge.type} — {nudge.basis}</Text>)}</Stack>}
+        {nudges.length === 0
+          ? <Text size="xs" c="dimmed">Le Directeur n’est pas intervenu sur la suite.</Text>
+          : <Stack gap={2}>{nudges.map((nudge) => (
+            <Text key={nudge.type} size="xs">Le Directeur pousse vers <b>{nudge.type}</b> <Text span size="xs" c="dimmed">, parce que : {nudge.basis.toLowerCase()}</Text></Text>
+          ))}</Stack>}
+        {turn.thwarted && <Text size="xs" c="red.3">Une tentative du protagoniste a été contrariée.</Text>}
+        <Text size="xs" fw={600} mt={4}>Contributions transmises au Narrateur</Text>
         <Table verticalSpacing={2} horizontalSpacing="xs" fz="xs">
           <Table.Tbody>
             {items.map((item) => (

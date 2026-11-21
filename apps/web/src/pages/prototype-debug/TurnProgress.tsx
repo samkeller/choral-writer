@@ -72,22 +72,16 @@ export function LiveProgress({ simulation, onRetry }: { simulation: Exclude<Simu
   );
 }
 
-/** Une fois le tour fini : durée et coût. En mode Debug, la ligne s'enrichit et ouvre le tour. */
-export function TurnLine({ turn, debug, selected, onOpen }: { turn: DebugTurn; debug: boolean; selected?: boolean; onOpen?: () => void }) {
-  const base = `${seconds(turn.durationMs)} · ${usd(turn.costUsd)}`;
-  if (!debug) return <Text size="xs" c="dark.2" py={2}>{base}</Text>;
-  const nudges = turn.direction?.nudges.length ?? 0;
+/** Une fois le tour fini : une ligne discrète (durée, coût), toujours cliquable pour ouvrir le tiroir du tour. */
+export function TurnLine({ turn, selected, onOpen }: { turn: DebugTurn; selected?: boolean; onOpen: () => void }) {
   return (
-    <UnstyledButton onClick={onOpen} py={2} px={6} style={{
+    <UnstyledButton onClick={onOpen} py={2} px={6} aria-label={`Détail du tour ${turn.index + 1}`} style={{
       borderRadius: 4, background: selected ? 'var(--mantine-color-dark-5)' : undefined,
-      borderLeft: selected ? '2px solid var(--mantine-color-choral-4)' : '2px solid transparent',
     }}>
       <Group gap={6} wrap="nowrap">
-        <Text size="xs" c="dimmed">Tour {turn.index + 1} · {base}</Text>
-        {nudges > 0 && <Text size="xs" c="violet.3">· {nudges} nudge{nudges > 1 ? 's' : ''}</Text>}
-        {turn.configChanges.length > 0 && <Text size="xs" c="blue.3">· config modifiée</Text>}
-        {!turn.direction && <Text size="xs" c="gray.5">· sans Directeur</Text>}
-        <IconChevronRight size={12} color="var(--mantine-color-dimmed)" />
+        <Text size="xs" c="dark.2">{seconds(turn.durationMs)} · {usd(turn.costUsd)}</Text>
+        {turn.configChanges.length > 0 && <Text size="xs" c="dark.2">· config modifiée</Text>}
+        <IconChevronRight size={12} color="var(--mantine-color-dark-2)" />
       </Group>
     </UnstyledButton>
   );

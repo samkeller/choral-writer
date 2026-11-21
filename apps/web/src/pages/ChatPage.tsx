@@ -14,7 +14,7 @@ import { useChat } from '../hooks/useChat';
 import { NotFoundPage } from './NotFoundPage';
 import { IconAction } from '../components/atoms/IconAction';
 import styles from './ChatPage.module.css';
-import { DebugPrototype, ModeToggle } from './prototype-debug/DebugPrototype'; // PROTOTYPE
+import { DebugPrototype } from './prototype-debug/DebugPrototype'; // PROTOTYPE
 
 export function ChatPage() {
   const params = projectParamsSchema.safeParse(useParams());
@@ -40,7 +40,6 @@ function ProjectChat({ projectId }: { projectId: string }) {
       <PageHeader
         title={chat.project?.name ?? 'Conversation'}
         actions={<Group gap="xs">
-          {search.get('debug') && <ModeToggle />}
           <BranchSwitcher branches={chat.branches} currentId={chat.history?.branch.id ?? null}
             disabled={chat.pending || !chat.history} onChange={chat.selectBranch} />
           <IconAction component={Link} to="/projects" label="Tous les projets">
