@@ -6,6 +6,7 @@ import type { Agent, AgentInput, AgentVersionInput, ProjectAgent, ProjectAgentsI
 import type { Database, Transaction } from '../../../db/client.js';
 import { agents, agentVersions, projectAgents } from '../../../db/entities/agents/agent.js';
 import { projects } from '../../../db/entities/project.js';
+import { LIBRARY_AGENTS } from './agentLibrary.js';
 import { DEFAULT_GUARDIAN_ID, DEFAULT_NARRATOR_ID } from './defaultNarrators.js';
 
 export class AgentRepository {
@@ -125,6 +126,17 @@ export class AgentRepository {
     await this.replace(projectId, versions);
   }
 
+  /** Adds the library agents a database lacks, without touching existing agents or their later versions. */
+  async ensureLibrary(): Promise<void> {
+    await this.database.insert(agents)
+      .values(LIBRARY_AGENTS.map(({ id, phase, output }) => ({ id, phase, output })))
+      .onConflictDoNothing();
+    await this.database.insert(agentVersions)
+      .values(LIBRARY_AGENTS.map(({ id, versionId, name, instructions }) => ({
+        id: versionId, agentId: id, version: 1, name, instructions,
+      })))
+      .onConflictDoNothing();
+  }
 }
 
 /** An agent keeps the memory access it has in the project; a newcomer gets its output's default. */
