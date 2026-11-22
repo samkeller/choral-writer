@@ -76,6 +76,16 @@ export const narratorTraceSchema = z.object({
   prose: z.string().nullable(),
 });
 
+/**
+ * Durée d'une étape du tour. Les agents d'une même étape tournent en parallèle :
+ * l'étape dure autant que son agent le plus lent, tentatives comprises.
+ */
+export const stageDurationSchema = z.object({
+  stage: z.string().min(1),
+  durationMs: z.number().int().nonnegative(),
+  agentCount: z.number().int().positive(),
+});
+
 export const turnTraceSummarySchema = z.object({
   turnId: z.string().uuid(),
   analysis: z.array(analysisTraceSchema),
@@ -83,7 +93,36 @@ export const turnTraceSummarySchema = z.object({
   direction: directionTraceSchema.nullable(),
   narrator: narratorTraceSchema.nullable(),
   calls: z.array(traceCallSummarySchema),
+  /** Étapes dans l'ordre d'exécution, sans les relances ultérieures de la mémoire. */
+  timeline: z.array(stageDurationSchema),
+  /** Somme des étapes de `timeline`. */
+  durationMs: z.number().int().nonnegative(),
   cost: turnCostSchema,
   /** Null for a turn that started before configurations were recorded. */
   configuration: turnConfigurationSchema.nullable(),
 });
+
+/** Ce qui distingue la configuration d'un tour de celle du tour précédent. */
+export const turnConfigurationChangeSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('agentAdded'), name: z.string(), version: z.number().int().positive() }),
+  z.object({ kind: z.literal('agentRemoved'), name: z.string(), version: z.number().int().positive() }),
+  z.object({
+    kind: z.literal('agentChanged'),
+    name: z.string(),
+    fromVersion: z.number().int().positive(),
+    toVersion: z.number().int().positive(),
+  }),
+  z.object({ kind: z.literal('systemPromptChanged') }),
+]);
+
+/** Indicateurs d'un tour, légers, pour la ligne sous chaque réponse et les comparaisons entre tours. */
+export const turnMetricsSchema = z.object({
+  turnId: z.string().uuid(),
+  durationMs: z.number().int().nonnegative(),
+  cost: turnCostSchema,
+  /** Tokens d'entrée du dernier appel du Narrateur ; nul sans appel mesuré. */
+  narratorInputTokens: z.number().int().nonnegative().nullable(),
+  /** Nul quand la comparaison est impossible : premier tour, ou configuration non enregistrée. */
+  configurationChanges: z.array(turnConfigurationChangeSchema).nullable(),
+});
+export const turnMetricsListSchema = z.array(turnMetricsSchema);

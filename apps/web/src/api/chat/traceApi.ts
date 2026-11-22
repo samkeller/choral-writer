@@ -1,4 +1,4 @@
-import { traceCallDetailSchema, turnTraceSummarySchema } from '@choral-writer/shared';
+import { traceCallDetailSchema, turnMetricsListSchema, turnTraceSummarySchema } from '@choral-writer/shared';
 
 import { api } from '../client';
 
@@ -14,4 +14,10 @@ export async function getTraceCallDetail(
     `/projects/${projectId}/turns/${turnId}/traces/${callId}`, { signal },
   );
   return traceCallDetailSchema.parse(response.data);
+}
+
+/** Metrics of every turn on the branch path, root first. */
+export async function getTurnMetrics(projectId: string, branchId: string, signal?: AbortSignal) {
+  const response = await api.get<unknown>(`/projects/${projectId}/branches/${branchId}/turn-metrics`, { signal });
+  return turnMetricsListSchema.parse(response.data);
 }

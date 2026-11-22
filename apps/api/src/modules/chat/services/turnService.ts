@@ -1,4 +1,4 @@
-import type { ChatTurn, TurnConfiguration, TurnDirection } from '@choral-writer/shared';
+import type { ChatTurn, TurnDirection } from '@choral-writer/shared';
 
 import { ApiError } from '../../../errors/errors.js';
 import type { ChatTurnRepository } from '../repositories/turnRepository.js';
@@ -21,12 +21,6 @@ export class ChatTurnService {
     const turns = await this.repository.path(headTurnId, limit);
     if (!turns) throw turnNotFound();
     return turns;
-  }
-
-  async configuration(id: string): Promise<TurnConfiguration | null> {
-    const configuration = await this.repository.configuration(id);
-    if (configuration === undefined) throw turnNotFound();
-    return configuration;
   }
 
   /** Directions of the given turns, in the same order; null for a turn that ran without one. */

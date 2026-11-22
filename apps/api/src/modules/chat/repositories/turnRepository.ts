@@ -1,7 +1,7 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { v7 as uuidv7 } from 'uuid';
-import type { ChatTurn, MemoryResult, TurnConfiguration, TurnDirection } from '@choral-writer/shared';
+import type { ChatTurn, MemoryResult, TurnDirection } from '@choral-writer/shared';
 
 import type { Database, Transaction } from '../../../db/client.js';
 import { chatMessages } from '../../../db/entities/chat/message.js';
@@ -105,13 +105,6 @@ export class ChatTurnRepository {
       configuration: input.configuration,
     });
     return id;
-  }
-
-  /** Undefined when the turn does not exist in this project; null when it predates recorded configurations. */
-  async configuration(id: string): Promise<TurnConfiguration | null | undefined> {
-    const [row] = await this.database.select({ configuration: chatTurns.configuration }).from(chatTurns)
-      .where(and(eq(chatTurns.projectId, this.projectId), eq(chatTurns.id, id)));
-    return row ? row.configuration : undefined;
   }
 
   /** Only a running execution records its direction. */

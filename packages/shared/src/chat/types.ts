@@ -8,7 +8,8 @@ import type { chatCommandSchema, chatOperationSchema } from './schemas/command.j
 import type { chatEventDtoSchema, chatEventSchema } from './schemas/event.js';
 import type {
   analysisTraceSchema, directionTraceSchema, narratorTraceSchema, traceCallDetailSchema,
-  traceCallSummarySchema, turnTraceSummarySchema,
+  traceCallSummarySchema, turnTraceSummarySchema, stageDurationSchema,
+  turnConfigurationChangeSchema, turnMetricsSchema,
 } from './schemas/traces.js';
 
 export type MessageDto = z.infer<typeof messageDtoSchema>;
@@ -22,6 +23,9 @@ export type AnalysisTrace = z.infer<typeof analysisTraceSchema>;
 export type DirectionTrace = z.infer<typeof directionTraceSchema>;
 export type NarratorTrace = z.infer<typeof narratorTraceSchema>;
 export type TurnTraceSummary = z.infer<typeof turnTraceSummarySchema>;
+export type StageDuration = z.infer<typeof stageDurationSchema>;
+export type TurnConfigurationChange = z.infer<typeof turnConfigurationChangeSchema>;
+export type TurnMetrics = z.infer<typeof turnMetricsSchema>;
 
 export type Message = z.infer<typeof messageSchema>;
 export type ChatBranch = z.infer<typeof chatBranchSchema>;

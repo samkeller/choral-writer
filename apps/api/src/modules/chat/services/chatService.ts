@@ -1,5 +1,5 @@
 import type {
-  AnalysisEnvelope, ChatBranch, ChatCommand, ChatHistory, ChatTurn, MemoryResult, ProjectAgent, TurnConfiguration,
+  AnalysisEnvelope, ChatBranch, ChatCommand, ChatHistory, ChatTurn, MemoryResult, ProjectAgent,
   TurnDirection,
 } from '@choral-writer/shared';
 
@@ -37,17 +37,6 @@ export class ChatService {
   async turn(projectId: string, turnId: string): Promise<ChatTurn> {
     await this.dependencies.projects.get(projectId);
     return this.dependencies.servicesForProject(projectId).turns.get(turnId);
-  }
-
-  async turnConfiguration(projectId: string, turnId: string): Promise<TurnConfiguration | null> {
-    await this.dependencies.projects.get(projectId);
-    return this.dependencies.servicesForProject(projectId).turns.configuration(turnId);
-  }
-
-  async turnDirection(projectId: string, turnId: string): Promise<TurnDirection | null> {
-    await this.dependencies.projects.get(projectId);
-    const [direction] = await this.dependencies.servicesForProject(projectId).turns.directions([turnId]);
-    return direction ?? null;
   }
 
   async run(

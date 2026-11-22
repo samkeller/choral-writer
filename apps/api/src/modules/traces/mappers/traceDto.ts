@@ -1,10 +1,18 @@
 import type {
-  AnalysisTrace, DirectionTrace, NarratorTrace, TraceCallDetail, TraceCallSummary, TurnConfiguration, TurnDirection,
-  TurnTraceSummary,
+  AnalysisTrace, DirectionTrace, NarratorTrace, StageDuration, TraceCallDetail, TraceCallSummary, TurnConfiguration,
+  TurnConfigurationChange, TurnDirection, TurnMetrics, TurnTraceSummary,
 } from '@choral-writer/shared';
 import { analysisEnvelopeSchema, traceCallDetailSchema } from '@choral-writer/shared';
 
-import type { TraceDetailRecord, TraceSummaryRecord } from '../repositories/traceRepository.js';
+import type { MetricCallRecord, TraceDetailRecord, TraceSummaryRecord } from '../repositories/traceRepository.js';
+
+/** The fields of a recorded call that time and price a turn. */
+type MeasuredCall = Pick<MetricCallRecord, 'id' | 'stage' | 'agentId' | 'agentVersionId' | 'durationMs' | 'createdAt' | 'costMicroUsd'>;
+
+/** Calls of one agent; a call whose agent is unknown stands alone. */
+function agentKey(call: Pick<MeasuredCall, 'id' | 'agentId' | 'agentVersionId'>): string {
+  return call.agentVersionId ?? call.agentId ?? call.id;
+}
 
 export function toTraceCallSummaryDto(trace: TraceSummaryRecord, turnId: string): TraceCallSummary {
   return {
@@ -36,13 +44,14 @@ export function toTraceCallDetailDto(trace: TraceDetailRecord, turnId: string): 
 }
 
 export function toTurnTraceSummaryDto(
-  turnId: string, traces: readonly TraceSummaryRecord[], configuration: TurnConfiguration | null,
-  direction: TurnDirection | null,
+  turn: { id: string; configuration: TurnConfiguration | null; direction: TurnDirection | null; completedAt: Date | null },
+  traces: readonly TraceSummaryRecord[],
 ): TurnTraceSummary {
+  const turnId = turn.id;
   const analysisTraces = traces.filter((trace) => trace.stage === 'analysis');
   const groups = new Map<string, TraceSummaryRecord[]>();
   for (const trace of analysisTraces) {
-    const key = trace.agentVersionId ?? trace.agentId ?? trace.id;
+    const key = agentKey(trace);
     groups.set(key, [...(groups.get(key) ?? []), trace]);
   }
 
@@ -70,11 +79,11 @@ export function toTurnTraceSummaryDto(
     agentVersionId: directionCall.agentVersionId,
     name: directionCall.agentName ?? 'Directeur',
     // A direction is recorded only after a validated call; without one, the narrator fell back.
-    status: direction ? 'success' : 'error',
+    status: turn.direction ? 'success' : 'error',
     durationMs: directionCalls.reduce((total, call) => total + call.durationMs, 0),
     attempts: directionCalls.length,
     cost: toTurnCost(directionCalls),
-    direction,
+    direction: turn.direction,
   } : null;
 
   const narratorCalls = traces.filter((trace) => trace.stage === 'narrator');
@@ -89,19 +98,68 @@ export function toTurnTraceSummaryDto(
     };
   }
 
+  const timeline = toStageTimeline(callsDuringTurn(traces, turn.completedAt));
   return {
     turnId,
     analysis,
     direction: directionTrace,
     narrator,
     calls: traces.map((trace) => toTraceCallSummaryDto(trace, turnId)),
+    timeline,
+    durationMs: totalDuration(timeline),
     cost: toTurnCost(traces),
-    configuration,
+    configuration: turn.configuration,
   };
 }
 
+export function toTurnMetricsDto(
+  turn: { id: string; completedAt: Date | null },
+  calls: readonly MetricCallRecord[],
+  configurationChanges: TurnConfigurationChange[] | null,
+): TurnMetrics {
+  const narratorCall = calls.filter((call) => call.stage === 'narrator').at(-1);
+  return {
+    turnId: turn.id,
+    durationMs: totalDuration(toStageTimeline(callsDuringTurn(calls, turn.completedAt))),
+    cost: toTurnCost(calls),
+    narratorInputTokens: narratorCall?.inputTokens ?? null,
+    configurationChanges,
+  };
+}
+
+/**
+ * A memory retry records its calls under the turn long after it finished: they belong to the turn's
+ * cost, not to its duration. Calls of the run itself are recorded before the turn is completed.
+ */
+function callsDuringTurn<Call extends MeasuredCall>(calls: readonly Call[], completedAt: Date | null): Call[] {
+  return completedAt ? calls.filter((call) => call.createdAt <= completedAt) : [...calls];
+}
+
+function totalDuration(timeline: readonly StageDuration[]): number {
+  return timeline.reduce((total, stage) => total + stage.durationMs, 0);
+}
+
+/**
+ * Stages in order of first call. Agents of a stage run in parallel: a stage lasts as long as its
+ * slowest agent, whose retries add up.
+ */
+function toStageTimeline(calls: readonly MeasuredCall[]): StageDuration[] {
+  const stages = new Map<string, Map<string, number>>();
+  for (const call of calls) {
+    const agents = stages.get(call.stage) ?? new Map<string, number>();
+    const key = agentKey(call);
+    agents.set(key, (agents.get(key) ?? 0) + call.durationMs);
+    stages.set(call.stage, agents);
+  }
+  return [...stages].map(([stage, agents]) => ({
+    stage,
+    durationMs: Math.max(...agents.values()),
+    agentCount: agents.size,
+  }));
+}
+
 /** Somme des montants connus ; un appel sans montant rend le total partiel plutôt que faux. */
-function toTurnCost(traces: readonly TraceSummaryRecord[]): TurnTraceSummary['cost'] {
+function toTurnCost(traces: readonly Pick<MeasuredCall, 'costMicroUsd'>[]): TurnTraceSummary['cost'] {
   return {
     microUsd: traces.reduce((total, trace) => total + (trace.costMicroUsd ?? 0), 0),
     complete: traces.every((trace) => trace.costMicroUsd !== null),

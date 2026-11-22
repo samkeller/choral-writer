@@ -18,6 +18,10 @@
   background: transparent;
 }
 
+.messageBlock {
+  min-width: 0;
+}
+
 .assistantMessage {
   align-self: flex-start;
   width: 100%;

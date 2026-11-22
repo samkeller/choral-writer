@@ -18,7 +18,7 @@ async function main(): Promise<void> {
     projects,
     agents,
     chat,
-    traces: createTraceService(db, chat),
+    traces: createTraceService(db),
     memories,
   });
 

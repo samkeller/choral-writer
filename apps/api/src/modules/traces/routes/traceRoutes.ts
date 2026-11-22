@@ -6,4 +6,6 @@ export function registerTraceRoutes(app: FastifyInstance, controller: TraceContr
   const turnPath = '/api/projects/:projectId/turns/:turnId/traces';
   app.get(turnPath, { preHandler: requireAuth }, (request) => controller.getTurnSummary(request));
   app.get(`${turnPath}/:callId`, { preHandler: requireAuth }, (request) => controller.getCallDetail(request));
+  app.get('/api/projects/:projectId/branches/:branchId/turn-metrics', { preHandler: requireAuth },
+    (request) => controller.getBranchMetrics(request));
 }

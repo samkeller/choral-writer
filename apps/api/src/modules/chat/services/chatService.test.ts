@@ -55,7 +55,6 @@ function setup() {
       path: vi.fn<ChatTransactionContext['turns']['path']>().mockResolvedValue([]),
       start: vi.fn<ChatTransactionContext['turns']['start']>().mockResolvedValue('turn'),
       finish: vi.fn<ChatTransactionContext['turns']['finish']>(),
-      configuration: vi.fn<ChatTransactionContext['turns']['configuration']>(),
       directions: vi.fn<ChatTransactionContext['turns']['directions']>().mockResolvedValue([]),
       recordDirection: vi.fn<ChatTransactionContext['turns']['recordDirection']>(),
     },

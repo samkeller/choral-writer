@@ -1,0 +1,39 @@
+import { Box, Group, Text, Tooltip, UnstyledButton } from '@mantine/core';
+
+/**
+ * One vertical bar per turn, as tall as its value relative to the largest one.
+ * The current turn is outlined; clicking a bar opens that turn.
+ */
+export function EvolutionBars({ values, current, color, describe, onSelect, height = 80 }: {
+  values: (number | null)[];
+  current: number;
+  color: string;
+  describe: (value: number | null, turnNumber: number) => string;
+  onSelect: (index: number) => void;
+  height?: number;
+}) {
+  const max = Math.max(0, ...values.map((value) => value ?? 0));
+  if (max === 0) return <Text size="sm" c="dimmed">Aucune mesure disponible pour ce récit.</Text>;
+
+  return (
+    <Group gap={3} align="flex-end" h={height} wrap="nowrap">
+      {values.map((value, index) => {
+        const label = describe(value, index + 1);
+        return (
+          <Tooltip key={index} label={label}>
+            <UnstyledButton aria-label={label} aria-current={index === current || undefined} onClick={() => onSelect(index)}
+              h="100%" miw={4} maw={32} style={{ flex: 1, display: 'flex', alignItems: 'flex-end' }}>
+              <Box w="100%" bg={value === null ? 'dark.5' : color} opacity={index === current ? 1 : 0.55}
+                h={value === null ? 2 : `${Math.max(2, (value / max) * 100)}%`}
+                style={{
+                  borderRadius: 2,
+                  outline: index === current ? '2px solid var(--mantine-color-choral-3)' : undefined,
+                  outlineOffset: 1,
+                }} />
+            </UnstyledButton>
+          </Tooltip>
+        );
+      })}
+    </Group>
+  );
+}
