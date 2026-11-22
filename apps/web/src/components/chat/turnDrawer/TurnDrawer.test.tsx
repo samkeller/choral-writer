@@ -18,7 +18,7 @@ const originalAdapter = api.defaults.adapter;
 
 function summary(turnId: string, microUsd: number, narratorMs: number): TurnTraceSummary {
   return {
-    turnId, analysis: [], direction: null, narrator: null, calls: [],
+    turnId, analysis: [], direction: null, developments: null, narrator: null, calls: [],
     timeline: [{ stage: 'narrator', durationMs: narratorMs, agentCount: 1 }], durationMs: narratorMs,
     cost: { microUsd, complete: true }, configuration: null,
   };
@@ -46,7 +46,9 @@ const summaries = new Map([
       direction: {
         tension: 'monter' as const,
         nudges: [{ type: 'complication' as const, target: 'Personnage A', basis: null }],
-        retained: [{ agent: 'Monde', item: { kind: 'development', text: 'Un fait générique.', importance: 'NORMAL' as const }, why: 'utile' }],
+        retained: [{ agent: 'Monde', item: {
+          kind: 'development' as const, characters: [], scope: 'scene' as const, text: 'Un fait générique.', importance: 'NORMAL' as const,
+        }, why: 'utile' }],
         dismissed: [],
       },
     },

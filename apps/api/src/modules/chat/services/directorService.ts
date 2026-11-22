@@ -115,6 +115,7 @@ function directorContract(forbidden: readonly NudgeType[]): string {
     'Renvoie exactement un objet JSON de cette forme :',
     '{"v":1,"retained":[{"item":"<identifiant>","why":"<raison>"}],"dismissed":[{"item":"<identifiant>","why":"<raison>"}],"tension":"monter | tenir | relacher | basculer","nudges":[{"type":"<type>","target":"<ce sur quoi porte la pression>","basis":"<identifiant> | null"}]}',
     '- Chaque contribution du whiteboard figure une seule fois, dans "retained" ou dans "dismissed", avec une raison courte. Les contributions retenues sont transmises telles quelles au Narrateur ; les écartées disparaissent de son prompt.',
+    '- Un développement est un fait qu’un agent fait arriver à ce tour. Retenu, il a lieu : dans la scène, le Narrateur le raconte ; hors champ, le Narrateur ne le reçoit pas mais la mémoire l’enregistre. Écarté, il n’a pas lieu. Tu ne changes ni son texte ni sa portée.',
     `- "tension" est la cible du tour : ${Object.entries(tensionLabels).map(([value, label]) => `${value} (${label})`).join(', ')}.`,
     '- "nudges" : de 0 à 2 pressions sur la manière de raconter, de types différents, parmi :',
     ...Object.entries(nudgeDescriptions).map(([type, description]) => `  - ${type} : ${description} ;`),

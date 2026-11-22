@@ -61,6 +61,23 @@ function setup(responses: string[]) {
 }
 
 describe('ChatDirectorService', () => {
+  it('shows developments with their scope, and what retaining or dismissing one means', async () => {
+    const offscreen = {
+      kind: 'development', characters: ['Le facteur'], scope: 'offscreen', text: 'Le facteur part.', importance: 'LOW',
+    } as const;
+    const { service, prompts, input } = setup([JSON.stringify({
+      v: 1, retained: [], dismissed: [{ item: 'c1', why: 'Trop tôt.' }], tension: 'tenir', nudges: [],
+    })]);
+
+    const direction = await service.generate(input({
+      whiteboard: [{ v: 1, agent: 'Absents', summary: 'Résumé.', items: [offscreen] }],
+    }));
+
+    expect(prompts[0]).toContain('- [c1] développement hors champ (personnages : Le facteur ; importance faible) : Le facteur part.');
+    expect(prompts[0]).toContain('Écarté, il n’a pas lieu. Tu ne changes ni son texte ni sa portée.');
+    expect(direction.dismissed).toEqual([{ agent: 'Absents', item: offscreen, why: 'Trop tôt.' }]);
+  });
+
   it('shows identified items and resolves the selection to verbatim contributions', async () => {
     const { service, prompts, traces, input } = setup([JSON.stringify(validOutput)]);
 

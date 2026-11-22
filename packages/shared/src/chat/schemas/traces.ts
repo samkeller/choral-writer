@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { analysisEnvelopeSchema, turnDirectionSchema } from '../../pipeline.js';
+import { analysisEnvelopeSchema, turnDevelopmentsSchema, turnDirectionSchema } from '../../pipeline.js';
 import { chatExecutionParamsSchema, turnConfigurationSchema } from './turn.js';
 import { memoryContextSchema } from '../../memories.js';
 import { costBasisSchema } from '../../usage/index.js';
@@ -91,6 +91,11 @@ export const turnTraceSummarySchema = z.object({
   analysis: z.array(analysisTraceSchema),
   /** Null when the turn ran without a Director. */
   direction: directionTraceSchema.nullable(),
+  /**
+   * What happened in the story world during the turn: the developments the Director retained, or all of
+   * them without a direction. Null for a turn recorded before developments were.
+   */
+  developments: turnDevelopmentsSchema.nullable(),
   narrator: narratorTraceSchema.nullable(),
   calls: z.array(traceCallSummarySchema),
   /** Étapes dans l'ordre d'exécution, sans les relances ultérieures de la mémoire. */

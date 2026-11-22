@@ -67,11 +67,15 @@ export class MemoryRepository {
       .orderBy(asc(memoryRuns.createdAt), asc(memoryRuns.id));
   }
 
+  /** What the Guardian maintains memory from: the turn's prose and developments (none for older turns). */
   async source(turnId: string) {
     const [narrator] = await this.db.select({ response: llmCall.response }).from(llmCall).where(and(
       eq(llmCall.turnId, turnId), eq(llmCall.stage, 'narrator'), eq(llmCall.status, 'success'),
     )).orderBy(desc(llmCall.createdAt), desc(llmCall.id)).limit(1);
     if (!narrator?.response) throw new Error('The original narrator trace is unavailable.');
-    return { narrator: narrator.response };
+    const [turn] = await this.db.select({ developments: chatTurns.developments }).from(chatTurns).where(and(
+      eq(chatTurns.projectId, this.projectId), eq(chatTurns.id, turnId),
+    ));
+    return { narrator: narrator.response, developments: turn?.developments ?? [] };
   }
 }

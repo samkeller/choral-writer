@@ -12,6 +12,7 @@ import { TraceCallsPanel } from './TraceCallsPanel';
 import { TurnConfigurationPanel } from './TurnConfigurationPanel';
 import { TurnContextPanel } from './TurnContextPanel';
 import { TurnCostPanel } from './TurnCostPanel';
+import { TurnDevelopmentsPanel } from './TurnDevelopmentsPanel';
 import { TurnOverview } from './TurnOverview';
 import { isTurnDrawerTab, turnDrawerTabs, type TurnDrawerTab } from './turnDrawerTabs';
 import styles from './TurnDrawer.module.css';
@@ -91,6 +92,11 @@ export function TurnDrawer({
               <Tabs.Panel value="overview">
                 <WithSummary state={summary}>
                   {(loaded) => <TurnOverview summary={loaded} metrics={storyMetrics} index={index} onOpenTab={openTab} onOpenCall={openCall} />}
+                </WithSummary>
+              </Tabs.Panel>
+              <Tabs.Panel value="developments">
+                <WithSummary state={summary}>
+                  {(loaded) => <TurnDevelopmentsPanel developments={loaded.developments} />}
                 </WithSummary>
               </Tabs.Panel>
               <Tabs.Panel value="context">

@@ -2,20 +2,47 @@ import { z } from 'zod';
 
 export const analysisImportanceSchema = z.enum(['LOW', 'NORMAL', 'HIGH']);
 
+export const DEVELOPMENT_KIND = 'development';
+
+/** Where a development happens: in the scene being told, or off-screen. */
+export const developmentScopeSchema = z.enum(['scene', 'offscreen']);
+export type DevelopmentScope = z.infer<typeof developmentScopeSchema>;
+
+/** A perspective (opinion, suggestion, risk…): its kind is free-form, but never `development`. */
+const perspectiveItemSchema = z.object({
+  kind: z.string().trim().min(1).refine((kind) => kind !== DEVELOPMENT_KIND, {
+    message: 'Un développement exige "characters" et "scope".',
+  }),
+  text: z.string().trim().min(1),
+  importance: analysisImportanceSchema,
+}).strict();
+
+/** Something that happens in the story world during the turn: a fact, even when the prose does not tell it. */
+const developmentItemSchema = z.object({
+  kind: z.literal(DEVELOPMENT_KIND),
+  /** The characters concerned. */
+  characters: z.array(z.string().trim().min(1)),
+  scope: developmentScopeSchema,
+  text: z.string().trim().min(1),
+  importance: analysisImportanceSchema,
+}).strict();
+
+export const analysisItemSchema = z.union([developmentItemSchema, perspectiveItemSchema]);
+export type AnalysisItem = z.infer<typeof analysisItemSchema>;
+export type DevelopmentItem = z.infer<typeof developmentItemSchema>;
+
+export function isDevelopment(item: AnalysisItem): item is DevelopmentItem {
+  return item.kind === DEVELOPMENT_KIND;
+}
+
 export const analysisEnvelopeSchema = z.object({
   v: z.literal(1),
   agent: z.string().trim().min(1),
   summary: z.string().trim().min(1),
-  items: z.array(z.object({
-    kind: z.string().trim().min(1),
-    text: z.string().trim().min(1),
-    importance: analysisImportanceSchema,
-  }).strict()),
+  items: z.array(analysisItemSchema),
 }).strict();
 
 export type AnalysisEnvelope = z.infer<typeof analysisEnvelopeSchema>;
-
-export type AnalysisItem = AnalysisEnvelope['items'][number];
 
 /** Target the Director sets for a turn's tension. */
 export const tensionTargetSchema = z.enum(['monter', 'tenir', 'relacher', 'basculer']);
@@ -28,9 +55,22 @@ export type NudgeType = z.infer<typeof nudgeTypeSchema>;
 /** A whiteboard item as its analysis agent wrote it, with the agent that wrote it. */
 export const attributedItemSchema = z.object({
   agent: z.string(),
-  item: analysisEnvelopeSchema.shape.items.element,
+  item: analysisItemSchema,
 });
 export type AttributedItem = z.infer<typeof attributedItemSchema>;
+
+export const attributedDevelopmentSchema = z.object({
+  agent: z.string(),
+  item: developmentItemSchema,
+});
+export type AttributedDevelopment = z.infer<typeof attributedDevelopmentSchema>;
+
+/** The developments that happened during a turn, split by scope for the Debug mode. */
+export const turnDevelopmentsSchema = z.object({
+  scene: z.array(attributedDevelopmentSchema),
+  offscreen: z.array(attributedDevelopmentSchema),
+});
+export type TurnDevelopments = z.infer<typeof turnDevelopmentsSchema>;
 
 /**
  * What the Director decided for a turn, resolved against the whiteboard it read:

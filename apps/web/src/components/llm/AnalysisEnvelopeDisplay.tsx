@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Badge, Group, Paper, Select, Stack, Text } from '@mantine/core';
-import type { AnalysisEnvelope } from '@choral-writer/shared';
+import { isDevelopment, type AnalysisEnvelope } from '@choral-writer/shared';
 
 import styles from './AnalysisEnvelopeDisplay.module.css';
 
@@ -51,6 +51,12 @@ export function AnalysisEnvelopeDisplay({
             <Group gap="xs" mb={4}>
               <Badge variant="light" color="blue">{item.kind}</Badge>
               <ImportanceBadge importance={item.importance} />
+              {isDevelopment(item) && (
+                <Badge size="xs" variant="outline" color="gray" tt="none">
+                  {item.scope === 'scene' ? 'Dans la scène' : 'Hors champ'}
+                  {item.characters.length > 0 && ` · ${item.characters.join(', ')}`}
+                </Badge>
+              )}
             </Group>
             <Text size="sm">{item.text}</Text>
           </div>

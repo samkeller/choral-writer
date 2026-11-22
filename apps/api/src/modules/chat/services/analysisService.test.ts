@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type {
   ChatCompletion, ChatCompletionCreateParamsNonStreaming, ChatCompletionCreateParamsStreaming,
 } from 'openai/resources/chat/completions';
-import type { ProjectAgent } from '@choral-writer/shared';
+import { analysisEnvelopeSchema, type ProjectAgent } from '@choral-writer/shared';
 
 import type { LlmCallTrace } from '../../../llm/call-llm.js';
 import { createCallLLM } from '../../../llm/call-llm.js';
@@ -81,9 +81,9 @@ describe('ChatAnalysisService', () => {
 
     expect(requests).toHaveLength(agentCount);
     for (const prompt of requests) {
-      expect(prompt).toContain(`Aim for at most ${itemBudget} items.`);
-      expect(prompt).toContain('not a quota: return fewer items or none');
-      expect(prompt).toContain('Do not restate the conversation');
+      expect(prompt).toContain(`Vise au plus ${itemBudget} items.`);
+      expect(prompt).toContain('pas un quota : renvoie moins d’items, voire aucun');
+      expect(prompt).toContain('Ne reformule pas la conversation');
     }
     expect(result).toHaveLength(agentCount);
     expect(result.every((entry) => entry.items.length === itemBudget + 1)).toBe(true);
@@ -215,5 +215,29 @@ describe('ChatAnalysisService', () => {
     })).resolves.toEqual([]);
 
     expect(create).not.toHaveBeenCalled();
+  });
+});
+
+describe('analysis envelope contract', () => {
+  const envelope = (item: Record<string, unknown>) => ({ v: 1, agent: 'Monde', summary: 'Résumé.', items: [item] });
+  const development = {
+    kind: 'development', characters: ['Mara'], scope: 'offscreen', text: 'Le facteur part.', importance: 'NORMAL',
+  };
+
+  it('accepts a development with its characters and scope, and a perspective without them', () => {
+    expect(analysisEnvelopeSchema.safeParse(envelope(development)).success).toBe(true);
+    expect(analysisEnvelopeSchema.safeParse(envelope({ ...development, characters: [] })).success).toBe(true);
+    expect(analysisEnvelopeSchema.safeParse(envelope({ kind: 'risque', text: 'Un risque.', importance: 'LOW' })).success)
+      .toBe(true);
+  });
+
+  it.each([
+    ['a development without characters', { ...development, characters: undefined }],
+    ['a development without scope', { ...development, scope: undefined }],
+    ['a development with an unknown scope', { ...development, scope: 'elsewhere' }],
+    ['a perspective with a scope', { kind: 'risque', scope: 'scene', text: 'Un risque.', importance: 'LOW' }],
+    ['a perspective with characters', { kind: 'risque', characters: ['Mara'], text: 'Un risque.', importance: 'LOW' }],
+  ])('rejects %s', (_case, item) => {
+    expect(analysisEnvelopeSchema.safeParse(envelope(item)).success).toBe(false);
   });
 });

@@ -14,7 +14,7 @@ function metrics(microUsd: number, overrides: Partial<TurnMetrics> = {}): TurnMe
 
 function summary(microUsd: number, overrides: Partial<TurnTraceSummary> = {}): TurnTraceSummary {
   return {
-    turnId, analysis: [], direction: null, narrator: null, calls: [], timeline: [], durationMs: 0,
+    turnId, analysis: [], direction: null, developments: null, narrator: null, calls: [], timeline: [], durationMs: 0,
     cost: { microUsd, complete: true }, configuration: null, ...overrides,
   };
 }
