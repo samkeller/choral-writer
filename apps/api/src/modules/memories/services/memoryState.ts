@@ -1,5 +1,5 @@
 import {
-  defaultMemoryRead, memoryReadSchema, memoryStateSchema,
+  defaultMemoryRead, memoryReadSchema, memoryStateSchema, readsMemory,
   type MemoryContext, type MemoryImport, type MemoryMutation, type MemoryProposal, type MemoryRead, type MemoryResult,
   type MemorySetupProposal, type MemoryState, type ProjectAgent,
 } from '@choral-writer/shared';
@@ -150,6 +150,9 @@ export function applyMemorySetup(state: MemoryState, proposal: MemorySetupPropos
     });
     const read = memoryReadSchema.safeParse({ mode: assignment.mode, tagIds });
     if (!read.success) reject('INVALID_MEMORY_READ', 'Sélection mémoire invalide.');
+    if (!readsMemory(agent.output) && read.data.mode !== 'none') {
+      reject('DIRECTOR_HAS_NO_MEMORY', 'Le Directeur ne reçoit aucune mémoire.');
+    }
     if (agent.output === 'memory_proposals' && read.data.mode === 'selected') {
       reject('GUARDIAN_REQUIRES_ALL', 'Le Gardien doit lire toute la mémoire, ou être désactivé.');
     }

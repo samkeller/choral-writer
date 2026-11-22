@@ -21,7 +21,7 @@ Le frontend utilise Mantine 8 comme système UI de référence. Le thème est ce
 
 ### Grammaire des phases et contraste
 
-- **Analyse** : bleu (`blue`), icône loupe (`IconSearch`). **Restitution** : violet (`violet`), icône plume (`IconFeather`). Le vert `choral` reste l'accent des actions et de la navigation, pas une couleur de phase.
+- **Analyse** : bleu (`blue`), icône loupe (`IconSearch`). **Direction** : orange (`orange`), icône boussole (`IconCompass`). **Restitution** : violet (`violet`), icône plume (`IconFeather`). Le vert `choral` reste l'accent des actions et de la navigation, pas une couleur de phase.
 - La définition typée est centralisée dans [`phasePresentation.ts`](../../apps/web/src/components/phases/phasePresentation.ts).
 - Séparer la phase du contrat de sortie : celui-ci reste un texte secondaire neutre, comme le numéro de version et le nombre de projets. Ne pas employer les couleurs de phase pour signaler succès ou erreur.
 - Sur une surface interactive métier, un liseré de phase peut faciliter le balayage ; la bordure complète indique le détail ouvert. Ne pas colorer toute la surface ni ajouter d'ombre importante.

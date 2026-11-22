@@ -1,10 +1,11 @@
 import type {
-  AnalysisEnvelope, ChatEvent, Message, Project, ProjectAgent, ProjectAgentsInput, MemoryResult,
+  AnalysisEnvelope, ChatEvent, TurnDirection, Message, Project, ProjectAgent, ProjectAgentsInput, MemoryResult,
 } from '@choral-writer/shared';
 import type { MemorySession } from '../../memories/services/memoriesService.js';
 
 import type { ProjectsService } from '../../projects/services/projectServices.js';
 import type { AnalysisInput } from '../services/analysisService.js';
+import type { DirectorInput } from '../services/directorService.js';
 import type { ChatBranchService } from '../services/branchService.js';
 import type { ChatMessageService } from '../services/messageService.js';
 import type { ChatTurnService } from '../services/turnService.js';
@@ -49,5 +50,6 @@ export type ChatServiceDependencies = {
     work: (context: ChatTransactionContext) => Promise<T>,
   ): Promise<T>;
   analyze(input: AnalysisInput): Promise<AnalysisEnvelope[]>;
+  direct(input: DirectorInput): Promise<TurnDirection>;
   narrate: Narrator;
 };

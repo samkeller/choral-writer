@@ -1,5 +1,6 @@
 import type {
   AnalysisEnvelope, ChatBranch, ChatCommand, ChatHistory, ChatTurn, MemoryResult, ProjectAgent, TurnConfiguration,
+  TurnDirection,
 } from '@choral-writer/shared';
 
 import { prepareTurn } from './prepareTurn.js';
@@ -8,6 +9,7 @@ import type {
   ChatProgressEvent, ChatRunResult, ChatServiceDependencies, ChatTransactionContext, GenerationOutcome,
 } from '../types/chat.types.js';
 import { isAnalysisAgent } from './analysisService.js';
+import { isDirectorAgent, RECENT_DIRECTION_TURNS, type DirectorInput } from './directorService.js';
 import { memoryContext } from '../../memories/services/memoryState.js';
 import type { NarratorOutput } from '../types/narrator.types.js';
 import { ApiError } from '../../../errors/errors.js';
@@ -40,6 +42,12 @@ export class ChatService {
   async turnConfiguration(projectId: string, turnId: string): Promise<TurnConfiguration | null> {
     await this.dependencies.projects.get(projectId);
     return this.dependencies.servicesForProject(projectId).turns.configuration(turnId);
+  }
+
+  async turnDirection(projectId: string, turnId: string): Promise<TurnDirection | null> {
+    await this.dependencies.projects.get(projectId);
+    const [direction] = await this.dependencies.servicesForProject(projectId).turns.directions([turnId]);
+    return direction ?? null;
   }
 
   async run(
@@ -102,6 +110,22 @@ export class ChatService {
           elapsedMs: Math.round(performance.now() - analysisStartedAt),
         });
 
+        const director = pipeline.agents.find(isDirectorAgent);
+        const direction = director
+          ? await this.direct(context, emit, {
+            projectId: command.projectId,
+            turnId,
+            agent: director,
+            systemPrompt: pipeline.systemPrompt,
+            whiteboard,
+            history,
+            recentDirections: await context.turns.directions(
+              history.slice(-RECENT_DIRECTION_TURNS).map((turn) => turn.id)),
+            userMessage: input.userMessage,
+            signal,
+          })
+          : null;
+
         const narratorStartedAt = performance.now();
         await emit({ type: 'chat.pipeline.stage', turnId, stage: 'narrator', status: 'started' });
         try {
@@ -114,6 +138,7 @@ export class ChatService {
               .filter(Boolean)
               .join('\n\n'),
             whiteboard,
+            direction,
             history,
             userMessage: input.userMessage,
             signal,
@@ -171,6 +196,33 @@ export class ChatService {
       await context.recordActivity(new Date());
       return result;
     });
+  }
+
+  /**
+   * Records the turn's direction. A failed Director call does not fail the turn: the stage is
+   * reported as failed and the Narrator falls back to the whole whiteboard (null direction).
+   */
+  private async direct(
+    context: ChatTransactionContext, emit: (event: ChatProgressEvent) => Promise<void>, input: DirectorInput,
+  ): Promise<TurnDirection | null> {
+    const startedAt = performance.now();
+    const elapsedMs = () => Math.round(performance.now() - startedAt);
+    await emit({ type: 'chat.pipeline.stage', turnId: input.turnId, stage: 'direction', status: 'started' });
+    try {
+      const direction = await this.dependencies.direct(input);
+      await context.turns.recordDirection(input.turnId, direction);
+      await emit({
+        type: 'chat.pipeline.stage', turnId: input.turnId, stage: 'direction', status: 'completed', elapsedMs: elapsedMs(),
+      });
+      return direction;
+    } catch (error) {
+      if (input.signal.aborted) throw error;
+      await emit({
+        type: 'chat.pipeline.stage', turnId: input.turnId, stage: 'direction', status: 'failed', elapsedMs: elapsedMs(),
+      });
+      if (error instanceof ApiError && error.options.source === 'llm') return null;
+      throw error;
+    }
   }
 
   private async finishTurn(

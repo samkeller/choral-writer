@@ -4,7 +4,7 @@ import { ApiError } from '../../../errors/errors.js';
 
 type ResolvedSelection = { agentId: string; versionId: string; output: Agent['output'] };
 
-/** A pipeline needs existing versions of distinct agents, exactly one narrator and one Guardian. */
+/** A pipeline needs existing versions of distinct agents, exactly one narrator and one Guardian, and at most one Director. */
 export function assertValidAgentSelection(
   selections: ProjectAgentsInput['agents'], resolved: readonly ResolvedSelection[],
 ): void {
@@ -17,5 +17,8 @@ export function assertValidAgentSelection(
   if (resolved.filter((agent) => agent.output === 'narrative').length !== 1
     || resolved.filter((agent) => agent.output === 'memory_proposals').length !== 1) {
     throw new ApiError(400, 'REQUIRED_AGENT_OUTPUTS', 'Une configuration doit avoir exactement un agent de réponse et un Gardien mémoire, en restitution.');
+  }
+  if (resolved.filter((agent) => agent.output === 'direction').length > 1) {
+    throw new ApiError(400, 'SINGLE_DIRECTOR', 'Une configuration a au plus un Directeur.');
   }
 }

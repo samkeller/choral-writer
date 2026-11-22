@@ -56,4 +56,22 @@ describe('chat pipeline progress', () => {
       durationMs: 450,
     });
   });
+
+  it('tracks the optional direction stage, including a failure the turn recovers from', () => {
+    const initial = initialPipelineProgress('turn-1');
+    expect(initial.direction.status).toBe('pending');
+    const started = updatePipelineProgress(initial, {
+      type: 'chat.pipeline.stage', turnId: 'turn-1', stage: 'direction', status: 'started',
+    });
+    expect(started).toMatchObject({ activeStage: 'direction', direction: { status: 'running' } });
+    const failed = updatePipelineProgress(started, {
+      type: 'chat.pipeline.stage', turnId: 'turn-1', stage: 'direction', status: 'failed', elapsedMs: 300,
+    });
+    const narrating = updatePipelineProgress(failed, {
+      type: 'chat.pipeline.stage', turnId: 'turn-1', stage: 'narrator', status: 'started',
+    });
+    expect(narrating).toMatchObject({
+      activeStage: 'narrator', direction: { status: 'failed', elapsedMs: 300 }, narrator: { status: 'running' },
+    });
+  });
 });
