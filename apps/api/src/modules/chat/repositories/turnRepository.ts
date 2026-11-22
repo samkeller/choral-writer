@@ -107,19 +107,19 @@ export class ChatTurnRepository {
     return id;
   }
 
-  /** Undefined when the turn does not exist in this project; null when it predates recorded configurations. */
-  async configuration(id: string): Promise<TurnConfiguration | null | undefined> {
-    const [row] = await this.database.select({ configuration: chatTurns.configuration }).from(chatTurns)
-      .where(and(eq(chatTurns.projectId, this.projectId), eq(chatTurns.id, id)));
-    return row ? row.configuration : undefined;
-  }
-
   /** Only a running execution records its direction. */
   async recordDirection(id: string, direction: TurnDirection): Promise<boolean> {
     const [row] = await this.database.update(chatTurns).set({ direction }).where(and(
       eq(chatTurns.projectId, this.projectId), eq(chatTurns.id, id), eq(chatTurns.status, 'running'),
     )).returning({ id: chatTurns.id });
     return row !== undefined;
+  }
+
+  /** Undefined for a turn of another project; null for a turn recorded before configurations were. */
+  async configuration(id: string): Promise<TurnConfiguration | null | undefined> {
+    const [row] = await this.database.select({ configuration: chatTurns.configuration }).from(chatTurns)
+      .where(and(eq(chatTurns.projectId, this.projectId), eq(chatTurns.id, id)));
+    return row ? row.configuration : undefined;
   }
 
   /** Recorded directions by turn; turns of other projects and turns without one are absent. */

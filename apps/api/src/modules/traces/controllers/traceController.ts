@@ -1,6 +1,7 @@
 import type { FastifyRequest } from 'fastify';
 import {
-  chatExecutionParamsSchema, traceCallDetailSchema, traceCallParamsSchema, turnTraceSummarySchema,
+  chatBranchParamsSchema, chatExecutionParamsSchema, traceCallDetailSchema, traceCallParamsSchema,
+  turnMetricsListSchema, turnTraceSummarySchema,
 } from '@choral-writer/shared';
 
 import { parseResponseDto } from '../../../http/responseDto.js';
@@ -13,6 +14,12 @@ export class TraceController {
     const { projectId, turnId } = chatExecutionParamsSchema.parse(request.params);
     const summary = await this.service.summary(projectId, turnId);
     return parseResponseDto(turnTraceSummarySchema, summary);
+  }
+
+  async getBranchMetrics(request: FastifyRequest) {
+    const { projectId, branchId } = chatBranchParamsSchema.parse(request.params);
+    const metrics = await this.service.branchMetrics(projectId, branchId);
+    return parseResponseDto(turnMetricsListSchema, metrics);
   }
 
   async getCallDetail(request: FastifyRequest) {

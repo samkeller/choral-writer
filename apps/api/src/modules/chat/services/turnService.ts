@@ -23,6 +23,7 @@ export class ChatTurnService {
     return turns;
   }
 
+  /** The configuration the turn ran with; null for a turn recorded before configurations were. */
   async configuration(id: string): Promise<TurnConfiguration | null> {
     const configuration = await this.repository.configuration(id);
     if (configuration === undefined) throw turnNotFound();

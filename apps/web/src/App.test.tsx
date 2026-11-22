@@ -9,7 +9,7 @@ import {
   agentInputSchema, projectInputSchema, projectAgentsInputSchema, publishAgentVersionSchema,
   type AgentDto, type PublishAgentVersion, type ChatBranchDto,
   type ChatEventDto, type ChatHistoryDto, type ProjectAgent,
-  type MessageDto, type ProjectDto, type TraceCallDetail, type TurnTraceSummary,
+  type MessageDto, type ProjectDto, type TraceCallDetail, type TurnMetrics, type TurnTraceSummary,
   type ProjectAgentsInput,
   memoryMutationSchema, type MemoryView, type MemoryResult,
 } from '@choral-writer/shared';
@@ -577,6 +577,13 @@ describe('projects and chat screens', () => {
     expect(writes).toHaveLength(1);
   });
 
+  function metricsOf(turnId: string, overrides: Partial<TurnMetrics> = {}): TurnMetrics {
+    return {
+      turnId, durationMs: 2300, cost: { microUsd: 4100, complete: true },
+      narratorInputTokens: 900, configurationChanges: null, ...overrides,
+    };
+  }
+
   function existingChat() {
     const user: MessageDto = {
       id: '019ad30c-19b0-7000-8000-000000000002', projectId: project.id,
@@ -605,6 +612,9 @@ describe('projects and chat screens', () => {
       const selected = [...histories.values()].find((item) =>
         config.url === `/projects/${project.id}/branches/${item.branch.id}/history`);
       if (selected) return respond(config, 200, selected);
+      const measured = [...histories.values()].find((item) =>
+        config.url === `/projects/${project.id}/branches/${item.branch.id}/turn-metrics`);
+      if (measured) return respond(config, 200, measured.turns.map((turn) => metricsOf(turn.id)));
       throw new Error(`Unexpected request: ${config.url}`);
     });
     const alternativeId = '019ad30c-19b0-7000-8000-000000000006';
@@ -668,14 +678,14 @@ describe('projects and chat screens', () => {
       vi.stubGlobal('fetch', fetchMock);
       renderApp(`/projects/${project.id}`);
       fireEvent.click(await screen.findByRole('button', { name: 'Relancer le Gardien' }));
-      await within(screen.getByRole('log', { name: 'Conversation' })).findByText('Mémoire en cours');
-      expect(screen.queryByText('Analyse en cours')).toBeNull();
-      expect(screen.queryByText('Narrateur en cours')).toBeNull();
+      await within(screen.getByRole('log', { name: 'Conversation' })).findByText(/^Mémoire ·/);
+      expect(screen.queryByText(/^Analyse ·/)).toBeNull();
+      expect(screen.queryByText(/^Narrateur ·/)).toBeNull();
       expect(screen.getByLabelText('Votre message').hasAttribute('disabled')).toBe(true);
       expect(screen.getByRole('tab', { name: 'Configuration' }).hasAttribute('disabled')).toBe(true);
       expect(screen.getByTestId('location').textContent).toBe(`/projects/${project.id}`);
       await act(async () => { release(); });
-      await waitFor(() => expect(screen.queryByText('Mémoire en cours')).toBeNull());
+      await waitFor(() => expect(screen.queryByText(/^Mémoire ·/)).toBeNull());
       if (outcome !== 'success') {
         await screen.findByText(outcome === 'failed' ? 'Encore vide.' : 'Mémoire modifiée ailleurs.');
         expect(screen.getByRole('button', { name: 'Relancer le Gardien' }).hasAttribute('disabled')).toBe(false);
@@ -978,10 +988,9 @@ describe('projects and chat screens', () => {
       emit({ type: 'chat.message.delta', delta: 'Bonjour' });
     });
     await screen.findByText('Bonjour');
-    await screen.findByText('Analyse en cours');
-    expect(screen.getByText(/0\/2 agents/)).toBeTruthy();
-    expect(screen.getByLabelText('Agent Chaos en cours')).toBeTruthy();
-    expect(screen.getByLabelText('Agent Cohérence en cours')).toBeTruthy();
+    await screen.findByText(/^Analyse · 0\/2 agents · \d/);
+    // A single line during the turn: no detail per agent.
+    expect(screen.queryByText('Chaos')).toBeNull();
     expect(screen.getByLabelText('Votre message').hasAttribute('disabled')).toBe(true);
     expect(screen.getByRole('tab', { name: 'Configuration' }).hasAttribute('disabled')).toBe(true);
 
@@ -993,7 +1002,7 @@ describe('projects and chat screens', () => {
       emit({ type: 'chat.pipeline.stage', turnId, stage: 'analysis', status: 'completed', elapsedMs: 1250 });
       emit({ type: 'chat.pipeline.stage', turnId, stage: 'narrator', status: 'started' });
     });
-    await screen.findByText('Narrateur en cours');
+    await screen.findByText(/^Narrateur · \d/);
     await act(async () => {
       savedHistory = {
         branch: { ...branch, headTurnId: turnId },
@@ -1010,7 +1019,7 @@ describe('projects and chat screens', () => {
     });
     await waitFor(() => expect(screen.getByLabelText('Votre message').hasAttribute('disabled')).toBe(false));
     expect(screen.getByRole('tab', { name: 'Configuration' }).hasAttribute('disabled')).toBe(false);
-    expect(screen.queryByText('Narrateur en cours')).toBeNull();
+    expect(screen.queryByText(/^Narrateur · \d/)).toBeNull();
     expect(screen.getAllByText('Bonjour Mara.')).toHaveLength(1);
     view.unmount();
     renderApp(`/projects/${project.id}`);
@@ -1019,7 +1028,7 @@ describe('projects and chat screens', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('opens turn traces from chat, reconstructs the whiteboard and loads call details on demand', async () => {
+  it('opens the turn drawer from the line under an answer, on a summary that leads to each detail tab', async () => {
     const fixture = existingChat();
     const turnId = fixture.original.turns[0]!.id;
     const analysisCallId = '019ad30c-19b0-7000-8000-000000000301';
@@ -1061,6 +1070,11 @@ describe('projects and chat screens', () => {
           costMicroUsd: 195, costBasis: 'priced',
         },
       ],
+      timeline: [
+        { stage: 'analysis', durationMs: 800, agentCount: 1 },
+        { stage: 'narrator', durationMs: 1500, agentCount: 1 },
+      ],
+      durationMs: 2300,
       cost: { microUsd: 405, complete: true },
       configuration: {
         systemPrompt: 'Prompt figé du tour.',
@@ -1107,19 +1121,36 @@ describe('projects and chat screens', () => {
 
     renderApp(`/projects/${project.id}`);
     await screen.findByText('Réponse originale.');
-    fireEvent.click(screen.getAllByRole('button', { name: 'Inspecter les traces de ce tour' })[0]!);
-    await screen.findByRole('heading', { name: 'Traces du tour' });
-    await screen.findByText('Direction · Directeur');
-    screen.getByText('0.3 s · 2 appel(s) · 0.0001 $');
-    screen.getByText('Direction indisponible : le Narrateur a reçu le whiteboard complet.');
-    fireEvent.click(screen.getByRole('tab', { name: 'Whiteboard' }));
-    await screen.findByText('Chercher la clé.');
-    fireEvent.click(screen.getByRole('tab', { name: 'Configuration du tour' }));
-    await screen.findByText('Prompt figé du tour.');
-    expect(screen.getByText('Enveloppe whiteboard · Toute la mémoire')).toBeTruthy();
-    fireEvent.click(screen.getByRole('tab', { name: 'Appels (2)' }));
-    fireEvent.click(screen.getByRole('button', { name: /Chaos · Analyse/ }));
-    await screen.findByRole('heading', { name: 'Détail de l’appel' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Tour 1 : 2,3 s · 0,0041 $' }));
+    const drawer = within(await screen.findByRole('dialog'));
+    await drawer.findByRole('heading', { name: 'Tour 1 / 1' });
+    expect(drawer.getByRole('button', { name: 'Tour précédent' }).hasAttribute('disabled')).toBe(true);
+    expect(drawer.getByRole('button', { name: 'Tour suivant' }).hasAttribute('disabled')).toBe(true);
+    expect(drawer.getByRole('tab', { name: 'Synthèse' }).getAttribute('aria-selected')).toBe('true');
+    expect(drawer.queryByRole('tab', { name: 'Analyse' })).toBeNull();
+    expect(await drawer.findByRole('button', { name: /^Coût : 0,0004 \$/ })).toBeTruthy();
+    expect(drawer.getByRole('button', { name: /^Durée : 2,3 s, Narrateur : 1,5 s/ })).toBeTruthy();
+    expect(drawer.getByRole('button', { name: /^Entrée du Narrateur : 900 tokens, premier tour/ })).toBeTruthy();
+    expect(drawer.getByText('Rien à signaler pour ce tour.')).toBeTruthy();
+    const direction = within(drawer.getByRole('region', { name: 'Direction · Directeur' }));
+    expect(direction.getByText('Direction indisponible : le Narrateur a reçu le whiteboard complet.')).toBeTruthy();
+
+    fireEvent.click(drawer.getByRole('button', { name: 'Coût et durée par appel →' }));
+    expect(drawer.getByRole('tab', { name: 'Coût et durée' }).getAttribute('aria-selected')).toBe('true');
+    expect(drawer.getByRole('cell', { name: 'Chaos' })).toBeTruthy();
+    expect(drawer.getByText('Analyse 0,0002 $')).toBeTruthy();
+
+    fireEvent.click(drawer.getByRole('tab', { name: 'Configuration' }));
+    await drawer.findByText('Prompt figé du tour.');
+    expect(drawer.getByText('Premier tour du récit : rien à comparer.')).toBeTruthy();
+    expect(drawer.getByText('Enveloppe whiteboard · Toute la mémoire')).toBeTruthy();
+
+    fireEvent.click(drawer.getByRole('tab', { name: 'Récit' }));
+    expect(drawer.getByText('Récit · 1 tour(s)')).toBeTruthy();
+
+    fireEvent.click(drawer.getByRole('tab', { name: 'Appels bruts' }));
+    fireEvent.click(await drawer.findByRole('button', { name: /Chaos · Analyse/ }));
+    await drawer.findByRole('button', { name: 'Retour aux appels' });
     await screen.findByText('Une clé manque.');
     fireEvent.click(screen.getByText('Mémoire reçue · 1 entrée(s)'));
     expect(screen.getAllByText('Endroits reçus', { exact: false }).length).toBeGreaterThan(0);
@@ -1318,7 +1349,8 @@ describe('projects and chat screens', () => {
       output: 'direction', versions: [{ ...guardian.versions[0]!, id: '019ad30c-19b0-7000-8000-000000000509', name: 'Directeur' }] };
     const recorded = [assignmentOf(narrative, narrative.versions[1]!.id), assignmentOf(guardian), assignmentOf(director)];
     const summary: TurnTraceSummary = {
-      turnId: head.id, analysis: [], direction: null, narrator: null, calls: [], cost: { microUsd: 0, complete: true },
+      turnId: head.id, analysis: [], direction: null, narrator: null, calls: [], timeline: [], durationMs: 0,
+      cost: { microUsd: 0, complete: true },
       configuration: {
         systemPrompt: 'Prompt enregistré.',
         agents: recorded.map(({ instructions: _instructions, ...agent }) => ({ ...agent, memoryRead: null })),
