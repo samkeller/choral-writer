@@ -4,7 +4,7 @@ import type { messageDtoSchema, messageSchema } from './schemas/message.js';
 import type { chatBranchDtoSchema, chatBranchSchema } from './schemas/branch.js';
 import type { chatTurnDtoSchema, chatTurnSchema } from './schemas/turn.js';
 import type { chatHistoryDtoSchema, chatHistorySchema } from './schemas/history.js';
-import type { chatCommandSchema, chatOperationSchema } from './schemas/command.js';
+import type { chatCommandSchema, chatOperationSchema, replayConfigurationSchema } from './schemas/command.js';
 import type { chatEventDtoSchema, chatEventSchema } from './schemas/event.js';
 import type {
   analysisTraceSchema, narratorTraceSchema, traceCallDetailSchema,
@@ -28,4 +28,5 @@ export type ChatTurn = z.infer<typeof chatTurnSchema>;
 export type ChatHistory = z.infer<typeof chatHistorySchema>;
 export type ChatOperation = z.infer<typeof chatOperationSchema>;
 export type ChatCommand = z.infer<typeof chatCommandSchema>;
+export type ReplayConfiguration = z.infer<typeof replayConfigurationSchema>;
 export type ChatEvent = z.infer<typeof chatEventSchema>;

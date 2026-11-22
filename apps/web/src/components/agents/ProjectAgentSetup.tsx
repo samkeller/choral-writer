@@ -11,7 +11,7 @@ import {
   ConfigurationSection,
   ConfigurationSplitView,
 } from '../configuration/ConfigurationLayout';
-import { selectVersion, useProjectSetup } from '../../hooks/useProjectSetup';
+import { selectVersion, toggleAnalysisAgent, useProjectSetup } from '../../hooks/useProjectSetup';
 import type { useMemories } from '../../hooks/useMemories';
 import { PromptDisplay } from '../llm/PromptDisplay';
 import { AgentMemoryEditor } from '../memories/MemoryEditors';
@@ -88,10 +88,7 @@ export function ProjectAgentSetup({ projectId, suggestedVersion, onSaved, memory
                     label={`Activer ${displayedVersion.name}`}
                     checked={Boolean(version)}
                     disabled={setup.pending}
-                    onChange={(event) => setup.change(event.currentTarget.checked
-                      ? [...setup.versionIds, displayedVersion.id]
-                      : setup.versionIds.filter((id) => !agent.versions.some((item) => item.id === id)))
-                    }
+                    onChange={(event) => setup.change(toggleAnalysisAgent(setup.versionIds, agent, event.currentTarget.checked))}
                   />
                   <Select 
                   label={`Version de ${displayedVersion.name}`} value={displayedVersion.id} allowDeselect={false}

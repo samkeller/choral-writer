@@ -631,6 +631,78 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
     expect(await agents.listForProject(project.id)).toEqual(team);
   });
 
+  it('retries a failed variant and repairs its memory with the configuration recorded on the turn', async () => {
+    const project = await createProject('Relance variante', 'Prompt du projet.');
+    await memoryChange(project.id, project.defaultBranchId!, { op: 'saveTag',
+      tag: { name: 'Faits', description: 'Faits établis' } });
+    await memoryChange(project.id, project.defaultBranchId!, { op: 'settings', enabled: true });
+    const original = events((await send(project.id, 'Même saisie.')).body).at(-1);
+    if (original?.type !== 'chat.turn.completed') throw new Error('Missing source turn.');
+    const variantNarrator = agentSchema.parse((await app.inject({
+      method: 'POST', url: '/api/agents', headers: { cookie },
+      payload: { name: 'Narrateur relance', phase: 'restitution', output: 'narrative', instructions: 'Ton relance.' },
+    })).json());
+    const configuration = {
+      systemPrompt: 'Prompt variante.',
+      agents: (await agents.listForProject(project.id)).map((agent) => agent.output === 'narrative'
+        ? { agentId: variantNarrator.id, versionId: variantNarrator.versions[0]!.id }
+        : { agentId: agent.agentId, versionId: agent.versionId }),
+    };
+    const normal = generate;
+    generate = async function* () { throw new Error('simulated failure'); };
+    let failed;
+    try {
+      failed = events((await repeat(project.id, original.branchId, original.turnId, 'regenerate', { configuration })).body).at(-1);
+    } finally { generate = normal; }
+    if (failed?.type !== 'chat.turn.failed' || !failed.turnId || !failed.branchId) throw new Error('Missing failed variant.');
+
+    try {
+      guardianOutput = ' \n '.repeat(100);
+      const callsBeforeRetry = create.mock.calls.length;
+      const retried = events((await repeat(project.id, failed.branchId, failed.turnId, 'retry')).body).at(-1);
+      if (retried?.type !== 'chat.turn.completed') throw new Error('Missing retried variant.');
+      const narration = create.mock.calls.slice(callsBeforeRetry).find(([params]) => params.stream);
+      expect(narration?.[0].messages[0]?.content).toContain('Prompt variante.\n\nTon relance.');
+      const turn = (await history(project.id, failed.branchId)).turns.at(-1)!;
+      expect(turn.memory?.status).toBe('failed');
+
+      const view = await memoryView(project.id, failed.branchId);
+      propose([]);
+      const repair = await app.inject({ method: 'POST', headers: { cookie },
+        url: `/api/projects/${project.id}/branches/${failed.branchId}/turns/${turn.id}/memory/retry`,
+        payload: { expectedHeadTurnId: turn.id, expectedRevisionId: view.revisionId,
+          expectedCatalogRevisionId: view.catalogRevisionId } });
+      expect(repair.statusCode, repair.body).toBe(200);
+      const guardianRequest = JSON.stringify(create.mock.calls.at(-1)![0].messages);
+      expect(guardianRequest).toContain('Maintain memory from established narrative events');
+      expect(guardianRequest).toContain('Prompt variante.');
+      expect(guardianRequest).not.toContain('Prompt du projet.');
+    } finally { guardianOutput = null; }
+    expect((await projects.get(project.id)).systemPrompt).toBe('Prompt du projet.');
+  });
+
+  it('retries a turn recorded without configuration with the project configuration', async () => {
+    const project = await createProject('Relance ancienne', 'Prompt du projet.');
+    const normal = generate;
+    generate = async function* () { throw new Error('simulated failure'); };
+    let failed;
+    try {
+      failed = events((await send(project.id, 'Même saisie.')).body).at(-1);
+    } finally { generate = normal; }
+    if (failed?.type !== 'chat.turn.failed' || !failed.turnId || !failed.branchId) throw new Error('Missing failed turn.');
+    await database.update(schema.chatTurns).set({ configuration: null }).where(eq(schema.chatTurns.id, failed.turnId));
+    expect((await app.inject({
+      method: 'PUT', url: `/api/projects/${project.id}`, headers: { cookie },
+      payload: { name: 'Relance ancienne', systemPrompt: 'Prompt modifié.' },
+    })).statusCode).toBe(200);
+
+    const retried = events((await repeat(project.id, failed.branchId, failed.turnId, 'retry')).body).at(-1);
+    expect(retried?.type).toBe('chat.turn.completed');
+    expect(create).toHaveBeenLastCalledWith(expect.objectContaining({
+      messages: expect.arrayContaining([{ role: 'system', content: await narratorPrompt(project.id) }]),
+    }), expect.anything());
+  });
+
   it('preserves a failed alternative and retries it without overwriting or repeating the user input', async () => {
     const project = await createProject('Retry');
     const original = events((await send(project.id, 'Même saisie.')).body).at(-1);

@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
 import { Alert, Box, Button, Center, Group, Loader, Modal, Stack, Tabs, Text } from '@mantine/core';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { IconArrowLeft, IconRefresh } from '@tabler/icons-react';
+import { IconAdjustmentsHorizontal, IconArrowLeft, IconRefresh } from '@tabler/icons-react';
 import { projectParamsSchema } from '@choral-writer/shared';
 
 import { PageHeader } from '../components/PageHeader';
 import { BranchSwitcher } from '../components/chat/BranchSwitcher';
 import { MessageComposer } from '../components/chat/MessageComposer';
 import { MessageList } from '../components/chat/MessageList';
+import { ReplayDialog } from '../components/chat/ReplayDialog';
 import { TraceDrawer } from '../components/chat/TraceDrawer';
 import { ProjectConfiguration } from './ProjectConfiguration';
 import { useChat } from '../hooks/useChat';
@@ -27,6 +28,7 @@ function ProjectChat({ projectId }: { projectId: string }) {
   const setupOpen = !chat.pending && (search.get('tab') === 'config' || search.get('setup') === 'agents');
   const head = chat.history?.turns.at(-1);
   const [traceTurnId, setTraceTurnId] = useState<string | null>(null);
+  const [replayOpen, setReplayOpen] = useState(false);
 
   useEffect(() => setTraceTurnId(null), [chat.history?.branch.id]);
 
@@ -106,9 +108,14 @@ function ProjectChat({ projectId }: { projectId: string }) {
           <MessageComposer pending={chat.pending} onSend={chat.send} actions={head && (
             <Group justify="flex-end" gap={4} wrap="nowrap">
               {head.status === 'completed' && (
-                <IconAction label="Régénérer la réponse" disabled={chat.pending} onClick={() => void chat.regenerate()}>
-                  <IconRefresh size={18} aria-hidden="true" />
-                </IconAction>
+                <>
+                  <IconAction label="Rejouer le dernier tour avec…" disabled={chat.pending} onClick={() => setReplayOpen(true)}>
+                    <IconAdjustmentsHorizontal size={18} aria-hidden="true" />
+                  </IconAction>
+                  <IconAction label="Régénérer la réponse" disabled={chat.pending} onClick={() => void chat.regenerate()}>
+                    <IconRefresh size={18} aria-hidden="true" />
+                  </IconAction>
+                </>
               )}
 
               {head.status === 'failed' && (
@@ -127,6 +134,12 @@ function ProjectChat({ projectId }: { projectId: string }) {
               turnId={traceTurnId}
               onClose={() => setTraceTurnId(null)}
             />
+          )}
+          {replayOpen && (
+            <ReplayDialog project={chat.project} onClose={() => setReplayOpen(false)} onReplay={(configuration) => {
+              setReplayOpen(false);
+              void chat.regenerate(configuration);
+            }} />
           )}
           <Modal opened={chat.legacyMemoryConfirmation} onClose={chat.cancelLegacyMemoryReset} title="Ancien tour sans état mémoire">
             <Text mb="md">Ce tour précède M6. Cette alternative repartira sans les entrées ajoutées depuis.

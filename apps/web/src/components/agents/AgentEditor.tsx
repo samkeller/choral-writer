@@ -1,7 +1,7 @@
 import { Modal } from '@mantine/core';
 import type { Agent, AgentInput, AgentVersionInput } from '@choral-writer/shared';
 
-import { createAgent, publishAgentVersion } from '../../api/agents/agentsApi';
+import { createAgent, publishNextVersion } from '../../api/agents/agentsApi';
 import { AgentForm } from './AgentForm';
 
 export function AgentEditor({ agent, onClose, onSaved }: {
@@ -15,9 +15,7 @@ export function AgentEditor({ agent, onClose, onSaved }: {
 
   async function publish(input: AgentVersionInput) {
     if (!agent) throw new Error('Aucun agent sélectionné.');
-    const latest = agent.versions[0];
-    if (!latest) throw new Error('Cet agent n’a aucune version.');
-    onSaved(await publishAgentVersion(agent.id, { ...input, expectedVersion: latest.version }));
+    onSaved(await publishNextVersion(agent, input));
   }
 
   return (

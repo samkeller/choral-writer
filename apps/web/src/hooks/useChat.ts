@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import type { ChatBranch, ChatCommand, ChatHistory, Message, Project } from '@choral-writer/shared';
+import type { ChatBranch, ChatCommand, ChatHistory, Message, Project, ReplayConfiguration } from '@choral-writer/shared';
 
 import { ClientApiError, getErrorMessage } from '../api/client';
 import { getProject } from '../api/projects/projectsApi';
@@ -13,7 +13,8 @@ export type { ChatPipelineProgress } from './chatPipelineProgress';
 
 type ChatAction =
   | { operation: 'send'; content: string }
-  | { operation: 'regenerate' | 'retry' };
+  | { operation: 'regenerate'; configuration?: ReplayConfiguration }
+  | { operation: 'retry' };
 
 /**
  * Owns branch selection, provisional streaming and reconciliation with committed
@@ -240,7 +241,9 @@ export function useChat(projectId: string) {
     project, branches, history, messages, loading, error, pending, partial, pipelineProgress, failedBranchId,
     selectBranch,
     send: (content: string) => execute({ operation: 'send', content }),
-    regenerate: () => execute({ operation: 'regenerate' }),
+    /** Without a configuration, the turn is replayed with the project's. */
+    regenerate: (configuration?: ReplayConfiguration) =>
+      execute(configuration ? { operation: 'regenerate', configuration } : { operation: 'regenerate' }),
     retry: () => execute({ operation: 'retry' }),
     retryMemory: retryHeadMemory,
     legacyMemoryConfirmation: legacyAction !== null,
