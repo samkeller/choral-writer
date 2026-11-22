@@ -148,6 +148,8 @@ describe('PipelineProgress', () => {
     );
 
     expect(screen.getByRole('status').textContent).toBe('Analyse · 1/2 agents · 3,2 s');
+    // Without a Director, the direction segment never shows.
+    expect(screen.getByRole('status').querySelectorAll('[aria-hidden="true"] > div')).toHaveLength(4);
     expect(screen.queryByText('Agent A')).toBeNull();
   });
 

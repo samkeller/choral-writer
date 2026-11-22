@@ -10,6 +10,7 @@ type TraceStage = (typeof traceStageSchema.options)[number];
  */
 export const stagePresentation = {
   analysis: { label: 'Analyse', color: `${phasePresentation.analysis.color}.7` },
+  direction: { label: 'Direction', color: `${phasePresentation.direction.color}.7` },
   narrator: { label: 'Narrateur', color: `${phasePresentation.restitution.color}.7` },
   guardian: { label: 'Gardien', color: 'teal.7' },
   reducer: { label: 'Mémoire', color: 'teal.9' },

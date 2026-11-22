@@ -3,7 +3,7 @@ import { Anchor, Box, Group, Paper, SimpleGrid, Stack, Text, UnstyledButton } fr
 import {
   IconAdjustments, IconAlertTriangle, IconArrowRight, IconCoin, IconStack2,
 } from '@tabler/icons-react';
-import type { TurnMetrics, TurnTraceSummary } from '@choral-writer/shared';
+import type { TurnDirection, TurnMetrics, TurnTraceSummary } from '@choral-writer/shared';
 
 import { formatCost, formatDelta, formatSeconds, formatTokens, formatUsd } from '../turnFormat';
 import { DrawerBlock } from './DrawerBlock';
@@ -42,6 +42,12 @@ export function TurnOverview({ summary, metrics, index, onOpenTab, onOpenCall }:
               : 'pas de tour précédent comparable'} />
       </SimpleGrid>
 
+      {summary.direction && (
+        <DrawerBlock title={`Direction · ${summary.direction.name}`}>
+          <DirectionSummary direction={summary.direction.direction} />
+        </DrawerBlock>
+      )}
+
       <DrawerBlock title="Points d’attention">
         {points.length === 0
           ? <Text size="sm" c="dimmed">Rien à signaler pour ce tour.</Text>
@@ -59,6 +65,17 @@ export function TurnOverview({ summary, metrics, index, onOpenTab, onOpenCall }:
         <TurnTimeline timeline={summary.timeline} />
       </DrawerBlock>
     </Stack>
+  );
+}
+
+/** Compact until the Direction tab (#20) details it. */
+function DirectionSummary({ direction }: { direction: TurnDirection | null }) {
+  if (!direction) return <Text size="sm" c="dimmed">Direction indisponible : le Narrateur a reçu le whiteboard complet.</Text>;
+  return (
+    <Text size="sm">
+      Tension : {direction.tension} · {direction.nudges.length} nudge(s) · {direction.retained.length} retenu(s),{' '}
+      {direction.dismissed.length} écarté(s)
+    </Text>
   );
 }
 

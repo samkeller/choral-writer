@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
-import type { TurnConfiguration } from '@choral-writer/shared';
+import type { TurnConfiguration, TurnDirection } from '@choral-writer/shared';
 
 import type { Database } from '../../../db/client.js';
 import { agentVersions } from '../../../db/entities/agents/agent.js';
@@ -52,8 +52,8 @@ export class TraceRepository {
   }
 
   /** Null when the turn does not belong to the project. */
-  async findTurn(projectId: string, turnId: string): Promise<TracedTurnRecord | null> {
-    const [turn] = await this.database.select(turnColumns()).from(chatTurns)
+  async findTurn(projectId: string, turnId: string): Promise<DirectedTurnRecord | null> {
+    const [turn] = await this.database.select({ ...turnColumns(), direction: chatTurns.direction }).from(chatTurns)
       .where(and(eq(chatTurns.projectId, projectId), eq(chatTurns.id, turnId)));
     return turn ?? null;
   }
@@ -125,6 +125,8 @@ export type TracedTurnRecord = {
   configuration: TurnConfiguration | null;
   completedAt: Date | null;
 };
+/** A turn with what the Director decided; null when it ran without direction. */
+export type DirectedTurnRecord = TracedTurnRecord & { direction: TurnDirection | null };
 export type MetricCallRecord = Awaited<ReturnType<TraceRepository['listMetricCalls']>>[number];
 export type TraceSummaryRecord = Awaited<ReturnType<TraceRepository['listByTurn']>>[number];
 export type TraceDetailRecord = TraceSummaryRecord & {

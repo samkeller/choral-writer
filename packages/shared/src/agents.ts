@@ -2,10 +2,11 @@ import { z } from 'zod';
 import { dateFromJsonSchema } from './dates.js';
 import { memoryReadSchema } from './memories.js';
 
-export const agentPhaseSchema = z.enum(['analysis', 'restitution']);
-export const agentOutputSchema = z.enum(['envelope', 'narrative', 'memory_proposals']);
+export const agentPhaseSchema = z.enum(['analysis', 'direction', 'restitution']);
+export const agentOutputSchema = z.enum(['envelope', 'narrative', 'memory_proposals', 'direction']);
 export const agentDefinitionSchema = z.discriminatedUnion('phase', [
   z.object({ phase: z.literal('analysis'), output: z.literal('envelope') }),
+  z.object({ phase: z.literal('direction'), output: z.literal('direction') }),
   z.object({ phase: z.literal('restitution'), output: z.enum(['narrative', 'memory_proposals']) }),
 ]);
 export const agentVersionInputSchema = z.object({

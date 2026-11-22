@@ -9,7 +9,7 @@ const analysisVersionId = '019ad30c-19b0-7000-8000-000000000103';
 const analysisCallId = '019ad30c-19b0-7000-8000-000000000104';
 const narratorCallId = '019ad30c-19b0-7000-8000-000000000105';
 
-const runningTurn = { id: turnId, configuration: null, completedAt: null };
+const runningTurn = { id: turnId, configuration: null, direction: null, completedAt: null };
 
 function trace(overrides: Partial<TraceDetailRecord> = {}): TraceDetailRecord {
   return {
@@ -64,7 +64,7 @@ describe('trace DTO mapping', () => {
       id: '019ad30c-19b0-7000-8000-000000000112', stage: 'guardian', durationMs: 60_000, costMicroUsd: 20,
       createdAt: new Date('2025-01-01T01:00:00.000Z'),
     });
-    const finished = { id: turnId, configuration: null, completedAt };
+    const finished = { id: turnId, configuration: null, direction: null, completedAt };
 
     const summary = toTurnTraceSummaryDto(finished, [narrator, guardian, retry]);
     expect(summary.timeline).toEqual([
@@ -184,5 +184,27 @@ describe('trace DTO mapping', () => {
     expect(summary.analysis[0]).toMatchObject({
       status: 'success', attempts: 2, durationMs: 70, envelope: { summary: 'Validated.' },
     });
+  });
+
+  it('summarizes the direction phase with its recorded direction, cost and attempts', () => {
+    const direction = { tension: 'tenir' as const, nudges: [], retained: [], dismissed: [] };
+    const invalid = trace({
+      id: analysisCallId, stage: 'direction', agentName: 'Director', durationMs: 30, costMicroUsd: 100, costBasis: 'priced',
+    });
+    const valid = trace({
+      id: '019ad30c-19b0-7000-8000-000000000107', stage: 'direction', agentName: 'Director',
+      status: 'success', durationMs: 40, costMicroUsd: 200, costBasis: 'priced',
+    });
+
+    expect(toTurnTraceSummaryDto({ ...runningTurn, direction }, [invalid, valid])).toMatchObject({
+      direction: {
+        name: 'Director', status: 'success', attempts: 2, durationMs: 70, direction,
+        cost: { microUsd: 300, complete: true },
+      },
+      cost: { microUsd: 300, complete: true },
+    });
+    expect(toTurnTraceSummaryDto(runningTurn, [invalid, trace({ costBasis: 'unpriced' })]).direction)
+      .toMatchObject({ status: 'error', direction: null, attempts: 1, cost: { microUsd: 100, complete: true } });
+    expect(toTurnTraceSummaryDto(runningTurn, []).direction).toBeNull();
   });
 });

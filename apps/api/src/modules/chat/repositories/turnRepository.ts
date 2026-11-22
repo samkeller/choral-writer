@@ -1,7 +1,7 @@
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { v7 as uuidv7 } from 'uuid';
-import type { ChatTurn, MemoryResult, TurnConfiguration } from '@choral-writer/shared';
+import type { ChatTurn, MemoryResult, TurnDirection } from '@choral-writer/shared';
 
 import type { Database, Transaction } from '../../../db/client.js';
 import { chatMessages } from '../../../db/entities/chat/message.js';
@@ -107,11 +107,20 @@ export class ChatTurnRepository {
     return id;
   }
 
-  /** Undefined when the turn does not exist in this project; null when it predates recorded configurations. */
-  async configuration(id: string): Promise<TurnConfiguration | null | undefined> {
-    const [row] = await this.database.select({ configuration: chatTurns.configuration }).from(chatTurns)
-      .where(and(eq(chatTurns.projectId, this.projectId), eq(chatTurns.id, id)));
-    return row ? row.configuration : undefined;
+  /** Only a running execution records its direction. */
+  async recordDirection(id: string, direction: TurnDirection): Promise<boolean> {
+    const [row] = await this.database.update(chatTurns).set({ direction }).where(and(
+      eq(chatTurns.projectId, this.projectId), eq(chatTurns.id, id), eq(chatTurns.status, 'running'),
+    )).returning({ id: chatTurns.id });
+    return row !== undefined;
+  }
+
+  /** Recorded directions by turn; turns of other projects and turns without one are absent. */
+  async directions(ids: readonly string[]): Promise<Map<string, TurnDirection>> {
+    if (ids.length === 0) return new Map();
+    const rows = await this.database.select({ id: chatTurns.id, direction: chatTurns.direction }).from(chatTurns)
+      .where(and(eq(chatTurns.projectId, this.projectId), inArray(chatTurns.id, [...ids])));
+    return new Map(rows.flatMap((row) => row.direction ? [[row.id, row.direction] as const] : []));
   }
 
   async finish(id: string, branchId: string, completion: TurnCompletion): Promise<boolean> {

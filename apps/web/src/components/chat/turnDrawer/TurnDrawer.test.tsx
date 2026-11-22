@@ -18,7 +18,7 @@ const originalAdapter = api.defaults.adapter;
 
 function summary(turnId: string, microUsd: number, narratorMs: number): TurnTraceSummary {
   return {
-    turnId, analysis: [], narrator: null, calls: [],
+    turnId, analysis: [], direction: null, narrator: null, calls: [],
     timeline: [{ stage: 'narrator', durationMs: narratorMs, agentCount: 1 }], durationMs: narratorMs,
     cost: { microUsd, complete: true }, configuration: null,
   };
@@ -40,6 +40,16 @@ const summaries = new Map([
   [secondTurnId, {
     ...summary(secondTurnId, 3000, 4000),
     analysis: [{ ...silentAgent, name: 'Rythme', status: 'error' as const, durationMs: 300, attempts: 1, envelope: null }],
+    direction: {
+      agentId: null, agentVersionId: null, name: 'Directeur', status: 'success' as const, durationMs: 200, attempts: 1,
+      cost: { microUsd: 50, complete: true },
+      direction: {
+        tension: 'monter' as const,
+        nudges: [{ type: 'complication' as const, target: 'Personnage A', basis: null }],
+        retained: [{ agent: 'Monde', item: { kind: 'development', text: 'Un fait générique.', importance: 'NORMAL' as const }, why: 'utile' }],
+        dismissed: [],
+      },
+    },
     calls: [{
       id: silentAgentCallId, turnId: secondTurnId, stage: 'analysis', ...silentAgent, agentName: 'Rythme', agentVersion: 2,
       model: 'test-model', status: 'success' as const, inputTokens: 500, outputTokens: 20, durationMs: 300,
@@ -108,6 +118,8 @@ describe('TurnDrawer', () => {
     await drawer.findByText(/Tour plus cher que la moyenne du récit/);
     expect(drawer.getByText(/L’entrée du Narrateur grossit : 2,0 k tokens contre 800/)).toBeTruthy();
     expect(drawer.getByText('Configuration modifiée depuis le tour précédent : Rythme v1 → v2.')).toBeTruthy();
+    expect(within(drawer.getByRole('region', { name: 'Direction · Directeur' }))
+      .getByText('Tension : monter · 1 nudge(s) · 1 retenu(s), 0 écarté(s)')).toBeTruthy();
     expect(drawer.getByRole('button', { name: /^Entrée du Narrateur : 2,0 k tokens, \+150 % vs tour précédent/ })).toBeTruthy();
 
     const configurationPoint = drawer.getByText(/Configuration modifiée/).parentElement!;

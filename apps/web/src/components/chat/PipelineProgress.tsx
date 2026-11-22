@@ -13,7 +13,8 @@ export function PipelineProgress({ progress }: { progress: ChatPipelineProgress 
   const agentDetail = stage === 'analysis' && agentCount > 0 ? ` · ${finishedAgents}/${agentCount} agents` : '';
   const stages = progress.memoryOnly
     ? pipelineStages.filter((item) => item === 'guardian' || item === 'reducer')
-    : pipelineStages;
+    // Direction only runs for projects with a Director; it appears once it starts.
+    : pipelineStages.filter((item) => item !== 'direction' || progress.direction.status !== 'pending');
 
   return (
     <Group gap="xs" wrap="nowrap" py={4} role="status" aria-live="off">

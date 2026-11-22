@@ -1047,6 +1047,11 @@ describe('projects and chat screens', () => {
           items: [{ kind: 'recommendation', text: 'Chercher la clé.', importance: 'HIGH' }],
         },
       }],
+      direction: {
+        agentId: '019ad30c-19b0-7000-8000-000000000305', agentVersionId: '019ad30c-19b0-7000-8000-000000000306',
+        name: 'Directeur', status: 'error', durationMs: 300, attempts: 2, direction: null,
+        cost: { microUsd: 120, complete: true },
+      },
       narrator: { status: 'success', durationMs: 1500, prose: 'La porte résiste.' },
       calls: [
         {
@@ -1127,6 +1132,8 @@ describe('projects and chat screens', () => {
     expect(drawer.getByRole('button', { name: /^Durée : 2,3 s, Narrateur : 1,5 s/ })).toBeTruthy();
     expect(drawer.getByRole('button', { name: /^Entrée du Narrateur : 900 tokens, premier tour/ })).toBeTruthy();
     expect(drawer.getByText('Rien à signaler pour ce tour.')).toBeTruthy();
+    const direction = within(drawer.getByRole('region', { name: 'Direction · Directeur' }));
+    expect(direction.getByText('Direction indisponible : le Narrateur a reçu le whiteboard complet.')).toBeTruthy();
 
     fireEvent.click(drawer.getByRole('button', { name: 'Coût et durée par appel →' }));
     expect(drawer.getByRole('tab', { name: 'Coût et durée' }).getAttribute('aria-selected')).toBe('true');

@@ -1,6 +1,6 @@
 import type {
-  AnalysisTrace, NarratorTrace, StageDuration, TraceCallDetail, TraceCallSummary, TurnConfiguration,
-  TurnConfigurationChange, TurnMetrics, TurnTraceSummary,
+  AnalysisTrace, DirectionTrace, NarratorTrace, StageDuration, TraceCallDetail, TraceCallSummary, TurnConfiguration,
+  TurnConfigurationChange, TurnDirection, TurnMetrics, TurnTraceSummary,
 } from '@choral-writer/shared';
 import { analysisEnvelopeSchema, traceCallDetailSchema } from '@choral-writer/shared';
 
@@ -44,7 +44,7 @@ export function toTraceCallDetailDto(trace: TraceDetailRecord, turnId: string): 
 }
 
 export function toTurnTraceSummaryDto(
-  turn: { id: string; configuration: TurnConfiguration | null; completedAt: Date | null },
+  turn: { id: string; configuration: TurnConfiguration | null; direction: TurnDirection | null; completedAt: Date | null },
   traces: readonly TraceSummaryRecord[],
 ): TurnTraceSummary {
   const turnId = turn.id;
@@ -72,6 +72,20 @@ export function toTurnTraceSummaryDto(
     });
   }
 
+  const directionCalls = traces.filter((trace) => trace.stage === 'direction');
+  const directionCall = directionCalls.at(-1);
+  const directionTrace: DirectionTrace | null = directionCall ? {
+    agentId: directionCall.agentId,
+    agentVersionId: directionCall.agentVersionId,
+    name: directionCall.agentName ?? 'Directeur',
+    // A direction is recorded only after a validated call; without one, the narrator fell back.
+    status: turn.direction ? 'success' : 'error',
+    durationMs: directionCalls.reduce((total, call) => total + call.durationMs, 0),
+    attempts: directionCalls.length,
+    cost: toTurnCost(directionCalls),
+    direction: turn.direction,
+  } : null;
+
   const narratorCalls = traces.filter((trace) => trace.stage === 'narrator');
   const narratorCall = narratorCalls.at(-1);
   let narrator: NarratorTrace | null = null;
@@ -88,6 +102,7 @@ export function toTurnTraceSummaryDto(
   return {
     turnId,
     analysis,
+    direction: directionTrace,
     narrator,
     calls: traces.map((trace) => toTraceCallSummaryDto(trace, turnId)),
     timeline,

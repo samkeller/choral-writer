@@ -4,9 +4,9 @@ import { configureProjectAgents, listAgents, listProjectAgents } from '../api/ag
 import { getErrorMessage } from '../api/client';
 
 /**
- * Un projet a exactement un narrateur et un gardien : choisir une version pour
- * ces contrats remplace celle de l'agent précédent, alors que les agents
- * d'analyse s'ajoutent à la sélection.
+ * Un projet a exactement un narrateur et un gardien, et au plus un Directeur :
+ * choisir une version pour ces contrats remplace celle de l'agent précédent,
+ * alors que les agents d'analyse s'ajoutent à la sélection.
  */
 export function selectVersion(
   ids: string[], agents: Agent[], output: Agent['output'], versionId: string,

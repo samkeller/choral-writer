@@ -1,11 +1,11 @@
 import { z } from 'zod';
 
-import { analysisEnvelopeSchema } from '../../pipeline.js';
+import { analysisEnvelopeSchema, turnDirectionSchema } from '../../pipeline.js';
 import { chatExecutionParamsSchema, turnConfigurationSchema } from './turn.js';
 import { memoryContextSchema } from '../../memories.js';
 import { costBasisSchema } from '../../usage/index.js';
 
-export const traceStageSchema = z.enum(['analysis', 'narrator', 'guardian', 'reducer']);
+export const traceStageSchema = z.enum(['analysis', 'direction', 'narrator', 'guardian', 'reducer']);
 export const traceStatusSchema = z.enum(['success', 'error']);
 export const traceCallParamsSchema = chatExecutionParamsSchema.extend({ callId: z.string().uuid() });
 
@@ -57,6 +57,19 @@ export const analysisTraceSchema = z.object({
   envelope: analysisEnvelopeSchema.nullable(),
 });
 
+/** A failed direction means the narrator fell back to the whole whiteboard. */
+export const directionTraceSchema = z.object({
+  agentId: z.string().uuid().nullable(),
+  agentVersionId: z.string().uuid().nullable(),
+  name: z.string(),
+  status: traceStatusSchema,
+  durationMs: z.number().int().nonnegative(),
+  attempts: z.number().int().positive(),
+  /** Cost of every Director call of the turn, retries included. */
+  cost: turnCostSchema,
+  direction: turnDirectionSchema.nullable(),
+});
+
 export const narratorTraceSchema = z.object({
   status: traceStatusSchema,
   durationMs: z.number().int().nonnegative(),
@@ -76,6 +89,8 @@ export const stageDurationSchema = z.object({
 export const turnTraceSummarySchema = z.object({
   turnId: z.string().uuid(),
   analysis: z.array(analysisTraceSchema),
+  /** Null when the turn ran without a Director. */
+  direction: directionTraceSchema.nullable(),
   narrator: narratorTraceSchema.nullable(),
   calls: z.array(traceCallSummarySchema),
   /** Étapes dans l'ordre d'exécution, sans les relances ultérieures de la mémoire. */
