@@ -1,4 +1,6 @@
-import type { AnalysisEnvelope, ChatEvent, Message, Project, ProjectAgent, MemoryResult } from '@choral-writer/shared';
+import type {
+  AnalysisEnvelope, ChatEvent, Message, Project, ProjectAgent, ProjectAgentsInput, MemoryResult,
+} from '@choral-writer/shared';
 import type { MemorySession } from '../../memories/services/memoriesService.js';
 
 import type { ProjectsService } from '../../projects/services/projectServices.js';
@@ -32,6 +34,8 @@ export type ChatEntityServices = {
 export type ChatTransactionContext = ChatEntityServices & {
   project: Pick<Project, 'id' | 'systemPrompt'>;
   projectAgents: ProjectAgent[];
+  /** Validates a selection and resolves it as the pipeline would run it, without touching the project. */
+  resolveAgents(selections: ProjectAgentsInput['agents']): Promise<ProjectAgent[]>;
   memory: Pick<MemorySession, 'prepare' | 'process' | 'failed' | 'source'>;
   recordActivity(at: Date): Promise<void>;
 };

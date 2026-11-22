@@ -81,6 +81,20 @@ export class AgentRepository {
       .for('key share');
   }
 
+  /** Resolves versions as a pipeline would run them, without assigning them to the project. */
+  async resolveProjectAgents(projectId: string, selections: ProjectAgentsInput['agents']): Promise<ProjectAgent[]> {
+    if (selections.length === 0) return [];
+    const versions = await this.database.select({
+      agentId: agents.id, versionId: agentVersions.id, phase: agents.phase, output: agents.output,
+      version: agentVersions.version, name: agentVersions.name, instructions: agentVersions.instructions,
+    }).from(agents).innerJoin(agentVersions, eq(agentVersions.agentId, agents.id))
+      .where(inArray(agentVersions.id, selections.map((selection) => selection.versionId)))
+      .orderBy(asc(agents.phase), asc(agentVersions.name), asc(agents.id))
+      .for('key share');
+    const current = await this.listForProject(projectId);
+    return versions.map((version) => ({ ...version, memoryRead: memoryReadFor(current, version) }));
+  }
+
   async replace(projectId: string, selections: {
     agentId: string; versionId: string; phase: Agent['phase']; output: Agent['output'];
   }[]): Promise<void> {
@@ -89,8 +103,7 @@ export class AgentRepository {
     if (selections.length > 0) {
       await this.database.insert(projectAgents).values(selections.map((selection) => ({
         projectId, ...selection,
-        memoryRead: previous.find((item) => item.agentId === selection.agentId)?.memoryRead
-          ?? defaultMemoryRead(selection.output),
+        memoryRead: memoryReadFor(previous, selection),
       })));
     }
   }
@@ -112,4 +125,11 @@ export class AgentRepository {
     await this.replace(projectId, versions);
   }
 
+}
+
+/** An agent keeps the memory access it has in the project; a newcomer gets its output's default. */
+function memoryReadFor(
+  current: readonly ProjectAgent[], agent: { agentId: string; output: Agent['output'] },
+): MemoryRead {
+  return current.find((item) => item.agentId === agent.agentId)?.memoryRead ?? defaultMemoryRead(agent.output);
 }

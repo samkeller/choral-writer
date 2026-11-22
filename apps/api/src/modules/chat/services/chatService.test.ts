@@ -25,6 +25,7 @@ function setup() {
   const context = {
     project: { id: projectId, systemPrompt: 'Current prompt.' },
     projectAgents: [narrator],
+    resolveAgents: vi.fn<ChatTransactionContext['resolveAgents']>(),
     memory: {
       prepare: vi.fn<ChatTransactionContext['memory']['prepare']>().mockResolvedValue({
         projectId, branchId: branch.id, headTurnId: null, revisionId: null, catalogRevisionId: null,

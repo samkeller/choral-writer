@@ -4,6 +4,7 @@ import { ApiError, notfoundError } from '../../../errors/errors.js';
 import type { Database } from '../../../db/client.js';
 import type { ProjectsService } from '../../projects/services/projectServices.js';
 import { AgentRepository } from '../repository/agentsRepository.js';
+import { assertValidAgentSelection } from './agentSelection.js';
 import { DEFAULT_GUARDIAN_ID, DEFAULT_NARRATOR_ID } from '../repository/defaultNarrators.js';
 
 export class AgentsService {
@@ -60,16 +61,7 @@ export class AgentsService {
     return this.projects.withLockedProject(projectId, async (_project, tx) => {
       const repository = new AgentRepository(tx);
       const resolved = await repository.resolveSelections(input.agents);
-      const uniqueIds = new Set(input.agents.map((selection) => selection.agentId));
-      if (uniqueIds.size !== input.agents.length || resolved.length !== input.agents.length
-        || input.agents.some((selection) => !resolved.some((version) =>
-          version.agentId === selection.agentId && version.versionId === selection.versionId))) {
-        throw new ApiError(400, 'INVALID_AGENT_SELECTION', 'Chaque agent doit référencer une de ses versions existantes, sans doublon.');
-      }
-      if (resolved.filter((agent) => agent.output === 'narrative').length !== 1
-        || resolved.filter((agent) => agent.output === 'memory_proposals').length !== 1) {
-        throw new ApiError(400, 'REQUIRED_AGENT_OUTPUTS', 'Le projet doit avoir exactement un agent de réponse et un Gardien mémoire, en restitution.');
-      }
+      assertValidAgentSelection(input.agents, resolved);
       await repository.replace(projectId, resolved);
       return repository.listForProject(projectId);
     });
