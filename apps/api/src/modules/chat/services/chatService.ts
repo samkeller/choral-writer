@@ -1,9 +1,9 @@
 import type {
-  AnalysisEnvelope, ChatBranch, ChatCommand, ChatHistory, ChatTurn, MemoryResult, ProjectAgent,
-  TurnDirection,
+  AnalysisEnvelope, ChatBranch, ChatCommand, ChatHistory, ChatTurn, MemoryResult, TurnDirection,
 } from '@choral-writer/shared';
 
 import { prepareTurn } from './prepareTurn.js';
+import { pipelineConfiguration, recordedConfiguration } from './pipelineConfiguration.js';
 import { turnConfiguration } from './turnConfiguration.js';
 import type {
   ChatProgressEvent, ChatRunResult, ChatServiceDependencies, ChatTransactionContext, GenerationOutcome,
@@ -45,8 +45,8 @@ export class ChatService {
     signal: AbortSignal,
   ): Promise<ChatRunResult> {
     return this.dependencies.withProjectTransaction(command.projectId, async (context) => {
-      const pipeline = await pipelineConfiguration(context, command);
       const input = await prepareTurn(context, command);
+      const pipeline = await pipelineConfiguration(context, command);
       const memory = await context.memory.prepare(input.branchId, input.regeneratedFromTurnId, command.allowLegacyMemoryReset);
       const history = await context.turns.path(input.parentTurnId, NARRATOR_CONTEXT_TURN_LIMIT);
       const narrator = pipeline.agents.find((agent) => agent.output === 'narrative');
@@ -178,8 +178,9 @@ export class ChatService {
         throw new ApiError(409, 'MEMORY_CHANGED', 'La mémoire a changé. Rechargez avant de relancer.');
       }
       const source = await context.memory.source(turnId);
+      const configuration = await recordedConfiguration(context, turnId);
       const result = await context.memory.process(projectId, branchId, view, {
-        turnId, systemPrompt: context.project.systemPrompt, agents: context.projectAgents,
+        turnId, systemPrompt: configuration.systemPrompt, agents: configuration.agents,
         prose: source.narrator, signal,
       }, async () => {});
       await context.recordActivity(new Date());
@@ -226,19 +227,4 @@ export class ChatService {
     await context.recordActivity(at);
     return result;
   }
-}
-
-type PipelineConfiguration = { systemPrompt: string; agents: ProjectAgent[] };
-
-/** A regeneration may run with a replacement configuration; every other run uses the project's. */
-async function pipelineConfiguration(
-  context: ChatTransactionContext, command: ChatCommand,
-): Promise<PipelineConfiguration> {
-  if (command.operation === 'regenerate' && command.configuration) {
-    return {
-      systemPrompt: command.configuration.systemPrompt,
-      agents: await context.resolveAgents(command.configuration.agents),
-    };
-  }
-  return { systemPrompt: context.project.systemPrompt, agents: context.projectAgents };
 }

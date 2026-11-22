@@ -13,16 +13,17 @@ export const headInputSchema = z.object({
 
 export const sendMessageSchema = headInputSchema.merge(messageInputSchema);
 
-/** Replaces the project's configuration for one regeneration only; the project itself is unchanged. */
+/** Replaces the project's configuration for one regeneration or retry only; the project itself is unchanged. */
 export const replayConfigurationSchema = projectAgentsInputSchema.extend({
   systemPrompt: projectInputSchema.shape.systemPrompt,
 }).strict();
-export const regenerateInputSchema = headInputSchema.extend({
+/** Regenerating or retrying the last turn may run with a replacement configuration. */
+export const replayInputSchema = headInputSchema.extend({
   configuration: replayConfigurationSchema.optional(),
 }).strict();
 export const chatOperationSchema = z.enum(['send', 'regenerate', 'retry']);
 export const chatCommandSchema = z.discriminatedUnion('operation', [
   chatBranchParamsSchema.merge(sendMessageSchema).extend({ operation: z.literal('send') }).strict(),
-  chatTurnParamsSchema.merge(regenerateInputSchema).extend({ operation: z.literal('regenerate') }).strict(),
-  chatTurnParamsSchema.merge(headInputSchema).extend({ operation: z.literal('retry') }).strict(),
+  chatTurnParamsSchema.merge(replayInputSchema).extend({ operation: z.literal('regenerate') }).strict(),
+  chatTurnParamsSchema.merge(replayInputSchema).extend({ operation: z.literal('retry') }).strict(),
 ]);

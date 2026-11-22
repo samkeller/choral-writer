@@ -11,7 +11,10 @@ import {
   ConfigurationSection,
   ConfigurationSplitView,
 } from '../configuration/ConfigurationLayout';
-import { selectVersion, useProjectSetup } from '../../hooks/useProjectSetup';
+import { useProjectSetup } from '../../hooks/useProjectSetup';
+import {
+  replaceVersion, requiredVersionOptions, selectVersion, selectedVersion, toggleOptionalAgent,
+} from '../../hooks/useAgentTeam';
 import type { useMemories } from '../../hooks/useMemories';
 import { PromptDisplay } from '../llm/PromptDisplay';
 import { AgentMemoryEditor } from '../memories/MemoryEditors';
@@ -35,12 +38,12 @@ export function ProjectAgentSetup({ projectId, suggestedVersion, onSaved, memory
   useEffect(() => {
     if (!selectedId && setup.agents.length) {
       const preferred = setup.agents.find((agent) => agent.versions.some((version) => version.id === suggestedVersion))
-        ?? setup.agents.find((agent) => agent.versions.some((version) => setup.versionIds.includes(version.id))) ?? setup.agents[0];
+        ?? setup.agents.find((agent) => selectedVersion(agent, setup.versionIds)) ?? setup.agents[0];
       setSelectedId(preferred?.id ?? null);
     }
   }, [selectedId, setup.agents, setup.versionIds, suggestedVersion]);
   const agent = setup.agents.find((item) => item.id === selectedId);
-  const version = agent?.versions.find((item) => setup.versionIds.includes(item.id));
+  const version = agent && selectedVersion(agent, setup.versionIds);
   const displayedVersion = version ?? agent?.versions[0];
   const persisted = memory.agents.find((item) => item.agentId === agent?.id);
   function selectRequired(output: Agent['output'], versionId: string) {
@@ -70,7 +73,7 @@ export function ProjectAgentSetup({ projectId, suggestedVersion, onSaved, memory
       <ConfigurationSplitView>
         <ConfigurationListPane title="Bibliothèque du projet" count={setup.agents.length}>
           {setup.agents.map((item) => {
-            const selected = item.versions.find((v) => setup.versionIds.includes(v.id));
+            const selected = selectedVersion(item, setup.versionIds);
             const latest = item.versions[0];
             if (!latest) return null;
             return <ConfigurationListItem key={item.id} selected={selectedId === item.id}
@@ -90,20 +93,16 @@ export function ProjectAgentSetup({ projectId, suggestedVersion, onSaved, memory
                     description={agent.output === 'direction' ? 'Facultatif ; un seul Directeur par projet.' : undefined}
                     checked={Boolean(version)}
                     disabled={setup.pending}
-                    onChange={(event) => setup.change(event.currentTarget.checked
-                      ? selectVersion(setup.versionIds, setup.agents, agent.output, displayedVersion.id)
-                      : setup.versionIds.filter((id) => !agent.versions.some((item) => item.id === id)))
-                    }
+                    onChange={(event) => setup.change(toggleOptionalAgent(setup.versionIds, setup.agents, agent, event.currentTarget.checked))}
                   />
                   <Select 
                   label={`Version de ${displayedVersion.name}`} value={displayedVersion.id} allowDeselect={false}
                     disabled={setup.pending || !version} data={agent.versions.map((item) => ({ value: item.id, label: `v${item.version} · ${item.name}` }))}
-                    onChange={(value) => { if (value && version) setup.change(setup.versionIds.map((id) => id === version.id ? value : id)); }} />
+                    onChange={(value) => { if (value && version) setup.change(replaceVersion(setup.versionIds, agent, value)); }} />
                 </> : <Select label={agent.output === 'narrative' ? 'Réponse utilisateur · Narrateur' : 'Mémoire · Gardien'}
                   value={version?.id ?? null} searchable allowDeselect={false} disabled={setup.pending}
-                  placeholder="Choisir cet agent et sa version" data={setup.agents.filter((item) => item.output === agent.output).map((item) => ({
-                    group: item.versions[0]?.name ?? item.id, items: item.versions.map((v) => ({ value: v.id, label: `${v.name} · v${v.version}` })),
-                  }))} onChange={(value) => { if (value) selectRequired(agent.output, value); }} />}
+                  placeholder="Choisir cet agent et sa version" data={requiredVersionOptions(setup.agents, agent.output)}
+                  onChange={(value) => { if (value) selectRequired(agent.output, value); }} />}
               {!readsMemory(agent.output) && <Text size="sm" c="dimmed">Le Directeur ne reçoit aucune mémoire.</Text>}
               {readsMemory(agent.output) && persisted && memory.view && <><Text fw={600}>Accès mémoire</Text>
                 <AgentMemoryEditor key={`${persisted.agentId}:${JSON.stringify(persisted.memoryRead)}`} agent={persisted} tags={memory.view.state.tags}

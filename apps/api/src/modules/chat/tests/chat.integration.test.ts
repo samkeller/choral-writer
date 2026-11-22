@@ -718,6 +718,132 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
     expect(await agents.listForProject(project.id)).toEqual(team);
   });
 
+  it('retries a failed variant and repairs its memory with the configuration recorded on the turn', async () => {
+    const project = await createProject('Relance variante', 'Prompt du projet.');
+    await memoryChange(project.id, project.defaultBranchId!, { op: 'saveTag',
+      tag: { name: 'Faits', description: 'Faits établis' } });
+    await memoryChange(project.id, project.defaultBranchId!, { op: 'settings', enabled: true });
+    const original = events((await send(project.id, 'Même saisie.')).body).at(-1);
+    if (original?.type !== 'chat.turn.completed') throw new Error('Missing source turn.');
+    const variantNarrator = agentSchema.parse((await app.inject({
+      method: 'POST', url: '/api/agents', headers: { cookie },
+      payload: { name: 'Narrateur relance', phase: 'restitution', output: 'narrative', instructions: 'Ton relance.' },
+    })).json());
+    const director = agentSchema.parse((await app.inject({
+      method: 'POST', url: '/api/agents', headers: { cookie },
+      payload: { name: 'Directeur relance', phase: 'direction', output: 'direction', instructions: 'Oriente.' },
+    })).json());
+    const configuration = {
+      systemPrompt: 'Prompt variante.',
+      agents: [...(await agents.listForProject(project.id)).map((agent) => agent.output === 'narrative'
+        ? { agentId: variantNarrator.id, versionId: variantNarrator.versions[0]!.id }
+        : { agentId: agent.agentId, versionId: agent.versionId }),
+      { agentId: director.id, versionId: director.versions[0]!.id }],
+    };
+    const normal = generate;
+    generate = async function* () { throw new Error('simulated failure'); };
+    let failed;
+    try {
+      failed = events((await repeat(project.id, original.branchId, original.turnId, 'regenerate', { configuration })).body).at(-1);
+    } finally { generate = normal; }
+    if (failed?.type !== 'chat.turn.failed' || !failed.turnId || !failed.branchId) throw new Error('Missing failed variant.');
+
+    try {
+      guardianOutput = ' \n '.repeat(100);
+      const callsBeforeRetry = create.mock.calls.length;
+      const retried = events((await repeat(project.id, failed.branchId, failed.turnId, 'retry')).body).at(-1);
+      if (retried?.type !== 'chat.turn.completed') throw new Error('Missing retried variant.');
+      const narration = create.mock.calls.slice(callsBeforeRetry).find(([params]) => params.stream);
+      expect(narration?.[0].messages[0]?.content).toContain('Prompt variante.\n\nTon relance.');
+      const { configuration: recorded } = turnTraceSummarySchema.parse((await app.inject({
+        method: 'GET', url: `/api/projects/${project.id}/turns/${retried.turnId}/traces`, headers: { cookie },
+      })).json());
+      expect(recorded?.agents).toContainEqual(expect.objectContaining({
+        agentId: director.id, versionId: director.versions[0]!.id, output: 'direction',
+      }));
+      const turn = (await history(project.id, failed.branchId)).turns.at(-1)!;
+      expect(turn.memory?.status).toBe('failed');
+
+      const view = await memoryView(project.id, failed.branchId);
+      propose([]);
+      const repair = await app.inject({ method: 'POST', headers: { cookie },
+        url: `/api/projects/${project.id}/branches/${failed.branchId}/turns/${turn.id}/memory/retry`,
+        payload: { expectedHeadTurnId: turn.id, expectedRevisionId: view.revisionId,
+          expectedCatalogRevisionId: view.catalogRevisionId } });
+      expect(repair.statusCode, repair.body).toBe(200);
+      const guardianRequest = JSON.stringify(create.mock.calls.at(-1)![0].messages);
+      expect(guardianRequest).toContain('Maintain memory from established narrative events');
+      expect(guardianRequest).toContain('Prompt variante.');
+      expect(guardianRequest).not.toContain('Prompt du projet.');
+    } finally { guardianOutput = null; }
+    expect((await projects.get(project.id)).systemPrompt).toBe('Prompt du projet.');
+  });
+
+  it('retries a failed turn with a corrected configuration on the same branch, checking the turn first', async () => {
+    const project = await createProject('Relance corrigée', 'Prompt du projet.');
+    const normal = generate;
+    generate = async function* () { throw new Error('simulated failure'); };
+    let failed;
+    try {
+      failed = events((await send(project.id, 'Même saisie.')).body).at(-1);
+    } finally { generate = normal; }
+    if (failed?.type !== 'chat.turn.failed' || !failed.turnId || !failed.branchId) throw new Error('Missing failed turn.');
+    const team = await agents.listForProject(project.id);
+    const correctedNarrator = agentSchema.parse((await app.inject({
+      method: 'POST', url: '/api/agents', headers: { cookie },
+      payload: { name: 'Narrateur corrigé', phase: 'restitution', output: 'narrative', instructions: 'Ton corrigé.' },
+    })).json());
+    const configuration = {
+      systemPrompt: 'Prompt corrigé.',
+      agents: team.map((agent) => agent.output === 'narrative'
+        ? { agentId: correctedNarrator.id, versionId: correctedNarrator.versions[0]!.id }
+        : { agentId: agent.agentId, versionId: agent.versionId }),
+    };
+
+    const stale = await app.inject({
+      method: 'POST', url: `/api/projects/${project.id}/branches/${failed.branchId}/turns/${failed.turnId}/retry`,
+      headers: { cookie }, payload: { expectedHeadTurnId: null, configuration: { ...configuration, agents: [] } },
+    });
+    expect(stale.statusCode).toBe(409);
+    expect(stale.json()).toMatchObject({ error: { code: 'CHAT_HEAD_CHANGED' } });
+
+    const retried = events((await repeat(project.id, failed.branchId, failed.turnId, 'retry', { configuration })).body).at(-1);
+    if (retried?.type !== 'chat.turn.completed') throw new Error('Missing retried turn.');
+    expect(retried.branchId).toBe(failed.branchId);
+    expect(create).toHaveBeenLastCalledWith(expect.objectContaining({
+      messages: expect.arrayContaining([{
+        role: 'system', content: expect.stringContaining('Prompt corrigé.\n\nTon corrigé.'),
+      }]),
+    }), expect.anything());
+    expect((await history(project.id, failed.branchId)).turns).toMatchObject([{ retryOfTurnId: failed.turnId }]);
+    expect(await database.select().from(schema.chatBranches).where(eq(schema.chatBranches.projectId, project.id)))
+      .toHaveLength(1);
+    expect((await projects.get(project.id)).systemPrompt).toBe('Prompt du projet.');
+    expect(await agents.listForProject(project.id)).toEqual(team);
+  });
+
+  it('retries a turn recorded without configuration with the project configuration', async () => {
+    const project = await createProject('Relance ancienne', 'Prompt du projet.');
+    const normal = generate;
+    generate = async function* () { throw new Error('simulated failure'); };
+    let failed;
+    try {
+      failed = events((await send(project.id, 'Même saisie.')).body).at(-1);
+    } finally { generate = normal; }
+    if (failed?.type !== 'chat.turn.failed' || !failed.turnId || !failed.branchId) throw new Error('Missing failed turn.');
+    await database.update(schema.chatTurns).set({ configuration: null }).where(eq(schema.chatTurns.id, failed.turnId));
+    expect((await app.inject({
+      method: 'PUT', url: `/api/projects/${project.id}`, headers: { cookie },
+      payload: { name: 'Relance ancienne', systemPrompt: 'Prompt modifié.' },
+    })).statusCode).toBe(200);
+
+    const retried = events((await repeat(project.id, failed.branchId, failed.turnId, 'retry')).body).at(-1);
+    expect(retried?.type).toBe('chat.turn.completed');
+    expect(create).toHaveBeenLastCalledWith(expect.objectContaining({
+      messages: expect.arrayContaining([{ role: 'system', content: await narratorPrompt(project.id) }]),
+    }), expect.anything());
+  });
+
   it('preserves a failed alternative and retries it without overwriting or repeating the user input', async () => {
     const project = await createProject('Retry');
     const original = events((await send(project.id, 'Même saisie.')).body).at(-1);
