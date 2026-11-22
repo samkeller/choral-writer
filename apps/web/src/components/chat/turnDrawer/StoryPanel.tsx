@@ -1,9 +1,11 @@
 import { SimpleGrid, Stack, Text } from '@mantine/core';
 import type { TurnMetrics } from '@choral-writer/shared';
 
+import { phasePresentation } from '../../phases/phasePresentation';
 import { formatCost, formatSeconds, formatUsd } from '../turnFormat';
 import { DrawerBlock } from './DrawerBlock';
 import { EvolutionBars } from './EvolutionBars';
+import { type StoryDirectionRates, estimateTensionLevels, storyDirectionRates, tensionScale } from './directionInsights';
 import { averageCompleteCost } from './turnInsights';
 
 /** « Récit » : the whole branch at a glance, to place the current turn in it. */
@@ -18,6 +20,7 @@ export function StoryPanel({ metrics, index, onSelectTurn }: {
   };
   const averageCost = averageCompleteCost(metrics);
   const averageDuration = metrics.reduce((sum, turn) => sum + turn.durationMs, 0) / Math.max(1, metrics.length);
+  const directionRates = storyDirectionRates(metrics);
 
   return (
     <Stack gap="sm">
@@ -28,6 +31,7 @@ export function StoryPanel({ metrics, index, onSelectTurn }: {
           <Figure label="durée moyenne d’un tour" value={formatSeconds(averageDuration)} />
         </SimpleGrid>
       </DrawerBlock>
+      {directionRates && <StoryDirection metrics={metrics} rates={directionRates} index={index} onSelectTurn={onSelectTurn} />}
       <DrawerBlock title="Coût au fil des tours">
         <EvolutionBars values={metrics.map((turn) => turn.cost.microUsd)} current={index} color="yellow.7"
           onSelect={onSelectTurn}
@@ -40,6 +44,37 @@ export function StoryPanel({ metrics, index, onSelectTurn }: {
       </DrawerBlock>
     </Stack>
   );
+}
+
+function StoryDirection({ metrics, rates, index, onSelectTurn }: {
+  metrics: TurnMetrics[];
+  rates: StoryDirectionRates;
+  index: number;
+  onSelectTurn: (index: number) => void;
+}) {
+  const levels = estimateTensionLevels(metrics);
+  // A bar per directed turn only: the estimated level of an undirected turn is a carry-over, not a decision.
+  const values = metrics.map((turn, position) => (turn.direction?.status === 'success' ? levels[position]!.current + 1 : null));
+  return (
+    <DrawerBlock title={`Direction · ${rates.directedTurns} tour(s) dirigé(s)`}>
+      <Stack gap="sm">
+        <SimpleGrid cols={{ base: 1, xs: 2 }} spacing="xs">
+          <Figure label="des tours dirigés avec au moins une intervention" value={formatShare(rates.nudgeShare)} />
+          <Figure label="des tours dirigés où une tentative du protagoniste est contrariée" value={formatShare(rates.thwartedShare)} />
+        </SimpleGrid>
+        <Stack gap={4}>
+          <Text size="xs" c="dimmed">Tension estimée au fil des tours</Text>
+          <EvolutionBars values={values} current={index} color={`${phasePresentation.direction.color}.7`} height={56}
+            onSelect={onSelectTurn}
+            describe={(value, turnNumber) => `Tour ${turnNumber} : ${value === null ? 'sans direction' : tensionScale[value - 1]}`} />
+        </Stack>
+      </Stack>
+    </DrawerBlock>
+  );
+}
+
+function formatShare(share: number): string {
+  return `${Math.round(share * 100)} %`;
 }
 
 function Figure({ label, value }: { label: string; value: string }) {

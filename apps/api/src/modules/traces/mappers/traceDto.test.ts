@@ -207,4 +207,19 @@ describe('trace DTO mapping', () => {
       .toMatchObject({ status: 'error', direction: null, attempts: 1, cost: { microUsd: 100, complete: true } });
     expect(toTurnTraceSummaryDto(runningTurn, []).direction).toBeNull();
   });
+
+  it('reduces the direction of a turn to its tension and nudge types, telling a failed direction from none', () => {
+    const direction = {
+      tension: 'monter' as const,
+      nudges: [{ type: 'complication' as const, target: 'Personnage A', basis: null }],
+      retained: [],
+      dismissed: [],
+    };
+    const directorCall = trace({ stage: 'direction' });
+
+    expect(toTurnMetricsDto({ ...runningTurn, direction }, [directorCall], null).direction)
+      .toEqual({ status: 'success', tension: 'monter', nudges: ['complication'] });
+    expect(toTurnMetricsDto(runningTurn, [directorCall], null).direction).toEqual({ status: 'error' });
+    expect(toTurnMetricsDto(runningTurn, [trace()], null).direction).toBeNull();
+  });
 });

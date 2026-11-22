@@ -1,6 +1,6 @@
 import type {
   AnalysisTrace, DirectionTrace, NarratorTrace, StageDuration, TraceCallDetail, TraceCallSummary, TurnConfiguration,
-  TurnConfigurationChange, TurnDirection, TurnMetrics, TurnTraceSummary,
+  TurnConfigurationChange, TurnDirection, TurnDirectionMetrics, TurnMetrics, TurnTraceSummary,
 } from '@choral-writer/shared';
 import { analysisEnvelopeSchema, traceCallDetailSchema } from '@choral-writer/shared';
 
@@ -113,7 +113,7 @@ export function toTurnTraceSummaryDto(
 }
 
 export function toTurnMetricsDto(
-  turn: { id: string; completedAt: Date | null },
+  turn: { id: string; direction: TurnDirection | null; completedAt: Date | null },
   calls: readonly MetricCallRecord[],
   configurationChanges: TurnConfigurationChange[] | null,
 ): TurnMetrics {
@@ -124,7 +124,18 @@ export function toTurnMetricsDto(
     cost: toTurnCost(calls),
     narratorInputTokens: narratorCall?.inputTokens ?? null,
     configurationChanges,
+    direction: toDirectionMetrics(turn.direction, calls),
   };
+}
+
+/** Like the trace summary, a Director call without a recorded direction means the direction failed. */
+function toDirectionMetrics(
+  direction: TurnDirection | null, calls: readonly Pick<MeasuredCall, 'stage'>[],
+): TurnDirectionMetrics | null {
+  if (direction) {
+    return { status: 'success', tension: direction.tension, nudges: direction.nudges.map((nudge) => nudge.type) };
+  }
+  return calls.some((call) => call.stage === 'direction') ? { status: 'error' } : null;
 }
 
 /**

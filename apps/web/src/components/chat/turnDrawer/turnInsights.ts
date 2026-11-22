@@ -1,4 +1,4 @@
-import type { TurnConfigurationChange, TurnMetrics, TurnTraceSummary } from '@choral-writer/shared';
+import type { NudgeType, TurnConfigurationChange, TurnMetrics, TurnTraceSummary } from '@choral-writer/shared';
 
 /** A turn costs notably more than usual beyond this ratio to the story average. */
 export const COST_ABOVE_AVERAGE_RATIO = 1.2;
@@ -11,6 +11,9 @@ export type AttentionPoint =
   | { kind: 'narratorInputGrowth'; tokens: number; previousTokens: number }
   | { kind: 'analysisAgentWithoutEnvelope'; agentName: string; callId: string | null }
   | { kind: 'failedCalls'; count: number }
+  | { kind: 'directorNudge'; type: NudgeType; target: string }
+  | { kind: 'directionFailed'; attempts: number }
+  | { kind: 'directorDisabled' }
   | { kind: 'configurationChanged'; changes: TurnConfigurationChange[] };
 
 /** Average cost of the turns whose every call has a known price; null without such turns. */
@@ -52,8 +55,18 @@ export function attentionPoints(
   const failedCalls = summary.calls.filter((call) => call.status === 'error').length;
   if (failedCalls > 0) points.push({ kind: 'failedCalls', count: failedCalls });
 
+  points.push(...directionPoints(summary, previous));
+
   if (turn?.configurationChanges?.length) {
     points.push({ kind: 'configurationChanged', changes: turn.configurationChanges });
   }
   return points;
+}
+
+/** Each intervention of the Director, a direction the Narrator went without, or a Director gone since the previous turn. */
+function directionPoints(summary: TurnTraceSummary, previous: TurnMetrics | undefined): AttentionPoint[] {
+  const trace = summary.direction;
+  if (!trace) return previous?.direction ? [{ kind: 'directorDisabled' }] : [];
+  if (!trace.direction) return [{ kind: 'directionFailed', attempts: trace.attempts }];
+  return trace.direction.nudges.map(({ type, target }) => ({ kind: 'directorNudge', type, target }));
 }

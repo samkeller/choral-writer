@@ -25,15 +25,21 @@ function summary(turnId: string, microUsd: number, narratorMs: number): TurnTrac
 }
 
 const metrics: TurnMetrics[] = [
-  { turnId: firstTurnId, durationMs: 1000, cost: { microUsd: 1000, complete: true }, narratorInputTokens: 800, configurationChanges: null },
+  {
+    turnId: firstTurnId, durationMs: 1000, cost: { microUsd: 1000, complete: true }, narratorInputTokens: 800, configurationChanges: null,
+    direction: { status: 'success', tension: 'monter', nudges: ['saillance'] },
+  },
   {
     turnId: secondTurnId, durationMs: 4000, cost: { microUsd: 3000, complete: true }, narratorInputTokens: 2000,
     configurationChanges: [{ kind: 'agentChanged', name: 'Rythme', fromVersion: 1, toVersion: 2 }],
+    direction: { status: 'success', tension: 'monter', nudges: ['complication'] },
   },
 ];
 
 const silentAgentCallId = '019ad30c-19b0-7000-8000-000000000604';
 const silentAgent = { agentId: '019ad30c-19b0-7000-8000-000000000605', agentVersionId: '019ad30c-19b0-7000-8000-000000000606' };
+
+const worldItem = { agent: 'Monde', item: { kind: 'development', text: 'Un fait générique.', importance: 'NORMAL' as const } };
 
 const summaries = new Map([
   [firstTurnId, summary(firstTurnId, 1000, 1000)],
@@ -45,9 +51,9 @@ const summaries = new Map([
       cost: { microUsd: 50, complete: true },
       direction: {
         tension: 'monter' as const,
-        nudges: [{ type: 'complication' as const, target: 'Personnage A', basis: null }],
-        retained: [{ agent: 'Monde', item: { kind: 'development', text: 'Un fait générique.', importance: 'NORMAL' as const }, why: 'utile' }],
-        dismissed: [],
+        nudges: [{ type: 'complication' as const, target: 'Personnage A', basis: worldItem }],
+        retained: [{ ...worldItem, why: 'Utile à la scène.' }],
+        dismissed: [{ agent: 'Rythme', item: { kind: 'suggestion', text: 'Une idée générique.', importance: 'LOW' as const }, why: 'Hors sujet.' }],
       },
     },
     calls: [{
@@ -118,14 +124,47 @@ describe('TurnDrawer', () => {
     await drawer.findByText(/Tour plus cher que la moyenne du récit/);
     expect(drawer.getByText(/L’entrée du Narrateur grossit : 2,0 k tokens contre 800/)).toBeTruthy();
     expect(drawer.getByText('Configuration modifiée depuis le tour précédent : Rythme v1 → v2.')).toBeTruthy();
-    expect(within(drawer.getByRole('region', { name: 'Direction · Directeur' }))
-      .getByText('Tension : monter · 1 nudge(s) · 1 retenu(s), 0 écarté(s)')).toBeTruthy();
+    expect(drawer.getByRole('button', { name: 'Tension visée : montée, le Directeur fait monter la tension' })).toBeTruthy();
+    expect(drawer.getByText('Tentative contrariée : le Directeur pousse vers complication (Personnage A).')).toBeTruthy();
     expect(drawer.getByRole('button', { name: /^Entrée du Narrateur : 2,0 k tokens, \+150 % vs tour précédent/ })).toBeTruthy();
 
     const configurationPoint = drawer.getByText(/Configuration modifiée/).parentElement!;
     fireEvent.click(within(configurationPoint).getByRole('button', { name: /Voir/ }));
     expect(drawer.getByRole('tab', { name: 'Configuration' }).getAttribute('aria-selected')).toBe('true');
     expect(drawer.getByText('Rythme v1 → v2')).toBeTruthy();
+  });
+
+  it('tells the direction of a turn in words, from the Synthèse to its own tab', async () => {
+    render(<Harness initialTurnId={secondTurnId} />);
+    const drawer = within(await screen.findByRole('dialog'));
+
+    fireEvent.click(await drawer.findByRole('button', { name: /^Tension visée/ }));
+
+    expect(drawer.getByRole('tab', { name: 'Direction' }).getAttribute('aria-selected')).toBe('true');
+    const scale = within(await drawer.findByRole('list', { name: 'Échelle de tension' }));
+    expect(scale.getByRole('listitem', { name: 'frémissement (tour précédent)' })).toBeTruthy();
+    expect(scale.getByRole('listitem', { name: 'montée (visée)' })).toBeTruthy();
+    expect(drawer.getByText('Le Directeur fait monter la tension d’un cran : de frémissement à montée.')).toBeTruthy();
+    expect(drawer.getByText(/Pousse vers/).textContent)
+      .toBe('Pousse vers complication (contrarier l’issue d’une tentative du protagoniste) : Personnage A');
+    expect(drawer.getByText('En appui sur la contribution de Monde : « Un fait générique. »')).toBeTruthy();
+
+    const retained = within(drawer.getByRole('region', { name: 'Contributions retenues · 1' }));
+    expect(retained.getByText('Monde')).toBeTruthy();
+    expect(retained.getByText('Raison : Utile à la scène.')).toBeTruthy();
+    const dismissed = within(drawer.getByRole('region', { name: 'Contributions écartées · 1' }));
+    expect(dismissed.getByText('Rythme')).toBeTruthy();
+    expect(dismissed.getByText('Une idée générique.')).toBeTruthy();
+    expect(dismissed.getByText('Raison : Hors sujet.')).toBeTruthy();
+  });
+
+  it('says so on the Direction tab when the turn ran without a Director', async () => {
+    render(<Harness initialTurnId={firstTurnId} />);
+    const drawer = within(await screen.findByRole('dialog'));
+
+    fireEvent.click(drawer.getByRole('tab', { name: 'Direction' }));
+
+    expect(await drawer.findByText(/Aucun Directeur pour ce tour/)).toBeTruthy();
   });
 
   it('browses from turn to turn while keeping the open tab', async () => {
@@ -150,6 +189,11 @@ describe('TurnDrawer', () => {
 
     fireEvent.click(drawer.getByRole('tab', { name: 'Récit' }));
     expect(drawer.getByText('Récit · 2 tour(s)')).toBeTruthy();
+    const direction = within(drawer.getByRole('region', { name: 'Direction · 2 tour(s) dirigé(s)' }));
+    expect(direction.getByText('100 %').nextSibling?.textContent).toBe('des tours dirigés avec au moins une intervention');
+    expect(direction.getByText('50 %').nextSibling?.textContent)
+      .toBe('des tours dirigés où une tentative du protagoniste est contrariée');
+    expect(direction.getByRole('button', { name: 'Tour 2 : montée' })).toBeTruthy();
     fireEvent.click(drawer.getByRole('button', { name: 'Tour 1 : 0,0010 $' }));
 
     await drawer.findByRole('heading', { name: 'Tour 1 / 2' });

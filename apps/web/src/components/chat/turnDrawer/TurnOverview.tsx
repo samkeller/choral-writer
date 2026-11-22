@@ -1,22 +1,26 @@
 import type { ReactNode } from 'react';
 import { Anchor, Box, Group, Paper, SimpleGrid, Stack, Text, UnstyledButton } from '@mantine/core';
 import {
-  IconAdjustments, IconAlertTriangle, IconArrowRight, IconCoin, IconStack2,
+  IconAdjustments, IconAlertTriangle, IconArrowRight, IconCoin, IconCompass, IconStack2,
 } from '@tabler/icons-react';
-import type { TurnDirection, TurnMetrics, TurnTraceSummary } from '@choral-writer/shared';
+import type { DirectionTrace, TurnMetrics, TurnTraceSummary } from '@choral-writer/shared';
 
+import { phasePresentation } from '../../phases/phasePresentation';
 import { formatCost, formatDelta, formatSeconds, formatTokens, formatUsd } from '../turnFormat';
 import { DrawerBlock } from './DrawerBlock';
 import { configurationChangeLabel } from './TurnConfigurationPanel';
+import { type TensionLevels, tensionScale } from './directionInsights';
+import { nudgeDescriptions, tensionMoves } from './directionPresentation';
 import { TurnTimeline } from './TurnTimeline';
 import type { TurnDrawerTab } from './turnDrawerTabs';
 import { type AttentionPoint, attentionPoints, averageCompleteCost } from './turnInsights';
 
 /** « Synthèse » : the essentials of a turn, each leading to the tab that details it. */
-export function TurnOverview({ summary, metrics, index, onOpenTab, onOpenCall }: {
+export function TurnOverview({ summary, metrics, index, tensionLevels, onOpenTab, onOpenCall }: {
   summary: TurnTraceSummary;
   metrics: TurnMetrics[] | null;
   index: number;
+  tensionLevels: TensionLevels | null;
   onOpenTab: (tab: TurnDrawerTab) => void;
   onOpenCall: (callId: string) => void;
 }) {
@@ -30,7 +34,7 @@ export function TurnOverview({ summary, metrics, index, onOpenTab, onOpenCall }:
 
   return (
     <Stack gap="sm">
-      <SimpleGrid cols={{ base: 1, xs: 3 }} spacing="xs">
+      <SimpleGrid cols={{ base: 1, xs: 2, sm: summary.direction ? 4 : 3 }} spacing="xs">
         <Indicator label="Coût" value={formatCost(summary.cost)} onClick={() => onOpenTab('cost')}
           hint={summary.cost.complete && average ? `${formatDelta(summary.cost.microUsd, average)} vs moyenne du récit` : 'pas de moyenne comparable'} />
         <Indicator label="Durée" value={formatSeconds(summary.durationMs)} onClick={() => onOpenTab('cost')}
@@ -40,13 +44,11 @@ export function TurnOverview({ summary, metrics, index, onOpenTab, onOpenCall }:
           hint={index === 0 ? 'premier tour'
             : narratorTokens !== null && previousTokens ? `${formatDelta(narratorTokens, previousTokens)} vs tour précédent`
               : 'pas de tour précédent comparable'} />
+        {summary.direction && (
+          <Indicator label="Tension visée" onClick={() => onOpenTab('direction')}
+            {...describeTension(summary.direction, tensionLevels)} />
+        )}
       </SimpleGrid>
-
-      {summary.direction && (
-        <DrawerBlock title={`Direction · ${summary.direction.name}`}>
-          <DirectionSummary direction={summary.direction.direction} />
-        </DrawerBlock>
-      )}
 
       <DrawerBlock title="Points d’attention">
         {points.length === 0
@@ -68,15 +70,11 @@ export function TurnOverview({ summary, metrics, index, onOpenTab, onOpenCall }:
   );
 }
 
-/** Compact until the Direction tab (#20) details it. */
-function DirectionSummary({ direction }: { direction: TurnDirection | null }) {
-  if (!direction) return <Text size="sm" c="dimmed">Direction indisponible : le Narrateur a reçu le whiteboard complet.</Text>;
-  return (
-    <Text size="sm">
-      Tension : {direction.tension} · {direction.nudges.length} nudge(s) · {direction.retained.length} retenu(s),{' '}
-      {direction.dismissed.length} écarté(s)
-    </Text>
-  );
+/** The tension in words: its level on the named scale when the story is known, the Director's move otherwise. */
+function describeTension(trace: DirectionTrace, levels: TensionLevels | null): { value: string; hint: string } {
+  if (!trace.direction) return { value: '—', hint: 'direction en échec' };
+  const move = tensionMoves[trace.direction.tension];
+  return levels ? { value: tensionScale[levels.current], hint: `le Directeur ${move}` } : { value: move, hint: 'niveau inconnu' };
 }
 
 function Indicator({ label, value, hint, onClick }: { label: string; value: string; hint: string; onClick: () => void }) {
@@ -135,6 +133,24 @@ function describeAttentionPoint(point: AttentionPoint): { icon: ReactNode; color
       return {
         icon: <IconAlertTriangle size={16} />, color: 'red', tab: 'calls',
         text: `${point.count} appel(s) en échec pendant ce tour.`,
+      };
+    case 'directorNudge':
+      return point.type === 'complication' ? {
+        icon: <IconCompass size={16} />, color: 'red', tab: 'direction',
+        text: `Tentative contrariée : le Directeur pousse vers complication (${point.target}).`,
+      } : {
+        icon: <IconCompass size={16} />, color: phasePresentation.direction.color, tab: 'direction',
+        text: `Le Directeur pousse vers ${point.type}, pour ${nudgeDescriptions[point.type]} : ${point.target}.`,
+      };
+    case 'directionFailed':
+      return {
+        icon: <IconAlertTriangle size={16} />, color: 'red', tab: 'direction',
+        text: `Direction en échec après ${point.attempts} tentative(s) : le Narrateur a reçu le whiteboard complet.`,
+      };
+    case 'directorDisabled':
+      return {
+        icon: <IconCompass size={16} />, color: 'gray', tab: 'direction',
+        text: 'Directeur désactivé depuis le tour précédent : toutes les contributions passent au Narrateur.',
       };
     case 'configurationChanged':
       return {
