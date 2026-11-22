@@ -15,7 +15,7 @@ export type LlmProvider = z.infer<typeof llmProviderSchema>;
  * Volontairement distinct de `traceStageSchema` : `reducer` ne consomme aucun token
  * et ne doit jamais apparaître comme une phase facturable.
  */
-export const llmStageSchema = z.enum(['analysis', 'narrator', 'guardian', 'memory_setup']);
+export const llmStageSchema = z.enum(['analysis', 'direction', 'narrator', 'guardian', 'memory_setup']);
 export type LlmStage = z.infer<typeof llmStageSchema>;
 
 /**

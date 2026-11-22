@@ -9,7 +9,7 @@ import { publishNextVersion } from '../../api/agents/agentsApi';
 import { getTurnTraceSummary } from '../../api/chat/traceApi';
 import { getErrorMessage } from '../../api/client';
 import {
-  agentSelections, replaceVersion, requiredVersionOptions, selectVersion, selectedVersion, toggleAnalysisAgent,
+  agentSelections, replaceVersion, requiredVersionOptions, selectVersion, selectedVersion, toggleOptionalAgent,
   useAgentTeam,
 } from '../../hooks/useAgentTeam';
 import { AgentForm } from '../agents/AgentForm';
@@ -115,7 +115,9 @@ function ReplayForm({ project, failed, start, onClose, onReplay }: {
         {!team.loading && !team.error && <>
           <RequiredAgentRow team={team} output="narrative" label="Narrateur" onEditVersion={editVersion} />
           <RequiredAgentRow team={team} output="memory_proposals" label="Gardien" onEditVersion={editVersion} />
-          <AnalysisAgents team={team} onEditVersion={editVersion} />
+          <OptionalAgents team={team} output="envelope" title="Agents d’analyse" onEditVersion={editVersion}
+            empty="Aucun agent d’analyse dans la bibliothèque." />
+          <OptionalAgents team={team} output="direction" title="Directeur (facultatif, un seul)" onEditVersion={editVersion} />
           <Textarea label="Prompt du projet" value={systemPrompt} autosize minRows={4} maxRows={12}
             maxLength={50_000} onChange={(event) => setSystemPrompt(event.currentTarget.value)} />
         </>}
@@ -153,18 +155,27 @@ function RequiredAgentRow({ team, output, label, onEditVersion }: {
   );
 }
 
-function AnalysisAgents({ team, onEditVersion }: { team: Team; onEditVersion: (agent: Agent) => void }) {
-  const analysts = team.agents.filter((agent) => agent.output === 'envelope');
+/** Agents a team may go without: analysis agents, and the Director (at most one). */
+function OptionalAgents({ team, output, title, empty, onEditVersion }: {
+  team: Team;
+  output: Extract<Agent['output'], 'envelope' | 'direction'>;
+  title: string;
+  /** Shown when the library has none; without it, the section is hidden. */
+  empty?: string;
+  onEditVersion: (agent: Agent) => void;
+}) {
+  const candidates = team.agents.filter((agent) => agent.output === output);
+  if (candidates.length === 0 && !empty) return null;
   return (
     <Stack gap="xs">
-      <Text size="sm" fw={500}>Agents d’analyse</Text>
-      {analysts.map((agent) => {
+      <Text size="sm" fw={500}>{title}</Text>
+      {candidates.map((agent) => {
         const name = displayName(team, agent);
         const selected = selectedVersion(agent, team.versionIds);
         return (
           <Group key={agent.id} gap="xs" wrap="nowrap">
             <Checkbox label={name} checked={Boolean(selected)} style={{ flex: 1, minWidth: 0 }}
-              onChange={(event) => team.change(toggleAnalysisAgent(team.versionIds, agent, event.currentTarget.checked))} />
+              onChange={(event) => team.change(toggleOptionalAgent(team.versionIds, team.agents, agent, event.currentTarget.checked))} />
             <Select aria-label={`Version de ${name}`} w={160} allowDeselect={false} disabled={!selected}
               value={(selected ?? agent.versions[0])?.id ?? null}
               data={agent.versions.map((version) => ({ value: version.id, label: `v${version.version} · ${version.name}` }))}
@@ -177,7 +188,7 @@ function AnalysisAgents({ team, onEditVersion }: { team: Team; onEditVersion: (a
           </Group>
         );
       })}
-      {analysts.length === 0 && <Text size="sm" c="dimmed">Aucun agent d’analyse dans la bibliothèque.</Text>}
+      {candidates.length === 0 && <Text size="sm" c="dimmed">{empty}</Text>}
     </Stack>
   );
 }

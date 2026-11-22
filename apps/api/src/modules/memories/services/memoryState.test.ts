@@ -100,6 +100,16 @@ describe('memory tag routing and atomic reduction', () => {
     ] }, [guardian, analyst], uuidv7)).toThrow('tag inconnu');
   });
 
+  it('refuses any memory access proposed for the Director', () => {
+    const { state, guardian } = setup();
+    const director: ProjectAgent = { ...guardian, agentId: uuidv7(), output: 'direction', phase: 'direction' };
+    const agents = [{ agentId: guardian.agentId, mode: 'all' as const, tagRefs: [] }];
+    expect(() => applyMemorySetup(state, { tags: [], agents: [...agents, { agentId: director.agentId, mode: 'all', tagRefs: [] }] },
+      [guardian, director], uuidv7)).toThrow('Le Directeur ne reçoit aucune mémoire.');
+    expect(applyMemorySetup(state, { tags: [], agents: [...agents, { agentId: director.agentId, mode: 'none', tagRefs: [] }] },
+      [guardian, director], uuidv7).assignments[1]!.read).toEqual({ mode: 'none', tagIds: [] });
+  });
+
   it('does not silently truncate active UTF-8 memory', () => {
     const { state } = setup();
     for (const entry of state.entries) entry.content = '€'.repeat(22_000);

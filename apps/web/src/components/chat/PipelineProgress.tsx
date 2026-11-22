@@ -10,7 +10,7 @@ export function PipelineProgress({ progress }: PipelineProgressProps) {
   const completedAgents = Object.values(progress.analysis.agents)
     .filter((agent) => agent.status === 'completed' || agent.status === 'failed').length;
   const currentStep = progress[progress.activeStage ?? 'analysis'];
-  const labels = { analysis: 'Analyse', narrator: 'Narrateur', guardian: 'Gardien', reducer: 'Écriture mémoire' };
+  const labels = { analysis: 'Analyse', direction: 'Direction', narrator: 'Narrateur', guardian: 'Gardien', reducer: 'Écriture mémoire' };
   const stageLabel = progress.memoryOnly ? 'Mémoire' : labels[progress.activeStage ?? 'analysis'];
   const elapsed = `${(currentStep.elapsedMs / 1000).toFixed(1)} s`;
   const progressValue = progress.activeStage === 'analysis' && progress.analysis.agentCount > 0
@@ -66,6 +66,8 @@ export function PipelineProgress({ progress }: PipelineProgressProps) {
             duration={progress.analysis.elapsedMs}
             active={progress.activeStage === 'analysis'}
           />
+          {progress.direction.status !== 'pending' && <PipelineStep label="Direction" status={progress.direction.status}
+            duration={progress.direction.elapsedMs} active={progress.activeStage === 'direction'} />}
           <PipelineStep
             label="Narrateur"
             status={progress.narrator.status}

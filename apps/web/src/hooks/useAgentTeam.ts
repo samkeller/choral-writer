@@ -4,9 +4,9 @@ import { listAgents, listProjectAgents } from '../api/agents/agentsApi';
 import { getErrorMessage } from '../api/client';
 
 /**
- * Un projet a exactement un narrateur et un gardien : choisir une version pour
- * ces contrats remplace celle de l'agent précédent, alors que les agents
- * d'analyse s'ajoutent à la sélection.
+ * Un projet a exactement un narrateur et un gardien, et au plus un Directeur :
+ * choisir une version pour ces contrats remplace celle de l'agent précédent,
+ * alors que les agents d'analyse s'ajoutent à la sélection.
  */
 export function selectVersion(
   ids: string[], agents: Agent[], output: Agent['output'], versionId: string,
@@ -27,13 +27,16 @@ export function selectVersion(
   return placed ? next : [...next, versionId];
 }
 
-/** Active un agent d'analyse avec sa dernière version, ou le retire de l'équipe. */
-export function toggleAnalysisAgent(ids: string[], agent: Agent, enabled: boolean): string[] {
+/**
+ * Active un agent facultatif (analyse ou Directeur) avec sa dernière version, ou le
+ * retire de l'équipe. Activer un Directeur remplace celui qui était retenu.
+ */
+export function toggleOptionalAgent(ids: string[], agents: Agent[], agent: Agent, enabled: boolean): string[] {
   const ownVersions = new Set(agent.versions.map((version) => version.id));
   const latest = agent.versions[0]?.id;
   if (!enabled) return ids.filter((id) => !ownVersions.has(id));
   if (!latest || ids.some((id) => ownVersions.has(id))) return ids;
-  return [...ids, latest];
+  return selectVersion(ids, agents, agent.output, latest);
 }
 
 /** Remplace, à la même position, la version retenue d'un agent par une autre de ses versions. */

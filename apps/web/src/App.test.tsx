@@ -1038,6 +1038,11 @@ describe('projects and chat screens', () => {
           items: [{ kind: 'recommendation', text: 'Chercher la clé.', importance: 'HIGH' }],
         },
       }],
+      direction: {
+        agentId: '019ad30c-19b0-7000-8000-000000000305', agentVersionId: '019ad30c-19b0-7000-8000-000000000306',
+        name: 'Directeur', status: 'error', durationMs: 300, attempts: 2, direction: null,
+        cost: { microUsd: 120, complete: true },
+      },
       narrator: { status: 'success', durationMs: 1500, prose: 'La porte résiste.' },
       calls: [
         {
@@ -1104,6 +1109,9 @@ describe('projects and chat screens', () => {
     await screen.findByText('Réponse originale.');
     fireEvent.click(screen.getAllByRole('button', { name: 'Inspecter les traces de ce tour' })[0]!);
     await screen.findByRole('heading', { name: 'Traces du tour' });
+    await screen.findByText('Direction · Directeur');
+    screen.getByText('0.3 s · 2 appel(s) · 0.0001 $');
+    screen.getByText('Direction indisponible : le Narrateur a reçu le whiteboard complet.');
     fireEvent.click(screen.getByRole('tab', { name: 'Whiteboard' }));
     await screen.findByText('Chercher la clé.');
     fireEvent.click(screen.getByRole('tab', { name: 'Configuration du tour' }));
@@ -1202,12 +1210,20 @@ describe('projects and chat screens', () => {
     };
     const guardian = existingAgent('019ad30c-19b0-7000-8000-000000000404', 'memory_proposals', 'Gardien');
     const observer = existingAgent('019ad30c-19b0-7000-8000-000000000405', 'envelope', 'Observateur');
+    const director: AgentDto = {
+      id: '019ad30c-19b0-7000-8000-000000000408', phase: 'direction', output: 'direction',
+      createdAt: project.createdAt, projects: [],
+      versions: [2, 1].map((version) => ({
+        id: `019ad30c-19b0-7000-8000-00000000041${version}`,
+        version, name: 'Directeur', instructions: `Oriente v${version}`, createdAt: project.createdAt,
+      })),
+    };
     const assignments = [assignmentOf(narrative, narrative.versions[1]!.id), assignmentOf(guardian), assignmentOf(observer)];
     let published: PublishAgentVersion | null = null;
     const projectWrites: string[] = [];
     adapter.mockImplementation(async (config) => {
       if (config.method !== 'get' && config.url?.startsWith(`/projects/${project.id}`)) projectWrites.push(config.url);
-      if (config.url === '/agents') return respond(config, 200, [narrative, guardian, observer]);
+      if (config.url === '/agents') return respond(config, 200, [narrative, guardian, observer, director]);
       if (config.url === `/projects/${project.id}/agents`) return respond(config, 200, assignments);
       if (config.url === `/agents/${narrative.id}/versions` && config.method === 'post') {
         published = publishAgentVersionSchema.parse(JSON.parse(String(config.data)));
@@ -1257,6 +1273,11 @@ describe('projects and chat screens', () => {
       .toBe('Narrateur · v3'));
     expect(published).toMatchObject({ instructions: 'Ton variante.', expectedVersion: 2 });
 
+    // Le Directeur, absent du projet, s'active puis change de version comme un agent d'analyse.
+    fireEvent.click(dialog.getByRole('checkbox', { name: 'Directeur' }));
+    fireEvent.click(dialog.getByRole('textbox', { name: 'Version de Directeur' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'v1 · Directeur' }));
+
     fireEvent.change(dialog.getByRole('textbox', { name: 'Prompt du projet' }), { target: { value: 'Prompt variante.' } });
     fireEvent.click(dialog.getByRole('button', { name: 'Rejouer' }));
     await screen.findByText('Réponse alternative.');
@@ -1271,6 +1292,7 @@ describe('projects and chat screens', () => {
         agents: [
           { agentId: narrative.id, versionId: '019ad30c-19b0-7000-8000-000000000406' },
           { agentId: guardian.id, versionId: guardian.versions[0]!.id },
+          { agentId: director.id, versionId: director.versions[1]!.id },
         ],
       },
     });
@@ -1292,16 +1314,18 @@ describe('projects and chat screens', () => {
       })),
     };
     const guardian = existingAgent('019ad30c-19b0-7000-8000-000000000504', 'memory_proposals', 'Gardien');
-    const recorded = [assignmentOf(narrative, narrative.versions[1]!.id), assignmentOf(guardian)];
+    const director: AgentDto = { ...guardian, id: '019ad30c-19b0-7000-8000-000000000505', phase: 'direction',
+      output: 'direction', versions: [{ ...guardian.versions[0]!, id: '019ad30c-19b0-7000-8000-000000000509', name: 'Directeur' }] };
+    const recorded = [assignmentOf(narrative, narrative.versions[1]!.id), assignmentOf(guardian), assignmentOf(director)];
     const summary: TurnTraceSummary = {
-      turnId: head.id, analysis: [], narrator: null, calls: [], cost: { microUsd: 0, complete: true },
+      turnId: head.id, analysis: [], direction: null, narrator: null, calls: [], cost: { microUsd: 0, complete: true },
       configuration: {
         systemPrompt: 'Prompt enregistré.',
         agents: recorded.map(({ instructions: _instructions, ...agent }) => ({ ...agent, memoryRead: null })),
       },
     };
     adapter.mockImplementation(async (config) => {
-      if (config.url === '/agents') return respond(config, 200, [narrative, guardian]);
+      if (config.url === '/agents') return respond(config, 200, [narrative, guardian, director]);
       if (config.url === `/projects/${project.id}/turns/${head.id}/traces`) return respond(config, 200, summary);
       if (config.url === `/projects/${project.id}/agents`) throw new Error('The recorded configuration is the start.');
       return chatAdapter(config);
@@ -1325,6 +1349,9 @@ describe('projects and chat screens', () => {
     expect((dialog.getByRole('textbox', { name: 'Prompt du projet' }) as HTMLTextAreaElement).value).toBe('Prompt enregistré.');
     fireEvent.click(narratorSelect);
     fireEvent.click(await screen.findByRole('option', { name: 'Narrateur · v2' }));
+    const directorCheckbox = dialog.getByRole('checkbox', { name: 'Directeur' });
+    expect(directorCheckbox).toHaveProperty('checked', true);
+    fireEvent.click(directorCheckbox);
     fireEvent.click(dialog.getByRole('button', { name: 'Rejouer' }));
 
     await screen.findByText('Réponse corrigée.');

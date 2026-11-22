@@ -41,6 +41,7 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
   });
   let guardianOutput: string | null = null;
   let setupOutput: string | null = null;
+  let directorOutput = '{}';
   let generate: (signal?: AbortSignal) => AsyncGenerator<ChatCompletionChunk> = async function* () {
     yield chunk('Bonjour ');
     yield chunk('Mara.');
@@ -52,7 +53,8 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
   ): Promise<ChatCompletion | AsyncIterable<ChatCompletionChunk>> => {
     if (params.stream) return generate(options?.signal);
     const system = params.messages[0]?.content;
-    const content = typeof system === 'string' && system.includes('Propose a compact memory routing configuration')
+    const content = typeof system === 'string' && system.includes('Tu diriges ce tour') ? directorOutput
+      : typeof system === 'string' && system.includes('Propose a compact memory routing configuration')
       ? setupOutput ?? '{}' : typeof system === 'string' && system.includes('Maintain memory from established narrative events')
         ? guardianOutput ?? analysisContent : analysisContent;
     return {
@@ -123,7 +125,7 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
     const narrator = (await agents.listForProject(projectId)).find((agent) => agent.output === 'narrative');
     if (!narrator) throw new Error('Missing narrator assignment.');
     const systemPrompt = [project.systemPrompt, narrator.instructions].filter(Boolean).join('\n\n');
-    return narratorSystemPrompt(systemPrompt, [], { tags: [], entries: [] });
+    return narratorSystemPrompt(systemPrompt, [], { tags: [], entries: [] }, null);
   }
 
   async function sendOnBranch(projectId: string, branchId: string, content: string) {
@@ -466,6 +468,81 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
     }));
   });
 
+  it('directs the turn when a Director is configured, and falls back to the whole whiteboard when it fails', async () => {
+    const project = await createProject('Direction');
+    const defaults = await agents.listForProject(project.id);
+    const analyst = await agents.create({ name: 'Chaos', instructions: 'Find uncertainty.', phase: 'analysis', output: 'envelope' });
+    const director = agentSchema.parse((await app.inject({
+      method: 'POST', url: '/api/agents', headers: { cookie },
+      payload: { name: 'Directeur', instructions: 'Oriente la scène.', phase: 'direction', output: 'direction' },
+    })).json());
+    const second = await agents.create({ name: 'Autre directeur', instructions: '', phase: 'direction', output: 'direction' });
+    const team = [
+      ...defaults.map(({ agentId, versionId }) => ({ agentId, versionId })),
+      { agentId: analyst.id, versionId: analyst.versions[0]!.id },
+      { agentId: director.id, versionId: director.versions[0]!.id },
+    ];
+    const duplicate = await app.inject({
+      method: 'PUT', url: `/api/projects/${project.id}/agents`, headers: { cookie },
+      payload: { agents: [...team, { agentId: second.id, versionId: second.versions[0]!.id }] },
+    });
+    expect(duplicate.json()).toMatchObject({ error: { code: 'SINGLE_DIRECTOR' } });
+    const configured = await agents.configure(project.id, { agents: team });
+    expect(configured.find((agent) => agent.agentId === director.id)?.memoryRead).toEqual({ mode: 'none', tagIds: [] });
+    const branchId = (await projects.get(project.id)).defaultBranchId!;
+    const view = await memoryView(project.id, branchId);
+    const refused = await app.inject({ method: 'POST', headers: { cookie },
+      url: `/api/projects/${project.id}/branches/${branchId}/memories`,
+      payload: { expectedHeadTurnId: view.headTurnId, expectedRevisionId: view.revisionId,
+        expectedCatalogRevisionId: view.catalogRevisionId,
+        change: { op: 'setAgentRead', agentId: director.id, read: { mode: 'all', tagIds: [] } } },
+    });
+    expect(refused.statusCode).toBe(422);
+    expect(refused.json()).toMatchObject({ error: { code: 'DIRECTOR_HAS_NO_MEMORY' } });
+
+    directorOutput = JSON.stringify({
+      v: 1, retained: [{ item: 'c1', why: 'Concret.' }], dismissed: [], tension: 'monter',
+      nudges: [{ type: 'saillance', target: 'Le fil.', basis: null }],
+    });
+    const directed = events((await send(project.id, 'J’ouvre la porte.')).body);
+    const start = directed.find((event) => event.type === 'chat.turn.started');
+    if (start?.type !== 'chat.turn.started') throw new Error('Missing started turn.');
+    expect(directed.flatMap((event) => event.type === 'chat.pipeline.stage' ? [`${event.stage}:${event.status}`] : []))
+      .toEqual(expect.arrayContaining(['direction:started', 'direction:completed']));
+    expect(directed.at(-1)?.type).toBe('chat.turn.completed');
+    const narratorPrompt = String(create.mock.calls.at(-1)?.[0].messages[0]?.content);
+    expect(narratorPrompt).toContain('DIRECTION DU TOUR');
+    expect(narratorPrompt).toContain('- observation (importance haute) : A wire is visible.');
+    expect(narratorPrompt).not.toContain('ANALYSES DES AGENTS');
+    const summary = turnTraceSummarySchema.parse((await app.inject({
+      method: 'GET', url: `/api/projects/${project.id}/turns/${start.turnId}/traces`, headers: { cookie },
+    })).json());
+    expect(summary.direction).toMatchObject({
+      name: 'Directeur', status: 'success', attempts: 1,
+      cost: { microUsd: expect.any(Number), complete: expect.any(Boolean) },
+      direction: { tension: 'monter', retained: [{ agent: 'Chaos', why: 'Concret.' }], dismissed: [] },
+    });
+    expect(summary.calls.find((call) => call.stage === 'direction')?.costBasis).not.toBeNull();
+    expect(summary.configuration?.agents).toContainEqual(expect.objectContaining({
+      agentId: director.id, version: 1, phase: 'direction', output: 'direction',
+    }));
+
+    directorOutput = 'pas du JSON';
+    const fallback = events((await send(project.id, 'Je recule.')).body);
+    const next = fallback.find((event) => event.type === 'chat.turn.started');
+    if (next?.type !== 'chat.turn.started') throw new Error('Missing started turn.');
+    expect(fallback).toContainEqual(expect.objectContaining({ type: 'chat.pipeline.stage', stage: 'direction', status: 'failed' }));
+    expect(fallback.at(-1)?.type).toBe('chat.turn.completed');
+    const directorPrompts = create.mock.calls.map(([params]) => String(params.messages[0]?.content))
+      .filter((content) => content.includes('Tu diriges ce tour'));
+    expect(directorPrompts.at(-1)).toContain('Types interdits à ce tour, car employés au tour précédent : saillance.');
+    expect(String(create.mock.calls.at(-1)?.[0].messages[0]?.content)).toContain('ANALYSES DES AGENTS');
+    const failed = turnTraceSummarySchema.parse((await app.inject({
+      method: 'GET', url: `/api/projects/${project.id}/turns/${next.turnId}/traces`, headers: { cookie },
+    })).json());
+    expect(failed.direction).toMatchObject({ status: 'error', attempts: 2, direction: null });
+  });
+
   it('retains the user message and failure trace but never persists a partial assistant reply', async () => {
     const project = await createProject('Erreur fournisseur');
     const normal = generate;
@@ -642,11 +719,16 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
       method: 'POST', url: '/api/agents', headers: { cookie },
       payload: { name: 'Narrateur relance', phase: 'restitution', output: 'narrative', instructions: 'Ton relance.' },
     })).json());
+    const director = agentSchema.parse((await app.inject({
+      method: 'POST', url: '/api/agents', headers: { cookie },
+      payload: { name: 'Directeur relance', phase: 'direction', output: 'direction', instructions: 'Oriente.' },
+    })).json());
     const configuration = {
       systemPrompt: 'Prompt variante.',
-      agents: (await agents.listForProject(project.id)).map((agent) => agent.output === 'narrative'
+      agents: [...(await agents.listForProject(project.id)).map((agent) => agent.output === 'narrative'
         ? { agentId: variantNarrator.id, versionId: variantNarrator.versions[0]!.id }
         : { agentId: agent.agentId, versionId: agent.versionId }),
+      { agentId: director.id, versionId: director.versions[0]!.id }],
     };
     const normal = generate;
     generate = async function* () { throw new Error('simulated failure'); };
@@ -663,6 +745,12 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
       if (retried?.type !== 'chat.turn.completed') throw new Error('Missing retried variant.');
       const narration = create.mock.calls.slice(callsBeforeRetry).find(([params]) => params.stream);
       expect(narration?.[0].messages[0]?.content).toContain('Prompt variante.\n\nTon relance.');
+      const { configuration: recorded } = turnTraceSummarySchema.parse((await app.inject({
+        method: 'GET', url: `/api/projects/${project.id}/turns/${retried.turnId}/traces`, headers: { cookie },
+      })).json());
+      expect(recorded?.agents).toContainEqual(expect.objectContaining({
+        agentId: director.id, versionId: director.versions[0]!.id, output: 'direction',
+      }));
       const turn = (await history(project.id, failed.branchId)).turns.at(-1)!;
       expect(turn.memory?.status).toBe('failed');
 

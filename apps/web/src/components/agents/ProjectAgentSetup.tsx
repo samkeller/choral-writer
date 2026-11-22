@@ -1,7 +1,7 @@
 ﻿import { useEffect, useState } from 'react';
 import { Alert, Box, Button, Checkbox, Loader, Paper, Select, Text } from '@mantine/core';
 import { Link } from 'react-router-dom';
-import type { Agent } from '@choral-writer/shared';
+import { readsMemory, type Agent } from '@choral-writer/shared';
 import { IconLibrary, IconPlus } from '@tabler/icons-react';
 import {
   ConfigurationDetailPane,
@@ -13,7 +13,7 @@ import {
 } from '../configuration/ConfigurationLayout';
 import { useProjectSetup } from '../../hooks/useProjectSetup';
 import {
-  replaceVersion, requiredVersionOptions, selectVersion, selectedVersion, toggleAnalysisAgent,
+  replaceVersion, requiredVersionOptions, selectVersion, selectedVersion, toggleOptionalAgent,
 } from '../../hooks/useAgentTeam';
 import type { useMemories } from '../../hooks/useMemories';
 import { PromptDisplay } from '../llm/PromptDisplay';
@@ -23,6 +23,7 @@ import { AgentEditor } from './AgentEditor';
 
 const outputLabels: Record<Agent['output'], string> = {
   envelope: 'Analyse',
+  direction: 'Directeur',
   narrative: 'Narrateur',
   memory_proposals: 'Gardien',
 };
@@ -86,12 +87,13 @@ export function ProjectAgentSetup({ projectId, suggestedVersion, onSaved, memory
           {
             agent && displayedVersion ? <>
               {
-                agent.output === 'envelope' ? <>
+                agent.output === 'envelope' || agent.output === 'direction' ? <>
                   <Checkbox
                     label={`Activer ${displayedVersion.name}`}
+                    description={agent.output === 'direction' ? 'Facultatif ; un seul Directeur par projet.' : undefined}
                     checked={Boolean(version)}
                     disabled={setup.pending}
-                    onChange={(event) => setup.change(toggleAnalysisAgent(setup.versionIds, agent, event.currentTarget.checked))}
+                    onChange={(event) => setup.change(toggleOptionalAgent(setup.versionIds, setup.agents, agent, event.currentTarget.checked))}
                   />
                   <Select 
                   label={`Version de ${displayedVersion.name}`} value={displayedVersion.id} allowDeselect={false}
@@ -101,10 +103,11 @@ export function ProjectAgentSetup({ projectId, suggestedVersion, onSaved, memory
                   value={version?.id ?? null} searchable allowDeselect={false} disabled={setup.pending}
                   placeholder="Choisir cet agent et sa version" data={requiredVersionOptions(setup.agents, agent.output)}
                   onChange={(value) => { if (value) selectRequired(agent.output, value); }} />}
-              {persisted && memory.view && <><Text fw={600}>Accès mémoire</Text>
+              {!readsMemory(agent.output) && <Text size="sm" c="dimmed">Le Directeur ne reçoit aucune mémoire.</Text>}
+              {readsMemory(agent.output) && persisted && memory.view && <><Text fw={600}>Accès mémoire</Text>
                 <AgentMemoryEditor key={`${persisted.agentId}:${JSON.stringify(persisted.memoryRead)}`} agent={persisted} tags={memory.view.state.tags}
                   pending={memory.pending} save={memory.change} /></>}
-              {!persisted && <Text size="sm" c="dimmed">Enregistrez l’équipe pour configurer l’accès mémoire de cet agent.</Text>}
+              {readsMemory(agent.output) && !persisted && <Text size="sm" c="dimmed">Enregistrez l’équipe pour configurer l’accès mémoire de cet agent.</Text>}
               {memory.error && <Alert color="red" role="alert">{memory.error}<Button variant="subtle" onClick={memory.reload}>Recharger</Button></Alert>}
               <Paper key={`${agent.id}:${displayedVersion.id}`
               } component="details" withBorder p="sm">

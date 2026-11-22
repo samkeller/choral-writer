@@ -1,5 +1,6 @@
 import type {
-  AnalysisTrace, NarratorTrace, TraceCallDetail, TraceCallSummary, TurnConfiguration, TurnTraceSummary,
+  AnalysisTrace, DirectionTrace, NarratorTrace, TraceCallDetail, TraceCallSummary, TurnConfiguration, TurnDirection,
+  TurnTraceSummary,
 } from '@choral-writer/shared';
 import { analysisEnvelopeSchema, traceCallDetailSchema } from '@choral-writer/shared';
 
@@ -36,6 +37,7 @@ export function toTraceCallDetailDto(trace: TraceDetailRecord, turnId: string): 
 
 export function toTurnTraceSummaryDto(
   turnId: string, traces: readonly TraceSummaryRecord[], configuration: TurnConfiguration | null,
+  direction: TurnDirection | null,
 ): TurnTraceSummary {
   const analysisTraces = traces.filter((trace) => trace.stage === 'analysis');
   const groups = new Map<string, TraceSummaryRecord[]>();
@@ -61,6 +63,20 @@ export function toTurnTraceSummaryDto(
     });
   }
 
+  const directionCalls = traces.filter((trace) => trace.stage === 'direction');
+  const directionCall = directionCalls.at(-1);
+  const directionTrace: DirectionTrace | null = directionCall ? {
+    agentId: directionCall.agentId,
+    agentVersionId: directionCall.agentVersionId,
+    name: directionCall.agentName ?? 'Directeur',
+    // A direction is recorded only after a validated call; without one, the narrator fell back.
+    status: direction ? 'success' : 'error',
+    durationMs: directionCalls.reduce((total, call) => total + call.durationMs, 0),
+    attempts: directionCalls.length,
+    cost: toTurnCost(directionCalls),
+    direction,
+  } : null;
+
   const narratorCalls = traces.filter((trace) => trace.stage === 'narrator');
   const narratorCall = narratorCalls.at(-1);
   let narrator: NarratorTrace | null = null;
@@ -76,6 +92,7 @@ export function toTurnTraceSummaryDto(
   return {
     turnId,
     analysis,
+    direction: directionTrace,
     narrator,
     calls: traces.map((trace) => toTraceCallSummaryDto(trace, turnId)),
     cost: toTurnCost(traces),
