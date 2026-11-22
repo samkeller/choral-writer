@@ -83,7 +83,7 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
     appPassword: 'test-password',
     cookieSecret: 'test-cookie-secret-with-at-least-thirty-two-characters',
     nodeEnv: 'test',
-  }, { projects, agents, chat, traces: createTraceService(database, chat), memories });
+  }, { projects, agents, chat, traces: createTraceService(database), memories });
   let cookie: string;
   let address: string;
   const createdIds: string[] = [];
@@ -389,8 +389,10 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
       method: 'GET', url: `/api/projects/${first.id}/branches/${first.defaultBranchId}/turn-metrics`, headers: { cookie },
     });
     expect(metricsResponse.statusCode).toBe(200);
+    // Calls of the run are recorded before the turn completes, so they all count in its duration.
+    expect(traceSummary.timeline.map((stage) => stage.stage)).toEqual([...new Set(traceSummary.calls.map((call) => call.stage))]);
     expect(turnMetricsListSchema.parse(metricsResponse.json())).toEqual([{
-      turnId: start.turnId, durationMs: traceSummary.timeline.reduce((total, stage) => total + stage.durationMs, 0),
+      turnId: start.turnId, durationMs: traceSummary.durationMs,
       cost: { microUsd: 0, complete: false }, narratorInputTokens: 20, configurationChanges: null,
     }]);
     const [turn] = await database.select().from(schema.chatTurns).where(eq(schema.chatTurns.id, start.turnId));

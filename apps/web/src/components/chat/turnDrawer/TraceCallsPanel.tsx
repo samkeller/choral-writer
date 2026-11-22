@@ -15,12 +15,13 @@ import { formatSeconds, formatTokens } from '../turnFormat';
 import styles from './TurnDrawer.module.css';
 
 /** « Appels bruts » : every LLM call of the turn, with its prompt and response loaded on demand. */
-export function TraceCallsPanel({ projectId, turnId, calls }: {
+export function TraceCallsPanel({ projectId, turnId, calls, initialCallId = null }: {
   projectId: string;
   turnId: string;
   calls: TraceCallSummary[];
+  initialCallId?: string | null;
 }) {
-  const [selectedCallId, setSelectedCallId] = useState<string | null>(null);
+  const [selectedCallId, setSelectedCallId] = useState<string | null>(initialCallId);
   const [detail, setDetail] = useState<TraceCallDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');

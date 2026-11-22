@@ -37,11 +37,7 @@ export function PipelineProgress({ progress }: { progress: ChatPipelineProgress 
 }
 
 /** Replaces the progress line when the last turn failed. */
-export function PipelineFailure({ error, disabled, onRetry }: {
-  error: string | null;
-  disabled: boolean;
-  onRetry: () => void;
-}) {
+export function PipelineFailure({ error, onRetry }: { error: string | null; onRetry: () => void }) {
   return (
     <Group gap="xs" wrap="nowrap" py={4} role="alert">
       <IconAlertTriangle size={14} color="var(--mantine-color-red-5)" aria-hidden="true" style={{ flexShrink: 0 }} />
@@ -49,7 +45,7 @@ export function PipelineFailure({ error, disabled, onRetry }: {
         Échec du tour{error ? ` : ${error}` : ''}
       </Text>
       <Button size="compact-xs" variant="light" color="red" leftSection={<IconRefresh size={12} aria-hidden="true" />}
-        disabled={disabled} onClick={onRetry}>
+        onClick={onRetry}>
         Réessayer
       </Button>
     </Group>

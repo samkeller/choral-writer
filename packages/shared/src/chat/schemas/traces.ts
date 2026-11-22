@@ -78,8 +78,10 @@ export const turnTraceSummarySchema = z.object({
   analysis: z.array(analysisTraceSchema),
   narrator: narratorTraceSchema.nullable(),
   calls: z.array(traceCallSummarySchema),
-  /** Étapes dans l'ordre d'exécution. */
+  /** Étapes dans l'ordre d'exécution, sans les relances ultérieures de la mémoire. */
   timeline: z.array(stageDurationSchema),
+  /** Somme des étapes de `timeline`. */
+  durationMs: z.number().int().nonnegative(),
   cost: turnCostSchema,
   /** Null for a turn that started before configurations were recorded. */
   configuration: turnConfigurationSchema.nullable(),

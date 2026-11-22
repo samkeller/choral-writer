@@ -12,7 +12,6 @@ export function TurnCostPanel({ summary }: { summary: TurnTraceSummary }) {
     stage,
     microUsd: summary.calls.filter((call) => call.stage === stage).reduce((sum, call) => sum + (call.costMicroUsd ?? 0), 0),
   })).filter((item) => item.microUsd > 0);
-  const durationMs = summary.timeline.reduce((sum, stage) => sum + stage.durationMs, 0);
 
   return (
     <Stack gap="sm">
@@ -45,7 +44,7 @@ export function TurnCostPanel({ summary }: { summary: TurnTraceSummary }) {
         )}
       </DrawerBlock>
 
-      <DrawerBlock title="Déroulé du tour" aside={<Text size="xs" fw={700}>{formatSeconds(durationMs)}</Text>}>
+      <DrawerBlock title="Déroulé du tour" aside={<Text size="xs" fw={700}>{formatSeconds(summary.durationMs)}</Text>}>
         <TurnTimeline timeline={summary.timeline} />
       </DrawerBlock>
 

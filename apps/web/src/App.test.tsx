@@ -1069,6 +1069,7 @@ describe('projects and chat screens', () => {
         { stage: 'analysis', durationMs: 800, agentCount: 1 },
         { stage: 'narrator', durationMs: 1500, agentCount: 1 },
       ],
+      durationMs: 2300,
       cost: { microUsd: 405, complete: true },
       configuration: {
         systemPrompt: 'Prompt figé du tour.',

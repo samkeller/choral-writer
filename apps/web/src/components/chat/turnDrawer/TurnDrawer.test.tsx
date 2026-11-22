@@ -9,6 +9,7 @@ import type { TurnMetrics, TurnTraceSummary } from '@choral-writer/shared';
 
 import { api } from '../../../api/client';
 import { TurnDrawer } from './TurnDrawer';
+import styles from './TurnDrawer.module.css';
 
 const projectId = '019ad30c-19b0-7000-8000-000000000601';
 const firstTurnId = '019ad30c-19b0-7000-8000-000000000602';
@@ -18,7 +19,7 @@ const originalAdapter = api.defaults.adapter;
 function summary(turnId: string, microUsd: number, narratorMs: number): TurnTraceSummary {
   return {
     turnId, analysis: [], narrator: null, calls: [],
-    timeline: [{ stage: 'narrator', durationMs: narratorMs, agentCount: 1 }],
+    timeline: [{ stage: 'narrator', durationMs: narratorMs, agentCount: 1 }], durationMs: narratorMs,
     cost: { microUsd, complete: true }, configuration: null,
   };
 }
@@ -31,16 +32,28 @@ const metrics: TurnMetrics[] = [
   },
 ];
 
+const silentAgentCallId = '019ad30c-19b0-7000-8000-000000000604';
+const silentAgent = { agentId: '019ad30c-19b0-7000-8000-000000000605', agentVersionId: '019ad30c-19b0-7000-8000-000000000606' };
+
 const summaries = new Map([
   [firstTurnId, summary(firstTurnId, 1000, 1000)],
-  [secondTurnId, summary(secondTurnId, 3000, 4000)],
+  [secondTurnId, {
+    ...summary(secondTurnId, 3000, 4000),
+    analysis: [{ ...silentAgent, name: 'Rythme', status: 'error' as const, durationMs: 300, attempts: 1, envelope: null }],
+    calls: [{
+      id: silentAgentCallId, turnId: secondTurnId, stage: 'analysis', ...silentAgent, agentName: 'Rythme', agentVersion: 2,
+      model: 'test-model', status: 'success' as const, inputTokens: 500, outputTokens: 20, durationMs: 300,
+      createdAt: '2025-01-01T00:00:00.000Z', error: null, costMicroUsd: 1, costBasis: 'priced' as const,
+    }],
+  }],
 ]);
 
 function Harness({ initialTurnId }: { initialTurnId: string }) {
   const [turnId, setTurnId] = useState(initialTurnId);
   return (
     <MantineProvider env="test" forceColorScheme="dark">
-      <TurnDrawer projectId={projectId} turnIds={[firstTurnId, secondTurnId]} metrics={metrics} metricsError=""
+      <TurnDrawer projectId={projectId} turnIds={[firstTurnId, secondTurnId]}
+        metricsByTurn={new Map(metrics.map((turn) => [turn.turnId, turn]))} metricsError=""
         onRetryMetrics={vi.fn()} turnId={turnId} onSelectTurn={setTurnId} onClose={vi.fn()} />
     </MantineProvider>
   );
@@ -67,6 +80,27 @@ afterEach(() => {
 });
 
 describe('TurnDrawer', () => {
+  it('styles the drawer content, not the wrapper that pins it to the right edge', async () => {
+    render(<Harness initialTurnId={firstTurnId} />);
+    const content = await screen.findByRole('dialog');
+    const inner = content.parentElement!;
+
+    expect(content.className).toContain(styles.drawer);
+    expect(inner.className).toContain('mantine-Drawer-inner');
+    expect(inner.className).not.toContain(styles.drawer);
+  });
+
+  it('flags an analysis agent the Narrator ran without and opens its raw call', async () => {
+    render(<Harness initialTurnId={secondTurnId} />);
+    const drawer = within(await screen.findByRole('dialog'));
+
+    const point = (await drawer.findByText(/Rythme n’a produit aucune contribution valide/)).parentElement!;
+    fireEvent.click(within(point).getByRole('button', { name: /Voir/ }));
+
+    expect(drawer.getByRole('tab', { name: 'Appels bruts' }).getAttribute('aria-selected')).toBe('true');
+    expect(await drawer.findByRole('button', { name: 'Retour aux appels' })).toBeTruthy();
+  });
+
   it('points out what deserves a look and leads to the tab that details it', async () => {
     render(<Harness initialTurnId={secondTurnId} />);
     const drawer = within(await screen.findByRole('dialog'));

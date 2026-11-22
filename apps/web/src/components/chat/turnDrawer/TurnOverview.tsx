@@ -13,27 +13,27 @@ import type { TurnDrawerTab } from './turnDrawerTabs';
 import { type AttentionPoint, attentionPoints, averageCompleteCost } from './turnInsights';
 
 /** « Synthèse » : the essentials of a turn, each leading to the tab that details it. */
-export function TurnOverview({ summary, metrics, index, onOpenTab }: {
+export function TurnOverview({ summary, metrics, index, onOpenTab, onOpenCall }: {
   summary: TurnTraceSummary;
   metrics: TurnMetrics[] | null;
   index: number;
   onOpenTab: (tab: TurnDrawerTab) => void;
+  onOpenCall: (callId: string) => void;
 }) {
   const turn = metrics?.[index];
   const previous = index > 0 ? metrics?.[index - 1] : undefined;
   const average = metrics ? averageCompleteCost(metrics) : null;
   const narratorStage = summary.timeline.find((stage) => stage.stage === 'narrator');
-  const durationMs = summary.timeline.reduce((sum, stage) => sum + stage.durationMs, 0);
   const narratorTokens = turn?.narratorInputTokens ?? null;
   const previousTokens = previous?.narratorInputTokens ?? null;
-  const points = metrics ? attentionPoints(summary, metrics, index) : [];
+  const points = attentionPoints(summary, metrics ?? [], index);
 
   return (
     <Stack gap="sm">
       <SimpleGrid cols={{ base: 1, xs: 3 }} spacing="xs">
         <Indicator label="Coût" value={formatCost(summary.cost)} onClick={() => onOpenTab('cost')}
           hint={summary.cost.complete && average ? `${formatDelta(summary.cost.microUsd, average)} vs moyenne du récit` : 'pas de moyenne comparable'} />
-        <Indicator label="Durée" value={formatSeconds(durationMs)} onClick={() => onOpenTab('cost')}
+        <Indicator label="Durée" value={formatSeconds(summary.durationMs)} onClick={() => onOpenTab('cost')}
           hint={narratorStage ? `Narrateur : ${formatSeconds(narratorStage.durationMs)}` : 'sans appel du Narrateur'} />
         <Indicator label="Entrée du Narrateur" onClick={() => onOpenTab('context')}
           value={narratorTokens === null ? '—' : `${formatTokens(narratorTokens)} tokens`}
@@ -42,13 +42,17 @@ export function TurnOverview({ summary, metrics, index, onOpenTab }: {
               : 'pas de tour précédent comparable'} />
       </SimpleGrid>
 
-      {metrics && (
-        <DrawerBlock title="Points d’attention">
-          {points.length === 0
-            ? <Text size="sm" c="dimmed">Rien à signaler pour ce tour.</Text>
-            : <Stack gap={6}>{points.map((point) => <AttentionLine key={point.kind} point={point} onOpenTab={onOpenTab} />)}</Stack>}
-        </DrawerBlock>
-      )}
+      <DrawerBlock title="Points d’attention">
+        {points.length === 0
+          ? <Text size="sm" c="dimmed">Rien à signaler pour ce tour.</Text>
+          : (
+            <Stack gap={6}>
+              {points.map((point, position) => (
+                <AttentionLine key={`${point.kind}-${position}`} point={point} onOpenTab={onOpenTab} onOpenCall={onOpenCall} />
+              ))}
+            </Stack>
+          )}
+      </DrawerBlock>
 
       <DrawerBlock title="Déroulé du tour"
         aside={<Anchor component="button" type="button" size="xs" onClick={() => onOpenTab('cost')}>Coût et durée par appel →</Anchor>}>
@@ -70,13 +74,18 @@ function Indicator({ label, value, hint, onClick }: { label: string; value: stri
   );
 }
 
-function AttentionLine({ point, onOpenTab }: { point: AttentionPoint; onOpenTab: (tab: TurnDrawerTab) => void }) {
+function AttentionLine({ point, onOpenTab, onOpenCall }: {
+  point: AttentionPoint;
+  onOpenTab: (tab: TurnDrawerTab) => void;
+  onOpenCall: (callId: string) => void;
+}) {
   const { icon, color, tab, text } = describeAttentionPoint(point);
+  const callId = point.kind === 'analysisAgentWithoutEnvelope' ? point.callId : null;
   return (
     <Group gap="xs" wrap="nowrap" align="flex-start">
       <Box c={`${color}.4`} pt={2} aria-hidden="true">{icon}</Box>
       <Text size="sm" style={{ flex: 1 }}>{text}</Text>
-      <Anchor component="button" type="button" size="xs" style={{ whiteSpace: 'nowrap' }} onClick={() => onOpenTab(tab)}>
+      <Anchor component="button" type="button" size="xs" style={{ whiteSpace: 'nowrap' }} onClick={() => (callId ? onOpenCall(callId) : onOpenTab(tab))}>
         Voir <IconArrowRight size={12} aria-hidden="true" />
       </Anchor>
     </Group>
@@ -99,6 +108,11 @@ function describeAttentionPoint(point: AttentionPoint): { icon: ReactNode; color
       return {
         icon: <IconStack2 size={16} />, color: 'orange', tab: 'context',
         text: `L’entrée du Narrateur grossit : ${formatTokens(point.tokens)} tokens contre ${formatTokens(point.previousTokens)} au tour précédent (${formatDelta(point.tokens, point.previousTokens)}).`,
+      };
+    case 'analysisAgentWithoutEnvelope':
+      return {
+        icon: <IconAlertTriangle size={16} />, color: 'red', tab: 'calls',
+        text: `${point.agentName} n’a produit aucune contribution valide : le Narrateur a tourné sans lui.`,
       };
     case 'failedCalls':
       return {

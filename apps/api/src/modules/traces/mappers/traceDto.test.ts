@@ -9,6 +9,8 @@ const analysisVersionId = '019ad30c-19b0-7000-8000-000000000103';
 const analysisCallId = '019ad30c-19b0-7000-8000-000000000104';
 const narratorCallId = '019ad30c-19b0-7000-8000-000000000105';
 
+const runningTurn = { id: turnId, configuration: null, completedAt: null };
+
 function trace(overrides: Partial<TraceDetailRecord> = {}): TraceDetailRecord {
   return {
     id: narratorCallId,
@@ -43,12 +45,45 @@ describe('trace DTO mapping', () => {
       trace({ id: '019ad30c-19b0-7000-8000-000000000110', stage: 'guardian', durationMs: 300 }),
     ];
 
-    expect(toTurnTraceSummaryDto(turnId, traces, null).timeline).toEqual([
+    expect(toTurnTraceSummaryDto(runningTurn, traces).timeline).toEqual([
       { stage: 'analysis', durationMs: 1500, agentCount: 2 },
       { stage: 'narrator', durationMs: 2000, agentCount: 1 },
       { stage: 'guardian', durationMs: 300, agentCount: 1 },
     ]);
-    expect(toTurnMetricsDto(turnId, traces, [])).toMatchObject({ durationMs: 3800, narratorInputTokens: 640 });
+    expect(toTurnMetricsDto(runningTurn, traces, [])).toMatchObject({ durationMs: 3800, narratorInputTokens: 640 });
+  });
+
+  it('leaves a later memory retry out of the turn duration but keeps its cost', () => {
+    const completedAt = new Date('2025-01-01T00:00:10.000Z');
+    const narrator = trace({ durationMs: 2000, costMicroUsd: 100, createdAt: new Date('2025-01-01T00:00:05.000Z') });
+    const guardian = trace({
+      id: '019ad30c-19b0-7000-8000-000000000111', stage: 'guardian', durationMs: 500, costMicroUsd: 10,
+      createdAt: new Date('2025-01-01T00:00:09.000Z'),
+    });
+    const retry = trace({
+      id: '019ad30c-19b0-7000-8000-000000000112', stage: 'guardian', durationMs: 60_000, costMicroUsd: 20,
+      createdAt: new Date('2025-01-01T01:00:00.000Z'),
+    });
+    const finished = { id: turnId, configuration: null, completedAt };
+
+    const summary = toTurnTraceSummaryDto(finished, [narrator, guardian, retry]);
+    expect(summary.timeline).toEqual([
+      { stage: 'narrator', durationMs: 2000, agentCount: 1 },
+      { stage: 'guardian', durationMs: 500, agentCount: 1 },
+    ]);
+    expect(summary).toMatchObject({ durationMs: 2500, cost: { microUsd: 130, complete: true } });
+    expect(summary.calls).toHaveLength(3);
+    expect(toTurnMetricsDto(finished, [narrator, guardian, retry], null)).toMatchObject({ durationMs: 2500 });
+  });
+
+  it('counts each call of an unknown agent apart, in the timeline as in the whiteboard', () => {
+    const unknown = (id: string, durationMs: number) => trace({ id, stage: 'analysis', durationMs });
+    const calls = [unknown('019ad30c-19b0-7000-8000-000000000113', 400), unknown('019ad30c-19b0-7000-8000-000000000114', 900)];
+
+    const summary = toTurnTraceSummaryDto(runningTurn, calls);
+
+    expect(summary.timeline).toEqual([{ stage: 'analysis', durationMs: 900, agentCount: 2 }]);
+    expect(summary.analysis).toHaveLength(2);
   });
 
   it('totals the cost of a turn and flags it as partial when a call has no known amount', () => {
@@ -56,9 +91,9 @@ describe('trace DTO mapping', () => {
     const narrator = trace({ costMicroUsd: 3400, costBasis: 'priced' });
     const unpriced = trace({ id: '019ad30c-19b0-7000-8000-000000000106', costBasis: 'unpriced' });
 
-    expect(toTurnTraceSummaryDto(turnId, [priced, narrator], null).cost)
+    expect(toTurnTraceSummaryDto(runningTurn, [priced, narrator]).cost)
       .toEqual({ microUsd: 4600, complete: true });
-    expect(toTurnTraceSummaryDto(turnId, [priced, unpriced], null).cost)
+    expect(toTurnTraceSummaryDto(runningTurn, [priced, unpriced]).cost)
       .toEqual({ microUsd: 1200, complete: false });
     expect(toTraceCallSummaryDto(narrator, turnId)).toMatchObject({ costMicroUsd: 3400, costBasis: 'priced' });
   });
@@ -82,7 +117,7 @@ describe('trace DTO mapping', () => {
       response: 'Mara stops.',
     });
 
-    const summary = toTurnTraceSummaryDto(turnId, [analysis, narrator], null);
+    const summary = toTurnTraceSummaryDto(runningTurn, [analysis, narrator]);
 
     expect(summary.analysis).toEqual([{
       agentId: analysisAgentId,
@@ -108,7 +143,7 @@ describe('trace DTO mapping', () => {
       agentVersionId: analysisVersionId, agentName: 'Chaos', response: '{"v":2}',
     });
 
-    const summary = toTurnTraceSummaryDto(turnId, [failed], null);
+    const summary = toTurnTraceSummaryDto(runningTurn, [failed]);
     const call = toTraceCallSummaryDto(trace(), turnId);
     const detail = toTraceCallDetailDto(trace({
       status: 'success', response: 'Raw response.',
@@ -143,7 +178,7 @@ describe('trace DTO mapping', () => {
       response: JSON.stringify({ v: 1, agent: 'Chaos', summary: 'Validated.', items: [] }),
     });
 
-    const summary = toTurnTraceSummaryDto(turnId, [invalid, retry], null);
+    const summary = toTurnTraceSummaryDto(runningTurn, [invalid, retry]);
 
     expect(summary.analysis).toHaveLength(1);
     expect(summary.analysis[0]).toMatchObject({

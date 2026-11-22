@@ -9,6 +9,7 @@ export type AttentionPoint =
   | { kind: 'costAboveAverage'; microUsd: number; averageMicroUsd: number }
   | { kind: 'partialCost' }
   | { kind: 'narratorInputGrowth'; tokens: number; previousTokens: number }
+  | { kind: 'analysisAgentWithoutEnvelope'; agentName: string; callId: string | null }
   | { kind: 'failedCalls'; count: number }
   | { kind: 'configurationChanged'; changes: TurnConfigurationChange[] };
 
@@ -39,6 +40,13 @@ export function attentionPoints(
   const previousTokens = previous?.narratorInputTokens ?? null;
   if (tokens !== null && previousTokens && tokens > previousTokens * NARRATOR_INPUT_GROWTH_RATIO) {
     points.push({ kind: 'narratorInputGrowth', tokens, previousTokens });
+  }
+
+  for (const agent of summary.analysis.filter((item) => item.status === 'error')) {
+    const lastCall = [...summary.calls].reverse().find((call) => call.stage === 'analysis' && (agent.agentVersionId
+      ? call.agentVersionId === agent.agentVersionId
+      : call.agentId === agent.agentId));
+    points.push({ kind: 'analysisAgentWithoutEnvelope', agentName: agent.name, callId: lastCall?.id ?? null });
   }
 
   const failedCalls = summary.calls.filter((call) => call.status === 'error').length;

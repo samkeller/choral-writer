@@ -29,7 +29,7 @@ function ProjectChat({ projectId }: { projectId: string }) {
   const setupOpen = !chat.pending && (search.get('tab') === 'config' || search.get('setup') === 'agents');
   const head = chat.history?.turns.at(-1);
   const [traceTurnId, setTraceTurnId] = useState<string | null>(null);
-  const turnMetrics = useTurnMetrics(projectId, chat.history);
+  const turnMetrics = useTurnMetrics(projectId, chat.history, chat.pending);
   const metricsByTurn = useMemo(
     () => new Map((turnMetrics.metrics ?? []).map((metrics) => [metrics.turnId, metrics])),
     [turnMetrics.metrics],
@@ -104,7 +104,7 @@ function ProjectChat({ projectId }: { projectId: string }) {
             />
           </Box>
           {head?.status === 'failed' && !chat.pending
-            && <PipelineFailure error={head.error} disabled={chat.pending} onRetry={() => void chat.retry()} />}
+            && <PipelineFailure error={head.error} onRetry={() => void chat.retry()} />}
           {head?.memory?.status === 'failed' && !chat.pending && <Alert color="yellow" title="Mémoire à relancer">
             <Text size="sm">{head.memory.message}</Text>
             <Group gap="xs" mt="xs">
@@ -135,7 +135,7 @@ function ProjectChat({ projectId }: { projectId: string }) {
             <TurnDrawer
               projectId={projectId}
               turnIds={chat.history?.turns.map((turn) => turn.id) ?? []}
-              metrics={turnMetrics.metrics}
+              metricsByTurn={metricsByTurn}
               metricsError={turnMetrics.error}
               onRetryMetrics={turnMetrics.reload}
               turnId={traceTurnId}

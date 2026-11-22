@@ -20,8 +20,8 @@ interface TurnDrawerProps {
   projectId: string;
   /** Turns of the displayed branch, root first. */
   turnIds: string[];
-  /** Metrics aligned with `turnIds`; null while loading or when they could not be loaded. */
-  metrics: TurnMetrics[] | null;
+  /** Metrics by turn id; a turn without metrics is still loading or could not be measured. */
+  metricsByTurn: ReadonlyMap<string, TurnMetrics>;
   metricsError: string;
   onRetryMetrics: () => void;
   turnId: string;
@@ -31,21 +31,34 @@ interface TurnDrawerProps {
 
 /** The turn drawer (« mode Debug ») : one turn at a time, browsable turn by turn on the same tab. */
 export function TurnDrawer({
-  projectId, turnIds, metrics, metricsError, onRetryMetrics, turnId, onSelectTurn, onClose,
+  projectId, turnIds, metricsByTurn, metricsError, onRetryMetrics, turnId, onSelectTurn, onClose,
 }: TurnDrawerProps) {
   const [tab, setTab] = useState<TurnDrawerTab>('overview');
+  /** The call « Appels bruts » opens on, when a summary link points to one. */
+  const [focusedCallId, setFocusedCallId] = useState<string | null>(null);
   const summary = useTurnTraceSummary(projectId, turnId);
   const index = turnIds.indexOf(turnId);
-  const alignedMetrics = metrics?.length === turnIds.length ? metrics : null;
+  const storyMetrics = storyMetricsOf(turnIds, metricsByTurn);
   const selectIndex = (target: number) => {
     const targetId = turnIds[target];
     if (targetId) onSelectTurn(targetId);
   };
+  const openTab = (value: TurnDrawerTab) => {
+    setFocusedCallId(null);
+    setTab(value);
+  };
+  const openCall = (callId: string) => {
+    setFocusedCallId(callId);
+    setTab('calls');
+  };
+
+  useEffect(() => setFocusedCallId(null), [turnId]);
 
   return (
-    <Drawer.Root opened onClose={onClose} position="right" size="min(100vw, 60rem)">
+    // Drawer.Content would also apply its className to the positioning "inner" wrapper: target the content only.
+    <Drawer.Root opened onClose={onClose} position="right" size="min(100vw, 60rem)" classNames={{ content: styles.drawer }}>
       <Drawer.Overlay backgroundOpacity={0.35} blur={3} />
-      <Drawer.Content className={styles.drawer}>
+      <Drawer.Content>
         <Drawer.Header className={styles.header}>
           <Group gap={4} wrap="nowrap">
             <IconAction label="Tour précédent" disabled={index <= 0} onClick={() => selectIndex(index - 1)}>
@@ -70,19 +83,19 @@ export function TurnDrawer({
                 </Group>
               </Alert>
             )}
-            <Tabs value={tab} onChange={(value) => { if (isTurnDrawerTab(value)) setTab(value); }} keepMounted={false}
+            <Tabs value={tab} onChange={(value) => { if (isTurnDrawerTab(value)) openTab(value); }} keepMounted={false}
               classNames={{ root: styles.tabs, list: styles.drawerTabList }}>
               <Tabs.List>
                 {turnDrawerTabs.map(({ value, label }) => <Tabs.Tab key={value} value={value}>{label}</Tabs.Tab>)}
               </Tabs.List>
               <Tabs.Panel value="overview">
                 <WithSummary state={summary}>
-                  {(loaded) => <TurnOverview summary={loaded} metrics={alignedMetrics} index={index} onOpenTab={setTab} />}
+                  {(loaded) => <TurnOverview summary={loaded} metrics={storyMetrics} index={index} onOpenTab={openTab} onOpenCall={openCall} />}
                 </WithSummary>
               </Tabs.Panel>
               <Tabs.Panel value="context">
                 <WithSummary state={summary}>
-                  {(loaded) => <TurnContextPanel calls={loaded.calls} metrics={alignedMetrics} index={index} onSelectTurn={selectIndex} />}
+                  {(loaded) => <TurnContextPanel calls={loaded.calls} metrics={storyMetrics} index={index} onSelectTurn={selectIndex} />}
                 </WithSummary>
               </Tabs.Panel>
               <Tabs.Panel value="cost">
@@ -92,7 +105,7 @@ export function TurnDrawer({
                 <WithSummary state={summary}>
                   {(loaded) => (
                     <TurnConfigurationPanel configuration={loaded.configuration} turnNumber={index + 1}
-                      changes={alignedMetrics ? alignedMetrics[index]?.configurationChanges : undefined} />
+                      changes={metricsByTurn.get(turnId)?.configurationChanges} />
                   )}
                 </WithSummary>
               </Tabs.Panel>
@@ -100,13 +113,16 @@ export function TurnDrawer({
                 <MemoryTracePanel key={turnId} projectId={projectId} turnId={turnId} />
               </Tabs.Panel>
               <Tabs.Panel value="story">
-                {alignedMetrics
-                  ? <StoryPanel metrics={alignedMetrics} index={index} onSelectTurn={selectIndex} />
+                {storyMetrics
+                  ? <StoryPanel metrics={storyMetrics} index={index} onSelectTurn={selectIndex} />
                   : !metricsError && <Loader color="choral" aria-label="Chargement des indicateurs du récit" />}
               </Tabs.Panel>
               <Tabs.Panel value="calls">
                 <WithSummary state={summary}>
-                  {(loaded) => <TraceCallsPanel key={turnId} projectId={projectId} turnId={turnId} calls={loaded.calls} />}
+                  {(loaded) => (
+                    <TraceCallsPanel key={turnId} projectId={projectId} turnId={turnId} calls={loaded.calls}
+                      initialCallId={focusedCallId} />
+                  )}
                 </WithSummary>
               </Tabs.Panel>
             </Tabs>
@@ -115,6 +131,12 @@ export function TurnDrawer({
       </Drawer.Content>
     </Drawer.Root>
   );
+}
+
+/** Metrics of every turn, in branch order; null until each displayed turn has its own. */
+function storyMetricsOf(turnIds: readonly string[], metricsByTurn: ReadonlyMap<string, TurnMetrics>): TurnMetrics[] | null {
+  const metrics = turnIds.flatMap((id) => metricsByTurn.get(id) ?? []);
+  return metrics.length === turnIds.length ? metrics : null;
 }
 
 type SummaryState = { summary: TurnTraceSummary | null; loading: boolean; error: string; retry: () => void };

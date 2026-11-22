@@ -14,7 +14,7 @@ function metrics(microUsd: number, overrides: Partial<TurnMetrics> = {}): TurnMe
 
 function summary(microUsd: number, overrides: Partial<TurnTraceSummary> = {}): TurnTraceSummary {
   return {
-    turnId, analysis: [], narrator: null, calls: [], timeline: [],
+    turnId, analysis: [], narrator: null, calls: [], timeline: [], durationMs: 0,
     cost: { microUsd, complete: true }, configuration: null, ...overrides,
   };
 }
@@ -43,6 +43,23 @@ describe('turn insights', () => {
       { kind: 'costAboveAverage', microUsd: 400, averageMicroUsd: 250 },
       { kind: 'narratorInputGrowth', tokens: 2000, previousTokens: 1000 },
       { kind: 'configurationChanged', changes: [{ kind: 'systemPromptChanged' }] },
+    ]);
+  });
+
+  it('names an analysis agent without a valid envelope, pointing to its last call', () => {
+    const agent = { agentId: '019ad30c-19b0-7000-8000-000000000503', agentVersionId: '019ad30c-19b0-7000-8000-000000000504' };
+    const call = {
+      id: '019ad30c-19b0-7000-8000-000000000505', turnId, stage: 'analysis', ...agent, agentName: 'Rythme', agentVersion: 1,
+      model: 'test-model', status: 'success' as const, inputTokens: 10, outputTokens: 10, durationMs: 10,
+      createdAt: '2025-01-01T00:00:00.000Z', error: null, costMicroUsd: 1, costBasis: 'priced' as const,
+    };
+    const silent = summary(100, {
+      analysis: [{ ...agent, name: 'Rythme', status: 'error', durationMs: 10, attempts: 1, envelope: null }],
+      calls: [call],
+    });
+
+    expect(attentionPoints(silent, [metrics(100), metrics(100)], 1)).toEqual([
+      { kind: 'analysisAgentWithoutEnvelope', agentName: 'Rythme', callId: call.id },
     ]);
   });
 

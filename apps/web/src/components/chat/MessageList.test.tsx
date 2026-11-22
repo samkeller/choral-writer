@@ -155,7 +155,7 @@ describe('PipelineProgress', () => {
     const onRetry = vi.fn();
     render(
       <MantineProvider env="test" forceColorScheme="dark">
-        <PipelineFailure error="Le fournisseur ne répond pas." disabled={false} onRetry={onRetry} />
+        <PipelineFailure error="Le fournisseur ne répond pas." onRetry={onRetry} />
       </MantineProvider>,
     );
 
