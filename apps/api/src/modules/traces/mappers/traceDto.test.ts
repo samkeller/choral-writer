@@ -38,9 +38,9 @@ describe('trace DTO mapping', () => {
     const narrator = trace({ costMicroUsd: 3400, costBasis: 'priced' });
     const unpriced = trace({ id: '019ad30c-19b0-7000-8000-000000000106', costBasis: 'unpriced' });
 
-    expect(toTurnTraceSummaryDto(turnId, [priced, narrator], null).cost)
+    expect(toTurnTraceSummaryDto(turnId, [priced, narrator], null, null).cost)
       .toEqual({ microUsd: 4600, complete: true });
-    expect(toTurnTraceSummaryDto(turnId, [priced, unpriced], null).cost)
+    expect(toTurnTraceSummaryDto(turnId, [priced, unpriced], null, null).cost)
       .toEqual({ microUsd: 1200, complete: false });
     expect(toTraceCallSummaryDto(narrator, turnId)).toMatchObject({ costMicroUsd: 3400, costBasis: 'priced' });
   });
@@ -64,7 +64,7 @@ describe('trace DTO mapping', () => {
       response: 'Mara stops.',
     });
 
-    const summary = toTurnTraceSummaryDto(turnId, [analysis, narrator], null);
+    const summary = toTurnTraceSummaryDto(turnId, [analysis, narrator], null, null);
 
     expect(summary.analysis).toEqual([{
       agentId: analysisAgentId,
@@ -90,7 +90,7 @@ describe('trace DTO mapping', () => {
       agentVersionId: analysisVersionId, agentName: 'Chaos', response: '{"v":2}',
     });
 
-    const summary = toTurnTraceSummaryDto(turnId, [failed], null);
+    const summary = toTurnTraceSummaryDto(turnId, [failed], null, null);
     const call = toTraceCallSummaryDto(trace(), turnId);
     const detail = toTraceCallDetailDto(trace({
       status: 'success', response: 'Raw response.',
@@ -125,11 +125,30 @@ describe('trace DTO mapping', () => {
       response: JSON.stringify({ v: 1, agent: 'Chaos', summary: 'Validated.', items: [] }),
     });
 
-    const summary = toTurnTraceSummaryDto(turnId, [invalid, retry], null);
+    const summary = toTurnTraceSummaryDto(turnId, [invalid, retry], null, null);
 
     expect(summary.analysis).toHaveLength(1);
     expect(summary.analysis[0]).toMatchObject({
       status: 'success', attempts: 2, durationMs: 70, envelope: { summary: 'Validated.' },
     });
+  });
+
+  it('summarizes the direction phase with its recorded direction, cost and attempts', () => {
+    const direction = { tension: 'tenir' as const, nudges: [], retained: [], dismissed: [] };
+    const invalid = trace({
+      id: analysisCallId, stage: 'direction', agentName: 'Director', durationMs: 30, costMicroUsd: 100, costBasis: 'priced',
+    });
+    const valid = trace({
+      id: '019ad30c-19b0-7000-8000-000000000107', stage: 'direction', agentName: 'Director',
+      status: 'success', durationMs: 40, costMicroUsd: 200, costBasis: 'priced',
+    });
+
+    expect(toTurnTraceSummaryDto(turnId, [invalid, valid], null, direction)).toMatchObject({
+      direction: { name: 'Director', status: 'success', attempts: 2, durationMs: 70, direction },
+      cost: { microUsd: 300, complete: true },
+    });
+    expect(toTurnTraceSummaryDto(turnId, [invalid], null, null).direction)
+      .toMatchObject({ status: 'error', direction: null });
+    expect(toTurnTraceSummaryDto(turnId, [], null, null).direction).toBeNull();
   });
 });

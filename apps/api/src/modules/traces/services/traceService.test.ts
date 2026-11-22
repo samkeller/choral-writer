@@ -32,7 +32,7 @@ function trace(): TraceDetailRecord {
 describe('TraceService', () => {
   it('validates project ownership before reading a turn summary', async () => {
     const call = trace();
-    const turns = { turn: vi.fn(async () => ({ id: turnId })), turnConfiguration: vi.fn(async () => null) };
+    const turns = { turn: vi.fn(async () => ({ id: turnId })), turnConfiguration: vi.fn(async () => null), turnDirection: vi.fn(async () => null) };
     const repository = {
       listByTurn: vi.fn(async () => [call]),
       findByIdForTurn: vi.fn(async () => call),
@@ -48,8 +48,8 @@ describe('TraceService', () => {
   it('returns the configuration the turn ran with, or null for a turn that predates recording', async () => {
     const configuration = { systemPrompt: 'Prompt.', agents: [] };
     const repository = { listByTurn: vi.fn(async () => []), findByIdForTurn: vi.fn(async () => null) };
-    const recorded = { turn: vi.fn(async () => ({ id: turnId })), turnConfiguration: vi.fn(async () => configuration) };
-    const legacy = { turn: vi.fn(async () => ({ id: turnId })), turnConfiguration: vi.fn(async () => null) };
+    const recorded = { turn: vi.fn(async () => ({ id: turnId })), turnConfiguration: vi.fn(async () => configuration), turnDirection: vi.fn(async () => null) };
+    const legacy = { turn: vi.fn(async () => ({ id: turnId })), turnConfiguration: vi.fn(async () => null), turnDirection: vi.fn(async () => null) };
 
     expect((await new TraceService(repository, recorded).summary(projectId, turnId)).configuration).toEqual(configuration);
     expect(recorded.turnConfiguration).toHaveBeenCalledWith(projectId, turnId);
@@ -57,7 +57,7 @@ describe('TraceService', () => {
   });
 
   it('restricts call details to the requested turn', async () => {
-    const turns = { turn: vi.fn(async () => ({ id: turnId })), turnConfiguration: vi.fn(async () => null) };
+    const turns = { turn: vi.fn(async () => ({ id: turnId })), turnConfiguration: vi.fn(async () => null), turnDirection: vi.fn(async () => null) };
     const repository = {
       listByTurn: vi.fn(async () => []),
       findByIdForTurn: vi.fn(async () => null),
@@ -69,7 +69,7 @@ describe('TraceService', () => {
   });
 
   it('does not query traces when the turn does not belong to the project', async () => {
-    const turns = { turn: vi.fn().mockRejectedValue(new Error('Turn not found.')), turnConfiguration: vi.fn(async () => null) };
+    const turns = { turn: vi.fn().mockRejectedValue(new Error('Turn not found.')), turnConfiguration: vi.fn(async () => null), turnDirection: vi.fn(async () => null) };
     const repository = {
       listByTurn: vi.fn(async () => []),
       findByIdForTurn: vi.fn(async () => null),

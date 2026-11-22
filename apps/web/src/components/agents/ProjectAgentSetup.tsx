@@ -20,6 +20,7 @@ import { AgentEditor } from './AgentEditor';
 
 const outputLabels: Record<Agent['output'], string> = {
   envelope: 'Analyse',
+  direction: 'Directeur',
   narrative: 'Narrateur',
   memory_proposals: 'Gardien',
 };
@@ -83,13 +84,14 @@ export function ProjectAgentSetup({ projectId, suggestedVersion, onSaved, memory
           {
             agent && displayedVersion ? <>
               {
-                agent.output === 'envelope' ? <>
+                agent.output === 'envelope' || agent.output === 'direction' ? <>
                   <Checkbox
                     label={`Activer ${displayedVersion.name}`}
+                    description={agent.output === 'direction' ? 'Facultatif ; un seul Directeur par projet.' : undefined}
                     checked={Boolean(version)}
                     disabled={setup.pending}
                     onChange={(event) => setup.change(event.currentTarget.checked
-                      ? [...setup.versionIds, displayedVersion.id]
+                      ? selectVersion(setup.versionIds, setup.agents, agent.output, displayedVersion.id)
                       : setup.versionIds.filter((id) => !agent.versions.some((item) => item.id === id)))
                     }
                   />

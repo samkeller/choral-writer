@@ -1,4 +1,4 @@
-import type { AnalysisEnvelope, ChatTurn, MemoryContext, Message } from '@choral-writer/shared';
+import type { AnalysisEnvelope, ChatTurn, MemoryContext, Message, TurnDirection } from '@choral-writer/shared';
 
 export type NarratorInput = {
   projectId: string;
@@ -7,6 +7,8 @@ export type NarratorInput = {
   agentVersionId: string;
   systemPrompt: string;
   whiteboard: readonly AnalysisEnvelope[];
+  /** When present, replaces the whiteboard in the Narrator's prompt. */
+  direction: TurnDirection | null;
   history: readonly ChatTurn[];
   userMessage: Message;
   signal: AbortSignal;

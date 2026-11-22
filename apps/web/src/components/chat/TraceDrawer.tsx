@@ -3,7 +3,9 @@ import {
   Alert, Badge, Button, Drawer, Group, Loader, Paper, Stack, Tabs, Text,
 } from '@mantine/core';
 import { IconArrowLeft, IconChevronRight, IconRefresh } from '@tabler/icons-react';
-import type { MemoryContext, TraceCallDetail, TraceCallSummary, TurnTraceSummary } from '@choral-writer/shared';
+import type {
+  DirectionTrace, MemoryContext, TraceCallDetail, TraceCallSummary, TurnTraceSummary,
+} from '@choral-writer/shared';
 
 import { getTraceCallDetail, getTurnTraceSummary } from '../../api/chat/traceApi';
 import { getErrorMessage } from '../../api/client';
@@ -196,6 +198,7 @@ function PipelinePanel({
           </Stack>
         )}
       </Paper>
+      {summary.direction && <DirectionStep trace={summary.direction} calls={summary.calls} onSelectCall={onSelectCall} />}
       <Paper p="sm" withBorder>
         <Group justify="space-between" mb="xs">
           <Text fw={600}>Narrateur</Text>
@@ -218,6 +221,48 @@ function PipelinePanel({
           : <Text size="sm" c="dimmed">Aucun appel narrateur enregistré.</Text>}
       </Paper>
     </Stack>
+  );
+}
+
+function DirectionStep({
+  trace, calls, onSelectCall,
+}: {
+  trace: DirectionTrace;
+  calls: TraceCallSummary[];
+  onSelectCall: (callId: string) => void;
+}) {
+  const directionCalls = calls.filter((call) => call.stage === 'direction');
+  const lastCall = directionCalls.at(-1);
+  const cost = directionCalls.every((call) => call.costMicroUsd !== null)
+    ? formatCost(directionCalls.reduce((total, call) => total + (call.costMicroUsd ?? 0), 0))
+    : 'coût inconnu';
+  const { direction } = trace;
+
+  return (
+    <Paper p="sm" withBorder>
+      <Group justify="space-between" mb="xs">
+        <Text fw={600}>Direction · {trace.name}</Text>
+        <Group gap="xs">
+          <Text size="xs" c="dimmed">
+            {formatDuration(trace.durationMs)} · {trace.attempts} appel(s) · {cost}
+          </Text>
+          <StatusBadge status={trace.status} />
+          {lastCall && (
+            <Button size="compact-xs" variant="subtle" onClick={() => onSelectCall(lastCall.id)}>
+              Inspecter
+            </Button>
+          )}
+        </Group>
+      </Group>
+      {direction
+        ? (
+          <Text size="sm">
+            Tension : {direction.tension} · {direction.nudges.length} nudge(s) · {direction.retained.length} retenu(s),{' '}
+            {direction.dismissed.length} écarté(s)
+          </Text>
+        )
+        : <Text size="sm" c="dimmed">Direction indisponible : le Narrateur a reçu le whiteboard complet.</Text>}
+    </Paper>
   );
 }
 
@@ -390,6 +435,7 @@ function StatusBadge({ status }: { status: 'success' | 'error' }) {
 
 function stageLabel(stage: string): string {
   if (stage === 'analysis') return 'Analyse';
+  if (stage === 'direction') return 'Direction';
   if (stage === 'narrator') return 'Narrateur';
   if (stage === 'guardian') return 'Gardien';
   if (stage === 'reducer') return 'Écriture mémoire';
@@ -405,6 +451,10 @@ function findAnalysisCall(
 
 function formatDuration(durationMs: number): string {
   return `${(durationMs / 1000).toFixed(1)} s`;
+}
+
+function formatCost(microUsd: number): string {
+  return `${(microUsd / 1_000_000).toFixed(4)} $`;
 }
 
 function formatTokens(tokens: number | null): string {
