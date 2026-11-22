@@ -487,7 +487,18 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
       payload: { agents: [...team, { agentId: second.id, versionId: second.versions[0]!.id }] },
     });
     expect(duplicate.json()).toMatchObject({ error: { code: 'SINGLE_DIRECTOR' } });
-    await agents.configure(project.id, { agents: team });
+    const configured = await agents.configure(project.id, { agents: team });
+    expect(configured.find((agent) => agent.agentId === director.id)?.memoryRead).toEqual({ mode: 'none', tagIds: [] });
+    const branchId = (await projects.get(project.id)).defaultBranchId!;
+    const view = await memoryView(project.id, branchId);
+    const refused = await app.inject({ method: 'POST', headers: { cookie },
+      url: `/api/projects/${project.id}/branches/${branchId}/memories`,
+      payload: { expectedHeadTurnId: view.headTurnId, expectedRevisionId: view.revisionId,
+        expectedCatalogRevisionId: view.catalogRevisionId,
+        change: { op: 'setAgentRead', agentId: director.id, read: { mode: 'all', tagIds: [] } } },
+    });
+    expect(refused.statusCode).toBe(422);
+    expect(refused.json()).toMatchObject({ error: { code: 'DIRECTOR_HAS_NO_MEMORY' } });
 
     directorOutput = JSON.stringify({
       v: 1, retained: [{ item: 'c1', why: 'Concret.' }], dismissed: [], tension: 'monter',
@@ -508,6 +519,7 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
     })).json());
     expect(summary.direction).toMatchObject({
       name: 'Directeur', status: 'success', attempts: 1,
+      cost: { microUsd: expect.any(Number), complete: expect.any(Boolean) },
       direction: { tension: 'monter', retained: [{ agent: 'Chaos', why: 'Concret.' }], dismissed: [] },
     });
     expect(summary.calls.find((call) => call.stage === 'direction')?.costBasis).not.toBeNull();

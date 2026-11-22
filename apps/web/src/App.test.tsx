@@ -1041,6 +1041,7 @@ describe('projects and chat screens', () => {
       direction: {
         agentId: '019ad30c-19b0-7000-8000-000000000305', agentVersionId: '019ad30c-19b0-7000-8000-000000000306',
         name: 'Directeur', status: 'error', durationMs: 300, attempts: 2, direction: null,
+        cost: { microUsd: 120, complete: true },
       },
       narrator: { status: 'success', durationMs: 1500, prose: 'La porte résiste.' },
       calls: [
@@ -1109,6 +1110,7 @@ describe('projects and chat screens', () => {
     fireEvent.click(screen.getAllByRole('button', { name: 'Inspecter les traces de ce tour' })[0]!);
     await screen.findByRole('heading', { name: 'Traces du tour' });
     await screen.findByText('Direction · Directeur');
+    screen.getByText('0.3 s · 2 appel(s) · 0.0001 $');
     screen.getByText('Direction indisponible : le Narrateur a reçu le whiteboard complet.');
     fireEvent.click(screen.getByRole('tab', { name: 'Whiteboard' }));
     await screen.findByText('Chercher la clé.');

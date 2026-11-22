@@ -86,6 +86,7 @@ describe('ChatDirectorService', () => {
     ['an item selected twice', { ...validOutput, dismissed: [{ item: 'c2', why: 'x' }, { item: 'c1', why: 'x' }] }],
     ['an unknown item', { ...validOutput, dismissed: [{ item: 'c2', why: 'x' }, { item: 'c9', why: 'x' }] }],
     ['an unknown basis', { ...validOutput, nudges: [{ type: 'pression', target: 'x', basis: 'c9' }] }],
+    ['a basis on a dismissed item', { ...validOutput, nudges: [{ type: 'pression', target: 'x', basis: 'c2' }] }],
     ['two nudges of one type', { ...validOutput, nudges: [
       { type: 'retard', target: 'x', basis: null }, { type: 'retard', target: 'y', basis: null },
     ] }],

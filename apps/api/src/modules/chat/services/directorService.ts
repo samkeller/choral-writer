@@ -1,15 +1,14 @@
 import type {
-  AnalysisEnvelope, AttributedItem, ChatTurn, MemoryState, Message, NudgeType, ProjectAgent, TurnDirection,
+  AnalysisEnvelope, AttributedItem, ChatTurn, Message, NudgeType, ProjectAgent, TurnDirection,
 } from '@choral-writer/shared';
 import { nudgeTypeSchema, tensionTargetSchema } from '@choral-writer/shared';
 import { z } from 'zod';
 
 import { ApiError } from '../../../errors/errors.js';
 import type { CallLLMInput, createCallLLM } from '../../../llm/call-llm.js';
-import { formatMemoryContext, memoryContext } from '../../memories/services/memoryState.js';
 import { conversationMessages } from './conversationMessages.js';
 import { nudgeDescriptions, tensionLabels } from './directionVocabulary.js';
-import { formatItem } from './narratorPrompt.js';
+import { formatItem } from './whiteboardFormat.js';
 
 export type DirectorAgent = ProjectAgent & { phase: 'direction'; output: 'direction' };
 
@@ -31,7 +30,6 @@ export type DirectorInput = {
   recentDirections: readonly (TurnDirection | null)[];
   userMessage: Message;
   signal: AbortSignal;
-  memoryState?: MemoryState;
 };
 
 type IdentifiedItem = AttributedItem & { id: string };
@@ -73,7 +71,7 @@ export function forbiddenNudgeTypes(recentDirections: readonly (TurnDirection | 
 
 /**
  * Validates the output against the whiteboard the Director read: every item is either retained
- * or dismissed exactly once, every basis names a shown item, and nudge types do not repeat.
+ * or dismissed exactly once, every basis names a retained item, and nudge types do not repeat.
  */
 export function directorOutputContract(itemIds: readonly string[], forbidden: readonly NudgeType[]) {
   return directorOutputSchema.superRefine((output, context) => {
@@ -83,8 +81,9 @@ export function directorOutputContract(itemIds: readonly string[], forbidden: re
     if (selected.some((id) => !known.has(id))) issue('Une sélection désigne une contribution inconnue.');
     if (new Set(selected).size !== selected.length) issue('Une contribution est sélectionnée deux fois.');
     if (itemIds.some((id) => !selected.includes(id))) issue('Chaque contribution doit être retenue ou écartée.');
-    if (output.nudges.some((nudge) => nudge.basis !== null && !known.has(nudge.basis))) {
-      issue('Un basis désigne une contribution inconnue.');
+    const retained = new Set(output.retained.map((selection) => selection.item));
+    if (output.nudges.some((nudge) => nudge.basis !== null && !retained.has(nudge.basis))) {
+      issue('Un basis doit désigner une contribution retenue.');
     }
     const types = output.nudges.map((nudge) => nudge.type);
     if (new Set(types).size !== types.length) issue('Deux nudges ont le même type.');
@@ -120,7 +119,7 @@ function directorContract(forbidden: readonly NudgeType[]): string {
     '- "nudges" : de 0 à 2 pressions sur la manière de raconter, de types différents, parmi :',
     ...Object.entries(nudgeDescriptions).map(([type, description]) => `  - ${type} : ${description} ;`),
     '- Un nudge n’introduit aucun fait, ne contient ni prose ni réplique, et ne fixe jamais une issue.',
-    '- "basis" est obligatoire quand le nudge implique un personnage incarné par un agent d’analyse : c’est l’identifiant de la contribution de cet agent. Sinon, null.',
+    '- "basis" est obligatoire quand le nudge implique un personnage incarné par un agent d’analyse : c’est l’identifiant de la contribution de cet agent, qui doit figurer dans "retained". Sinon, null.',
     '- Un agent qui incarne un personnage fait autorité sur ce que ce personnage veut et accepte : construis autour d’un refus, ne l’annule pas. Si deux agents-personnages se contredisent, choisis lequel mettre au premier plan sans faire céder l’autre.',
     '- Tu peux contrarier l’issue de ce que tente le protagoniste et les réactions des autres, jamais ce que le protagoniste fait ou dit.',
     forbidden.length
@@ -162,18 +161,17 @@ export class ChatDirectorService {
     const whiteboard = identifyWhiteboard(input.whiteboard);
     const items = whiteboard.flatMap((entry) => entry.items);
     const forbidden = forbiddenNudgeTypes(input.recentDirections);
-    const memory = input.memoryState ? memoryContext(input.memoryState, input.agent) : { tags: [], entries: [] };
     const request: CallLLMInput<DirectorOutput> = {
       projectId: input.projectId,
       turnId: input.turnId,
       agentId: input.agent.agentId,
       agentVersionId: input.agent.versionId,
       stage: 'direction',
-      memory,
+      memory: { tags: [], entries: [] },
       messages: conversationMessages(
         [input.systemPrompt, input.agent.instructions, directorContract(forbidden),
           formatIdentifiedWhiteboard(whiteboard), formatRecentDirections(input.recentDirections),
-          formatMemoryContext(memory)].filter(Boolean).join('\n\n'),
+        ].filter(Boolean).join('\n\n'),
         input.history,
         input.userMessage,
       ),

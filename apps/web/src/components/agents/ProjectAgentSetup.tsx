@@ -1,7 +1,7 @@
 ﻿import { useEffect, useState } from 'react';
 import { Alert, Box, Button, Checkbox, Loader, Paper, Select, Text } from '@mantine/core';
 import { Link } from 'react-router-dom';
-import type { Agent } from '@choral-writer/shared';
+import { readsMemory, type Agent } from '@choral-writer/shared';
 import { IconLibrary, IconPlus } from '@tabler/icons-react';
 import {
   ConfigurationDetailPane,
@@ -104,10 +104,11 @@ export function ProjectAgentSetup({ projectId, suggestedVersion, onSaved, memory
                   placeholder="Choisir cet agent et sa version" data={setup.agents.filter((item) => item.output === agent.output).map((item) => ({
                     group: item.versions[0]?.name ?? item.id, items: item.versions.map((v) => ({ value: v.id, label: `${v.name} · v${v.version}` })),
                   }))} onChange={(value) => { if (value) selectRequired(agent.output, value); }} />}
-              {persisted && memory.view && <><Text fw={600}>Accès mémoire</Text>
+              {!readsMemory(agent.output) && <Text size="sm" c="dimmed">Le Directeur ne reçoit aucune mémoire.</Text>}
+              {readsMemory(agent.output) && persisted && memory.view && <><Text fw={600}>Accès mémoire</Text>
                 <AgentMemoryEditor key={`${persisted.agentId}:${JSON.stringify(persisted.memoryRead)}`} agent={persisted} tags={memory.view.state.tags}
                   pending={memory.pending} save={memory.change} /></>}
-              {!persisted && <Text size="sm" c="dimmed">Enregistrez l’équipe pour configurer l’accès mémoire de cet agent.</Text>}
+              {readsMemory(agent.output) && !persisted && <Text size="sm" c="dimmed">Enregistrez l’équipe pour configurer l’accès mémoire de cet agent.</Text>}
               {memory.error && <Alert color="red" role="alert">{memory.error}<Button variant="subtle" onClick={memory.reload}>Recharger</Button></Alert>}
               <Paper key={`${agent.id}:${displayedVersion.id}`
               } component="details" withBorder p="sm">

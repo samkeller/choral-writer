@@ -144,11 +144,14 @@ describe('trace DTO mapping', () => {
     });
 
     expect(toTurnTraceSummaryDto(turnId, [invalid, valid], null, direction)).toMatchObject({
-      direction: { name: 'Director', status: 'success', attempts: 2, durationMs: 70, direction },
+      direction: {
+        name: 'Director', status: 'success', attempts: 2, durationMs: 70, direction,
+        cost: { microUsd: 300, complete: true },
+      },
       cost: { microUsd: 300, complete: true },
     });
-    expect(toTurnTraceSummaryDto(turnId, [invalid], null, null).direction)
-      .toMatchObject({ status: 'error', direction: null });
+    expect(toTurnTraceSummaryDto(turnId, [invalid, trace({ costBasis: 'unpriced' })], null, null).direction)
+      .toMatchObject({ status: 'error', direction: null, attempts: 1, cost: { microUsd: 100, complete: true } });
     expect(toTurnTraceSummaryDto(turnId, [], null, null).direction).toBeNull();
   });
 });

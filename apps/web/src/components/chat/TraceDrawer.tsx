@@ -231,11 +231,8 @@ function DirectionStep({
   calls: TraceCallSummary[];
   onSelectCall: (callId: string) => void;
 }) {
-  const directionCalls = calls.filter((call) => call.stage === 'direction');
-  const lastCall = directionCalls.at(-1);
-  const cost = directionCalls.every((call) => call.costMicroUsd !== null)
-    ? formatCost(directionCalls.reduce((total, call) => total + (call.costMicroUsd ?? 0), 0))
-    : 'coût inconnu';
+  const lastCall = calls.filter((call) => call.stage === 'direction').at(-1);
+  const cost = `${formatCost(trace.cost.microUsd)}${trace.cost.complete ? '' : ' (partiel)'}`;
   const { direction } = trace;
 
   return (

@@ -1,6 +1,6 @@
 import { v7 as uuidv7 } from 'uuid';
 import {
-  defaultMemoryRead, type MemoryMutation, type MemoryResult, type MemoryState, type MemoryView,
+  defaultMemoryRead, readsMemory, type MemoryMutation, type MemoryResult, type MemoryState, type MemoryView,
 } from '@choral-writer/shared';
 import type { Database, Transaction } from '../../../db/client.js';
 import { ApiError } from '../../../errors/errors.js';
@@ -49,6 +49,10 @@ export class MemoriesService {
       if (change.op === 'setAgentRead') {
         if (change.read.tagIds.some((id) => !view.state.tags.some((tag) => tag.id === id))) {
           throw new ApiError(422, 'UNKNOWN_TAG', 'Un tag sélectionné n’existe plus.');
+        }
+        if (agents.some((agent) => agent.agentId === change.agentId && !readsMemory(agent.output))
+          && change.read.mode !== 'none') {
+          throw new ApiError(422, 'DIRECTOR_HAS_NO_MEMORY', 'Le Directeur ne reçoit aucune mémoire.');
         }
         if (agents.some((agent) => agent.agentId === change.agentId && agent.output === 'memory_proposals')
           && change.read.mode === 'selected') {

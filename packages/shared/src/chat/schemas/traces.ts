@@ -65,6 +65,8 @@ export const directionTraceSchema = z.object({
   status: traceStatusSchema,
   durationMs: z.number().int().nonnegative(),
   attempts: z.number().int().positive(),
+  /** Cost of every Director call of the turn, retries included. */
+  cost: turnCostSchema,
   direction: turnDirectionSchema.nullable(),
 });
 

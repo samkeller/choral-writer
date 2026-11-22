@@ -123,7 +123,6 @@ export class ChatService {
               history.slice(-RECENT_DIRECTION_TURNS).map((turn) => turn.id)),
             userMessage: input.userMessage,
             signal,
-            memoryState: memory.enabled ? memory.state : undefined,
           })
           : null;
 

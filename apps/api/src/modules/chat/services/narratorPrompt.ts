@@ -1,7 +1,8 @@
-import type { AnalysisEnvelope, AnalysisItem, MemoryContext, TurnDirection } from '@choral-writer/shared';
+import type { AnalysisEnvelope, MemoryContext, TurnDirection } from '@choral-writer/shared';
 
 import { formatMemoryContext } from '../../memories/services/memoryState.js';
 import { nudgeDescriptions, tensionLabels } from './directionVocabulary.js';
+import { formatItem } from './whiteboardFormat.js';
 
 const narratorRules = [
   'Écris directement la suite du récit, en prose : ni balise, ni titre, ni commentaire hors du récit.',
@@ -14,14 +15,6 @@ const directionRules = [
   '- Ta prose reste d’abord une réponse à la saisie : ce que le personnage joué par l’utilisateur fait ou dit a bien lieu ; seuls ses résultats et les réactions des autres peuvent être infléchis.',
   '- La tension et les nudges sont des pressions sur la manière de raconter, pas des faits : n’invente pas d’événement pour les satisfaire et intègre-les organiquement, au besoin sur plusieurs tours.',
 ].join('\n');
-
-const importanceLabels: Record<AnalysisItem['importance'], string> = {
-  LOW: 'faible', NORMAL: 'normale', HIGH: 'haute',
-};
-
-export function formatItem(item: AnalysisItem): string {
-  return `${item.kind} (importance ${importanceLabels[item.importance]}) : ${item.text}`;
-}
 
 /** Rend le whiteboard en texte lisible : le JSON brut détournait le Narrateur vers un registre de données. */
 export function formatWhiteboard(whiteboard: readonly AnalysisEnvelope[]): string {

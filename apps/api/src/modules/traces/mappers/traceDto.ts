@@ -69,9 +69,11 @@ export function toTurnTraceSummaryDto(
     agentId: directionCall.agentId,
     agentVersionId: directionCall.agentVersionId,
     name: directionCall.agentName ?? 'Directeur',
+    // A direction is recorded only after a validated call; without one, the narrator fell back.
     status: direction ? 'success' : 'error',
     durationMs: directionCalls.reduce((total, call) => total + call.durationMs, 0),
     attempts: directionCalls.length,
+    cost: toTurnCost(directionCalls),
     direction,
   } : null;
 

@@ -19,9 +19,15 @@ export const memoryReadSchema = z.object({
   'La lecture complète ou désactivée ne prend pas de tags.');
 export type MemoryRead = z.infer<typeof memoryReadSchema>;
 
-/** Restitution reads the whole memory by default; analysis and direction read only what is selected for them. */
+/** The Director never reads memory: its context is the turn itself and its recent directions. */
+export function readsMemory(output: string): boolean {
+  return output !== 'direction';
+}
+
+/** Restitution reads the whole memory by default; analysis reads only what is selected for it. */
 export function defaultMemoryRead(output: string): MemoryRead {
-  return { mode: output === 'envelope' || output === 'direction' ? 'selected' : 'all', tagIds: [] };
+  if (!readsMemory(output)) return { mode: 'none', tagIds: [] };
+  return { mode: output === 'envelope' ? 'selected' : 'all', tagIds: [] };
 }
 
 export const memoryTagInputSchema = z.object({
