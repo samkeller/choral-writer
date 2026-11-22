@@ -681,6 +681,49 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
     expect((await projects.get(project.id)).systemPrompt).toBe('Prompt du projet.');
   });
 
+  it('retries a failed turn with a corrected configuration on the same branch, checking the turn first', async () => {
+    const project = await createProject('Relance corrigée', 'Prompt du projet.');
+    const normal = generate;
+    generate = async function* () { throw new Error('simulated failure'); };
+    let failed;
+    try {
+      failed = events((await send(project.id, 'Même saisie.')).body).at(-1);
+    } finally { generate = normal; }
+    if (failed?.type !== 'chat.turn.failed' || !failed.turnId || !failed.branchId) throw new Error('Missing failed turn.');
+    const team = await agents.listForProject(project.id);
+    const correctedNarrator = agentSchema.parse((await app.inject({
+      method: 'POST', url: '/api/agents', headers: { cookie },
+      payload: { name: 'Narrateur corrigé', phase: 'restitution', output: 'narrative', instructions: 'Ton corrigé.' },
+    })).json());
+    const configuration = {
+      systemPrompt: 'Prompt corrigé.',
+      agents: team.map((agent) => agent.output === 'narrative'
+        ? { agentId: correctedNarrator.id, versionId: correctedNarrator.versions[0]!.id }
+        : { agentId: agent.agentId, versionId: agent.versionId }),
+    };
+
+    const stale = await app.inject({
+      method: 'POST', url: `/api/projects/${project.id}/branches/${failed.branchId}/turns/${failed.turnId}/retry`,
+      headers: { cookie }, payload: { expectedHeadTurnId: null, configuration: { ...configuration, agents: [] } },
+    });
+    expect(stale.statusCode).toBe(409);
+    expect(stale.json()).toMatchObject({ error: { code: 'CHAT_HEAD_CHANGED' } });
+
+    const retried = events((await repeat(project.id, failed.branchId, failed.turnId, 'retry', { configuration })).body).at(-1);
+    if (retried?.type !== 'chat.turn.completed') throw new Error('Missing retried turn.');
+    expect(retried.branchId).toBe(failed.branchId);
+    expect(create).toHaveBeenLastCalledWith(expect.objectContaining({
+      messages: expect.arrayContaining([{
+        role: 'system', content: expect.stringContaining('Prompt corrigé.\n\nTon corrigé.'),
+      }]),
+    }), expect.anything());
+    expect((await history(project.id, failed.branchId)).turns).toMatchObject([{ retryOfTurnId: failed.turnId }]);
+    expect(await database.select().from(schema.chatBranches).where(eq(schema.chatBranches.projectId, project.id)))
+      .toHaveLength(1);
+    expect((await projects.get(project.id)).systemPrompt).toBe('Prompt du projet.');
+    expect(await agents.listForProject(project.id)).toEqual(team);
+  });
+
   it('retries a turn recorded without configuration with the project configuration', async () => {
     const project = await createProject('Relance ancienne', 'Prompt du projet.');
     const normal = generate;

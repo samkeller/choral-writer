@@ -2,7 +2,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import {
   chatBranchParamsSchema, chatExecutionParamsSchema, chatTurnParamsSchema,
   chatBranchDtoSchema, chatHistoryDtoSchema, chatTurnDtoSchema,
-  headInputSchema, projectParamsSchema, regenerateInputSchema, sendMessageSchema,
+  projectParamsSchema, replayInputSchema, sendMessageSchema,
 } from '@choral-writer/shared';
 
 import { parseResponseDto } from '../../../http/responseDto.js';
@@ -39,17 +39,10 @@ export class ChatController {
       this.service.run({ ...params, ...input, operation: 'send' }, emit, signal));
   }
 
-  regenerateChat(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  replayChat(request: FastifyRequest, reply: FastifyReply, operation: 'regenerate' | 'retry'): Promise<void> {
     const params = chatTurnParamsSchema.parse(request.params);
-    const input = regenerateInputSchema.parse(request.body);
+    const input = replayInputSchema.parse(request.body);
     return streamChatCommand(request, reply, (emit, signal) =>
-      this.service.run({ ...params, ...input, operation: 'regenerate' }, emit, signal));
-  }
-
-  retryChat(request: FastifyRequest, reply: FastifyReply): Promise<void> {
-    const params = chatTurnParamsSchema.parse(request.params);
-    const input = headInputSchema.parse(request.body);
-    return streamChatCommand(request, reply, (emit, signal) =>
-      this.service.run({ ...params, ...input, operation: 'retry' }, emit, signal));
+      this.service.run({ ...params, ...input, operation }, emit, signal));
   }
 }

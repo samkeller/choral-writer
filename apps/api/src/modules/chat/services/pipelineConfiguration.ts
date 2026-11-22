@@ -5,13 +5,13 @@ import type { ChatTransactionContext } from '../types/chat.types.js';
 export type PipelineConfiguration = { systemPrompt: string; agents: ProjectAgent[] };
 
 /**
- * A regeneration may run with a replacement configuration and a retry repeats the
- * failed turn's configuration; a new message runs with the project's.
+ * A regeneration or a retry may run with a replacement configuration. Otherwise a
+ * retry repeats the failed turn's configuration and any other run uses the project's.
  */
 export async function pipelineConfiguration(
   context: ChatTransactionContext, command: ChatCommand,
 ): Promise<PipelineConfiguration> {
-  if (command.operation === 'regenerate' && command.configuration) {
+  if (command.operation !== 'send' && command.configuration) {
     return {
       systemPrompt: command.configuration.systemPrompt,
       agents: await context.resolveAgents(command.configuration.agents),

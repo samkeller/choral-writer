@@ -13,8 +13,7 @@ export type { ChatPipelineProgress } from './chatPipelineProgress';
 
 type ChatAction =
   | { operation: 'send'; content: string }
-  | { operation: 'regenerate'; configuration?: ReplayConfiguration }
-  | { operation: 'retry' };
+  | { operation: 'regenerate' | 'retry'; configuration?: ReplayConfiguration };
 
 /**
  * Owns branch selection, provisional streaming and reconciliation with committed
@@ -241,10 +240,10 @@ export function useChat(projectId: string) {
     project, branches, history, messages, loading, error, pending, partial, pipelineProgress, failedBranchId,
     selectBranch,
     send: (content: string) => execute({ operation: 'send', content }),
-    /** Without a configuration, the turn is replayed with the project's. */
-    regenerate: (configuration?: ReplayConfiguration) =>
-      execute(configuration ? { operation: 'regenerate', configuration } : { operation: 'regenerate' }),
-    retry: () => execute({ operation: 'retry' }),
+    /** Without a configuration, a regeneration runs with the project's. */
+    regenerate: (configuration?: ReplayConfiguration) => execute(replay('regenerate', configuration)),
+    /** Without a configuration, a retry runs with the one recorded on the failed turn. */
+    retry: (configuration?: ReplayConfiguration) => execute(replay('retry', configuration)),
     retryMemory: retryHeadMemory,
     legacyMemoryConfirmation: legacyAction !== null,
     cancelLegacyMemoryReset: () => setLegacyAction(null),
@@ -255,4 +254,8 @@ export function useChat(projectId: string) {
     },
     reload: () => setRevision((value) => value + 1),
   };
+}
+
+function replay(operation: 'regenerate' | 'retry', configuration?: ReplayConfiguration): ChatAction {
+  return configuration ? { operation, configuration } : { operation };
 }

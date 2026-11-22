@@ -1,28 +1,68 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Alert, Button, Center, Checkbox, Group, Loader, Modal, Select, Stack, Text, Textarea } from '@mantine/core';
 import { IconPencilPlus } from '@tabler/icons-react';
-import type { Agent, AgentVersionInput, Project, ReplayConfiguration } from '@choral-writer/shared';
+import type {
+  Agent, AgentVersionInput, ChatTurn, Project, ReplayConfiguration, TurnConfiguration,
+} from '@choral-writer/shared';
 
 import { publishNextVersion } from '../../api/agents/agentsApi';
+import { getTurnTraceSummary } from '../../api/chat/traceApi';
 import { getErrorMessage } from '../../api/client';
-import { agentSelections, selectVersion, toggleAnalysisAgent, useProjectSetup } from '../../hooks/useProjectSetup';
+import {
+  agentSelections, replaceVersion, requiredVersionOptions, selectVersion, selectedVersion, toggleAnalysisAgent,
+  useAgentTeam,
+} from '../../hooks/useAgentTeam';
 import { AgentForm } from '../agents/AgentForm';
 import { IconAction } from '../atoms/IconAction';
 
-type Team = ReturnType<typeof useProjectSetup>;
+type Team = ReturnType<typeof useAgentTeam>;
 type VersionEdit = { agent: Agent; baseVersionId: string };
+/** Where the dialog starts: the configuration recorded on a failed turn, or the project's. */
+type Start = { configuration: TurnConfiguration | null };
 
 /**
- * Prepares the replacement configuration of a replay, starting from the project's.
- * The project is never changed; a version published here stays in the agent's history.
+ * Prepares the replacement configuration of a replay. A completed turn is replayed
+ * from the project's configuration into a new branch; a failed turn is retried in
+ * place, starting from the configuration it ran with. The project is never changed,
+ * and a version published here stays in the agent's history.
  */
-export function ReplayDialog({ project, onClose, onReplay }: {
+export function ReplayDialog({ project, turn, onClose, onReplay }: {
   project: Project;
+  turn: ChatTurn;
   onClose: () => void;
   onReplay: (configuration: ReplayConfiguration) => void;
 }) {
-  const team = useProjectSetup(project.id);
-  const [systemPrompt, setSystemPrompt] = useState(project.systemPrompt);
+  const failed = turn.status === 'failed';
+  const [start, setStart] = useState<Start | null>(failed ? null : { configuration: null });
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!failed) return;
+    const controller = new AbortController();
+    getTurnTraceSummary(project.id, turn.id, controller.signal)
+      .then((summary) => { if (!controller.signal.aborted) setStart({ configuration: summary.configuration }); })
+      .catch((failure: unknown) => { if (!controller.signal.aborted) setError(getErrorMessage(failure)); });
+    return () => controller.abort();
+  }, [failed, project.id, turn.id]);
+
+  return (
+    <Modal opened onClose={onClose} size="lg" title="Rejouer le dernier tour avec…">
+      {error && <Alert color="red" role="alert">{error}</Alert>}
+      {!error && !start && <Center py="md"><Loader aria-label="Chargement de la configuration du tour" /></Center>}
+      {start && <ReplayForm project={project} failed={failed} start={start} onClose={onClose} onReplay={onReplay} />}
+    </Modal>
+  );
+}
+
+function ReplayForm({ project, failed, start, onClose, onReplay }: {
+  project: Project;
+  failed: boolean;
+  start: Start;
+  onClose: () => void;
+  onReplay: (configuration: ReplayConfiguration) => void;
+}) {
+  const team = useAgentTeam(project.id, { versionIds: start.configuration?.agents.map((agent) => agent.versionId) });
+  const [systemPrompt, setSystemPrompt] = useState(start.configuration?.systemPrompt ?? project.systemPrompt);
   const [versionEdit, setVersionEdit] = useState<VersionEdit | null>(null);
   const [error, setError] = useState('');
 
@@ -42,46 +82,50 @@ export function ReplayDialog({ project, onClose, onReplay }: {
   }
 
   function editVersion(agent: Agent) {
-    const baseVersionId = selectedVersion(team, agent)?.id ?? agent.versions[0]?.id;
+    const baseVersionId = (selectedVersion(agent, team.versionIds) ?? agent.versions[0])?.id;
     if (baseVersionId) setVersionEdit({ agent, baseVersionId });
   }
 
-  const title = versionEdit ? `Nouvelle version de ${displayName(team, versionEdit.agent)}` : 'Rejouer le dernier tour avec…';
-  return (
-    <Modal opened onClose={onClose} size="lg" title={title}>
-      {versionEdit
-        ? <AgentForm initial={versionEdit.agent} baseVersionId={versionEdit.baseVersionId}
+  if (versionEdit) {
+    return (
+      <Stack gap="sm">
+        <Text fw={500}>Nouvelle version de {displayName(team, versionEdit.agent)}</Text>
+        <AgentForm initial={versionEdit.agent} baseVersionId={versionEdit.baseVersionId}
           onSubmit={publish} onCancel={() => setVersionEdit(null)} />
-        : (
-          <form onSubmit={submit}>
-            <Stack gap="md">
-              <Text size="sm" c="dimmed">
-                Même saisie et même mémoire qu’avant le tour : la variante part dans une nouvelle branche.
-                La configuration du projet ne change pas.
-              </Text>
-              {team.loading && <Center py="md"><Loader aria-label="Chargement de la configuration" /></Center>}
-              {team.error && (
-                <Alert color="red" role="alert">
-                  <Text size="sm">{team.error}</Text>
-                  <Button variant="subtle" onClick={team.reload}>Recharger</Button>
-                </Alert>
-              )}
-              {!team.loading && !team.error && <>
-                <RequiredAgentRow team={team} output="narrative" label="Narrateur" onEditVersion={editVersion} />
-                <RequiredAgentRow team={team} output="memory_proposals" label="Gardien" onEditVersion={editVersion} />
-                <AnalysisAgents team={team} onEditVersion={editVersion} />
-                <Textarea label="Prompt du projet" value={systemPrompt} autosize minRows={4} maxRows={12}
-                  maxLength={50_000} onChange={(event) => setSystemPrompt(event.currentTarget.value)} />
-              </>}
-              {error && <Alert color="red" role="alert">{error}</Alert>}
-              <Group justify="flex-end">
-                <Button variant="subtle" color="gray" onClick={onClose}>Annuler</Button>
-                <Button type="submit" disabled={team.loading || Boolean(team.error)}>Rejouer</Button>
-              </Group>
-            </Stack>
-          </form>
+      </Stack>
+    );
+  }
+  return (
+    <form onSubmit={submit}>
+      <Stack gap="md">
+        <Text size="sm" c="dimmed">
+          {failed
+            ? 'Le tour en échec est relancé sur cette branche, avec la même saisie et la même mémoire. '
+              + 'Le dialogue part de la configuration avec laquelle il a tourné.'
+            : 'Même saisie et même mémoire qu’avant le tour : la variante part dans une nouvelle branche.'}
+          {' '}La configuration du projet ne change pas.
+        </Text>
+        {team.loading && <Center py="md"><Loader aria-label="Chargement de la configuration" /></Center>}
+        {team.error && (
+          <Alert color="red" role="alert">
+            <Text size="sm">{team.error}</Text>
+            <Button variant="subtle" onClick={team.reload}>Recharger</Button>
+          </Alert>
         )}
-    </Modal>
+        {!team.loading && !team.error && <>
+          <RequiredAgentRow team={team} output="narrative" label="Narrateur" onEditVersion={editVersion} />
+          <RequiredAgentRow team={team} output="memory_proposals" label="Gardien" onEditVersion={editVersion} />
+          <AnalysisAgents team={team} onEditVersion={editVersion} />
+          <Textarea label="Prompt du projet" value={systemPrompt} autosize minRows={4} maxRows={12}
+            maxLength={50_000} onChange={(event) => setSystemPrompt(event.currentTarget.value)} />
+        </>}
+        {error && <Alert color="red" role="alert">{error}</Alert>}
+        <Group justify="flex-end">
+          <Button variant="subtle" color="gray" onClick={onClose}>Annuler</Button>
+          <Button type="submit" disabled={team.loading || Boolean(team.error)}>Rejouer</Button>
+        </Group>
+      </Stack>
+    </form>
   );
 }
 
@@ -91,17 +135,12 @@ function RequiredAgentRow({ team, output, label, onEditVersion }: {
   label: string;
   onEditVersion: (agent: Agent) => void;
 }) {
-  const candidates = team.agents.filter((agent) => agent.output === output);
-  const selected = candidates.find((agent) => selectedVersion(team, agent));
+  const selected = team.agents.find((agent) => agent.output === output && selectedVersion(agent, team.versionIds));
   return (
     <Group align="flex-end" gap="xs" wrap="nowrap">
       <Select label={label} style={{ flex: 1, minWidth: 0 }} searchable allowDeselect={false}
-        value={selected ? selectedVersion(team, selected)?.id ?? null : null}
-        placeholder="Choisir cet agent et sa version"
-        data={candidates.map((agent) => ({
-          group: agent.versions[0]?.name ?? agent.id,
-          items: agent.versions.map((version) => ({ value: version.id, label: `${version.name} · v${version.version}` })),
-        }))}
+        value={selected ? selectedVersion(selected, team.versionIds)?.id ?? null : null}
+        placeholder="Choisir cet agent et sa version" data={requiredVersionOptions(team.agents, output)}
         onChange={(versionId) => {
           if (versionId) team.change(selectVersion(team.versionIds, team.agents, output, versionId));
         }} />
@@ -121,7 +160,7 @@ function AnalysisAgents({ team, onEditVersion }: { team: Team; onEditVersion: (a
       <Text size="sm" fw={500}>Agents d’analyse</Text>
       {analysts.map((agent) => {
         const name = displayName(team, agent);
-        const selected = selectedVersion(team, agent);
+        const selected = selectedVersion(agent, team.versionIds);
         return (
           <Group key={agent.id} gap="xs" wrap="nowrap">
             <Checkbox label={name} checked={Boolean(selected)} style={{ flex: 1, minWidth: 0 }}
@@ -130,7 +169,7 @@ function AnalysisAgents({ team, onEditVersion }: { team: Team; onEditVersion: (a
               value={(selected ?? agent.versions[0])?.id ?? null}
               data={agent.versions.map((version) => ({ value: version.id, label: `v${version.version} · ${version.name}` }))}
               onChange={(versionId) => {
-                if (versionId && selected) team.change(team.versionIds.map((id) => id === selected.id ? versionId : id));
+                if (versionId && selected) team.change(replaceVersion(team.versionIds, agent, versionId));
               }} />
             <IconAction label={`Nouvelle version de ${name}`} onClick={() => onEditVersion(agent)}>
               <IconPencilPlus size={18} aria-hidden="true" />
@@ -143,10 +182,6 @@ function AnalysisAgents({ team, onEditVersion }: { team: Team; onEditVersion: (a
   );
 }
 
-function selectedVersion(team: Team, agent: Agent) {
-  return agent.versions.find((version) => team.versionIds.includes(version.id));
-}
-
 function displayName(team: Team, agent: Agent): string {
-  return (selectedVersion(team, agent) ?? agent.versions[0])?.name ?? agent.id;
+  return (selectedVersion(agent, team.versionIds) ?? agent.versions[0])?.name ?? agent.id;
 }

@@ -23,10 +23,10 @@ export function registerChatRoutes(app: FastifyInstance, controller: ChatControl
   );
 
   app.post(`${branchPath}/turns/:turnId/regenerate`, { preHandler: requireAuth },
-    (request, reply) => controller.regenerateChat(request, reply)
+    (request, reply) => controller.replayChat(request, reply, 'regenerate')
   );
 
   app.post(`${branchPath}/turns/:turnId/retry`, { preHandler: requireAuth },
-    (request, reply) => controller.retryChat(request, reply)
+    (request, reply) => controller.replayChat(request, reply, 'retry')
   );
 }

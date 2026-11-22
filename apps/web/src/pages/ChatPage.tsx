@@ -107,23 +107,20 @@ function ProjectChat({ projectId }: { projectId: string }) {
           </Alert>}
           <MessageComposer pending={chat.pending} onSend={chat.send} actions={head && (
             <Group justify="flex-end" gap={4} wrap="nowrap">
-              {head.status === 'completed' && (
-                <>
-                  <IconAction label="Rejouer le dernier tour avec…" disabled={chat.pending} onClick={() => setReplayOpen(true)}>
-                    <IconAdjustmentsHorizontal size={18} aria-hidden="true" />
-                  </IconAction>
-                  <IconAction label="Régénérer la réponse" disabled={chat.pending} onClick={() => void chat.regenerate()}>
-                    <IconRefresh size={18} aria-hidden="true" />
-                  </IconAction>
-                </>
+              {head.status !== 'running' && (
+                <IconAction label="Rejouer le dernier tour avec…" disabled={chat.pending} onClick={() => setReplayOpen(true)}>
+                  <IconAdjustmentsHorizontal size={18} aria-hidden="true" />
+                </IconAction>
               )}
-
+              {head.status === 'completed' && (
+                <IconAction label="Régénérer la réponse" disabled={chat.pending} onClick={() => void chat.regenerate()}>
+                  <IconRefresh size={18} aria-hidden="true" />
+                </IconAction>
+              )}
               {head.status === 'failed' && (
-                <>
-                  <IconAction label="Réessayer la réponse" color="red" disabled={chat.pending} onClick={() => void chat.retry()}>
-                    <IconRefresh size={18} aria-hidden="true" />
-                  </IconAction>
-                </>
+                <IconAction label="Réessayer la réponse" color="red" disabled={chat.pending} onClick={() => void chat.retry()}>
+                  <IconRefresh size={18} aria-hidden="true" />
+                </IconAction>
               )}
             </Group>
           )} />
@@ -135,10 +132,10 @@ function ProjectChat({ projectId }: { projectId: string }) {
               onClose={() => setTraceTurnId(null)}
             />
           )}
-          {replayOpen && (
-            <ReplayDialog project={chat.project} onClose={() => setReplayOpen(false)} onReplay={(configuration) => {
+          {replayOpen && head && (
+            <ReplayDialog project={chat.project} turn={head} onClose={() => setReplayOpen(false)} onReplay={(configuration) => {
               setReplayOpen(false);
-              void chat.regenerate(configuration);
+              void (head.status === 'failed' ? chat.retry(configuration) : chat.regenerate(configuration));
             }} />
           )}
           <Modal opened={chat.legacyMemoryConfirmation} onClose={chat.cancelLegacyMemoryReset} title="Ancien tour sans état mémoire">

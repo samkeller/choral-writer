@@ -1,5 +1,5 @@
 import {
-  headInputSchema, regenerateInputSchema, sendMessageSchema, type ChatCommand, type ChatEvent,
+  replayInputSchema, sendMessageSchema, type ChatCommand, type ChatEvent,
 } from '@choral-writer/shared';
 
 import { checkUnauthorized, ClientApiError, createClientApiError } from '../client';
@@ -16,9 +16,7 @@ export async function streamTurn(
   const head = { expectedHeadTurnId: command.expectedHeadTurnId, allowLegacyMemoryReset: command.allowLegacyMemoryReset };
   const input = command.operation === 'send'
     ? sendMessageSchema.parse({ expectedHeadTurnId: command.expectedHeadTurnId, content: command.content })
-    : command.operation === 'regenerate'
-      ? regenerateInputSchema.parse({ ...head, configuration: command.configuration })
-      : headInputSchema.parse(head);
+    : replayInputSchema.parse({ ...head, configuration: command.configuration });
   const response = await fetch(url, {
     method: 'POST',
     credentials: 'include',

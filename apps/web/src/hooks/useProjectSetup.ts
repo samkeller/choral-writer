@@ -1,121 +1,44 @@
-import { useEffect, useState } from 'react';
-import type { Agent, ProjectAgentsInput } from '@choral-writer/shared';
-import { configureProjectAgents, listAgents, listProjectAgents } from '../api/agents/agentsApi';
+import { useState } from 'react';
+import type { Agent } from '@choral-writer/shared';
+import { configureProjectAgents } from '../api/agents/agentsApi';
 import { getErrorMessage } from '../api/client';
+import { agentSelections, useAgentTeam } from './useAgentTeam';
 
-/**
- * Un projet a exactement un narrateur et un gardien : choisir une version pour
- * ces contrats remplace celle de l'agent précédent, alors que les agents
- * d'analyse s'ajoutent à la sélection.
- */
-export function selectVersion(
-  ids: string[], agents: Agent[], output: Agent['output'], versionId: string,
-): string[] {
-  if (output === 'envelope') return ids.includes(versionId) ? ids : [...ids, versionId];
-  const previous = new Set(agents.filter((agent) => agent.output === output)
-    .flatMap((agent) => agent.versions.map((version) => version.id)));
-  // Le remplacement garde la position de la version précédente pour stabiliser l'ordre d'enregistrement.
-  const next: string[] = [];
-  let placed = false;
-  for (const id of ids) {
-    if (previous.has(id) || id === versionId) {
-      if (!placed) { next.push(versionId); placed = true; }
-    } else {
-      next.push(id);
-    }
-  }
-  return placed ? next : [...next, versionId];
-}
-
-/** Active un agent d'analyse avec sa dernière version, ou le retire de l'équipe. */
-export function toggleAnalysisAgent(ids: string[], agent: Agent, enabled: boolean): string[] {
-  const ownVersions = new Set(agent.versions.map((version) => version.id));
-  const latest = agent.versions[0]?.id;
-  if (!enabled) return ids.filter((id) => !ownVersions.has(id));
-  if (!latest || ids.some((id) => ownVersions.has(id))) return ids;
-  return [...ids, latest];
-}
-
-/** Associe chaque version sélectionnée à son agent, comme l'attend l'API. */
-export function agentSelections(versionIds: string[], agents: Agent[]): ProjectAgentsInput['agents'] {
-  return versionIds.map((versionId) => {
-    const agent = agents.find((entry) => entry.versions.some((version) => version.id === versionId));
-    if (!agent) throw new Error('Une version sélectionnée n’est plus disponible. Rechargez la configuration.');
-    return { agentId: agent.id, versionId };
-  });
-}
-
+/** The project's team, edited in memory and saved explicitly. */
 export function useProjectSetup(projectId: string, suggestedVersion?: string | null) {
-  const [agents, setAgents] = useState<Agent[]>([]);
-  const [versionIds, setVersionIds] = useState<string[]>([]);
-  const [loading, setLoading] = useState(true);
+  const team = useAgentTeam(projectId, { suggestedVersion });
   const [pending, setPending] = useState(false);
-  const [error, setError] = useState('');
+  const [saveError, setSaveError] = useState('');
   const [saved, setSaved] = useState(false);
-  const [revision, setRevision] = useState(0);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    setLoading(true);
-    setError('');
-    Promise.all([listAgents(controller.signal), listProjectAgents(projectId, controller.signal)])
-      .then(([library, assignments]) => {
-        if (controller.signal.aborted) return;
-        const suggested = library.find((agent) => agent.versions.some((version) => version.id === suggestedVersion));
-        const retained = suggested ? assignments.filter((assignment) =>
-          suggested.output === 'envelope'
-            ? assignment.agentId !== suggested.id : assignment.output !== suggested.output) : assignments;
-        const assigned = [...retained.map((assignment) => assignment.versionId),
-          ...(suggested && suggestedVersion ? [suggestedVersion] : [])];
-        setAgents(library);
-        setVersionIds(assigned);
-      })
-      .catch((failure: unknown) => {
-        if (!controller.signal.aborted) setError(getErrorMessage(failure));
-      }).finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-    return () => controller.abort();
-  }, [projectId, suggestedVersion, revision]);
 
   function change(ids: string[]) {
-    setVersionIds(ids);
+    team.change(ids);
     setSaved(false);
   }
 
-  /**
-   * Intègre dans l'équipe, sans attendre un rechargement, un agent créé ou la
-   * version qu'on vient de publier : sa dernière version remplace celle de cet
-   * agent, ou pilote le contrat de sortie déjà pourvu.
-   */
   function adopt(agent: Agent) {
-    const versionId = agent.versions[0]?.id;
-    if (!versionId) return;
-    const ownVersions = new Set(agent.versions.map((version) => version.id));
-    setAgents((current) => [agent, ...current.filter((entry) => entry.id !== agent.id)]);
-    setVersionIds((current) => selectVersion(
-      current.map((id) => ownVersions.has(id) ? versionId : id), agents, agent.output, versionId,
-    ));
+    team.adopt(agent);
     setSaved(false);
   }
 
   async function save() {
     setPending(true);
-    setError('');
+    setSaveError('');
     setSaved(false);
     try {
-      await configureProjectAgents(projectId, { agents: agentSelections(versionIds, agents) });
+      await configureProjectAgents(projectId, { agents: agentSelections(team.versionIds, team.agents) });
       setSaved(true);
       return true;
     } catch (failure) {
-      setError(getErrorMessage(failure));
+      setSaveError(getErrorMessage(failure));
       return false;
     } finally {
       setPending(false);
     }
   }
   return {
-    agents, versionIds, loading, pending, error, saved, change, save, adopt,
-    reload: () => setRevision((value) => value + 1),
+    agents: team.agents, versionIds: team.versionIds, loading: team.loading,
+    error: saveError || team.error, pending, saved, change, save, adopt,
+    reload: () => { setSaveError(''); team.reload(); },
   };
 }

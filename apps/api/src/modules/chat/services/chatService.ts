@@ -49,8 +49,8 @@ export class ChatService {
     signal: AbortSignal,
   ): Promise<ChatRunResult> {
     return this.dependencies.withProjectTransaction(command.projectId, async (context) => {
-      const pipeline = await pipelineConfiguration(context, command);
       const input = await prepareTurn(context, command);
+      const pipeline = await pipelineConfiguration(context, command);
       const memory = await context.memory.prepare(input.branchId, input.regeneratedFromTurnId, command.allowLegacyMemoryReset);
       const history = await context.turns.path(input.parentTurnId, NARRATOR_CONTEXT_TURN_LIMIT);
       const narrator = pipeline.agents.find((agent) => agent.output === 'narrative');

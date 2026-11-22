@@ -1217,6 +1217,10 @@ describe('projects and chat screens', () => {
         }, ...narrative.versions] };
         return respond(config, 200, narrative);
       }
+      if (config.url === `/agents/${observer.id}/versions` && config.method === 'post') {
+        return respond(config, 200, { ...observer, versions: [{ ...observer.versions[0]!,
+          id: '019ad30c-19b0-7000-8000-000000000407', version: 2 }, ...observer.versions] });
+      }
       return chatAdapter(config);
     });
     const fetchMock = vi.fn().mockImplementation(async () => {
@@ -1237,6 +1241,11 @@ describe('projects and chat screens', () => {
     expect(narratorSelect.getAttribute('value')).toBe('Narrateur · v1');
     expect((dialog.getByRole('textbox', { name: 'Prompt du projet' }) as HTMLTextAreaElement).value).toBe(project.systemPrompt);
     fireEvent.click(dialog.getByRole('checkbox', { name: 'Observateur' }));
+    // Publier une version d'un agent retiré ne le remet pas dans l'équipe.
+    fireEvent.click(dialog.getByRole('button', { name: 'Nouvelle version de Observateur' }));
+    fireEvent.click(await dialog.findByRole('button', { name: 'Publier la version' }));
+    await waitFor(() => expect(dialog.getByRole('checkbox', { name: 'Observateur' })).toHaveProperty('checked', false));
+    expect(dialog.getByRole('textbox', { name: 'Version de Observateur' })).toHaveProperty('disabled', true);
 
     // La nouvelle version part des instructions de la version retenue pour le tour, pas de la dernière.
     fireEvent.click(dialog.getByRole('button', { name: 'Nouvelle version de Narrateur' }));
@@ -1267,6 +1276,70 @@ describe('projects and chat screens', () => {
     });
     await waitFor(() => expect(screen.getByTestId('location').textContent).toContain(`branch=${fixture.alternativeId}`));
     expect(projectWrites).toEqual([]);
+  });
+
+  it('retries a failed turn in place with a corrected configuration, starting from the recorded one', async () => {
+    const fixture = existingChat();
+    const head = fixture.original.turns[0]!;
+    Object.assign(head, { status: 'failed', error: 'Échec simulé.', assistantMessage: null });
+    const chatAdapter = adapter.getMockImplementation()!;
+    const narrative: AgentDto = {
+      id: '019ad30c-19b0-7000-8000-000000000501', phase: 'restitution', output: 'narrative',
+      createdAt: project.createdAt, projects: [],
+      versions: [2, 1].map((version) => ({
+        id: `019ad30c-19b0-7000-8000-00000000050${version + 1}`,
+        version, name: 'Narrateur', instructions: `Ton v${version}`, createdAt: project.createdAt,
+      })),
+    };
+    const guardian = existingAgent('019ad30c-19b0-7000-8000-000000000504', 'memory_proposals', 'Gardien');
+    const recorded = [assignmentOf(narrative, narrative.versions[1]!.id), assignmentOf(guardian)];
+    const summary: TurnTraceSummary = {
+      turnId: head.id, analysis: [], narrator: null, calls: [], cost: { microUsd: 0, complete: true },
+      configuration: {
+        systemPrompt: 'Prompt enregistré.',
+        agents: recorded.map(({ instructions: _instructions, ...agent }) => ({ ...agent, memoryRead: null })),
+      },
+    };
+    adapter.mockImplementation(async (config) => {
+      if (config.url === '/agents') return respond(config, 200, [narrative, guardian]);
+      if (config.url === `/projects/${project.id}/turns/${head.id}/traces`) return respond(config, 200, summary);
+      if (config.url === `/projects/${project.id}/agents`) throw new Error('The recorded configuration is the start.');
+      return chatAdapter(config);
+    });
+    const fetchMock = vi.fn().mockImplementation(async () => {
+      const retried = { ...head, id: fixture.newTurnId, retryOfTurnId: head.id, status: 'completed' as const, error: null,
+        assistantMessage: { ...fixture.user, id: '019ad30c-19b0-7000-8000-000000000508', role: 'assistant' as const,
+          content: 'Réponse corrigée.' } };
+      fixture.histories.set(branch.id, { branch: { ...fixture.original.branch, headTurnId: retried.id }, turns: [retried] });
+      return new Response(`data: ${JSON.stringify({
+        type: 'chat.turn.completed', branchId: branch.id, turnId: retried.id, message: retried.assistantMessage,
+      })}\n\n`, { headers: { 'Content-Type': 'text/event-stream' } });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderApp(`/projects/${project.id}`);
+    fireEvent.click(await screen.findByRole('button', { name: 'Rejouer le dernier tour avec…' }));
+    const dialog = within(await screen.findByRole('dialog'));
+    const narratorSelect = await dialog.findByLabelText('Narrateur', { selector: 'input' });
+    expect(narratorSelect.getAttribute('value')).toBe('Narrateur · v1');
+    expect((dialog.getByRole('textbox', { name: 'Prompt du projet' }) as HTMLTextAreaElement).value).toBe('Prompt enregistré.');
+    fireEvent.click(narratorSelect);
+    fireEvent.click(await screen.findByRole('option', { name: 'Narrateur · v2' }));
+    fireEvent.click(dialog.getByRole('button', { name: 'Rejouer' }));
+
+    await screen.findByText('Réponse corrigée.');
+    expect(fetchMock.mock.calls[0][0]).toBe(`/api/projects/${project.id}/branches/${branch.id}/turns/${head.id}/retry`);
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      expectedHeadTurnId: head.id,
+      configuration: {
+        systemPrompt: 'Prompt enregistré.',
+        agents: [
+          { agentId: narrative.id, versionId: narrative.versions[0]!.id },
+          { agentId: guardian.id, versionId: guardian.versions[0]!.id },
+        ],
+      },
+    });
+    expect(screen.getByTestId('location').textContent).toBe(`/projects/${project.id}`);
   });
 
       it('switches branches from the header control and marks the current one', async () => {
