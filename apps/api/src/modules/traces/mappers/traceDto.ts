@@ -1,5 +1,6 @@
 import type {
-  AnalysisTrace, NarratorTrace, TraceCallDetail, TraceCallSummary, TurnConfiguration, TurnTraceSummary,
+  AnalysisTrace, NarratorTrace, StageDuration, TraceCallDetail, TraceCallSummary, TurnConfiguration,
+  TurnConfigurationChange, TurnMetrics, TurnTraceSummary,
 } from '@choral-writer/shared';
 import { analysisEnvelopeSchema, traceCallDetailSchema } from '@choral-writer/shared';
 
@@ -78,9 +79,44 @@ export function toTurnTraceSummaryDto(
     analysis,
     narrator,
     calls: traces.map((trace) => toTraceCallSummaryDto(trace, turnId)),
+    timeline: toStageTimeline(traces),
     cost: toTurnCost(traces),
     configuration,
   };
+}
+
+export function toTurnMetricsDto(
+  turnId: string,
+  traces: readonly TraceSummaryRecord[],
+  configurationChanges: TurnConfigurationChange[] | null,
+): TurnMetrics {
+  const narratorCall = traces.filter((trace) => trace.stage === 'narrator').at(-1);
+  return {
+    turnId,
+    durationMs: toStageTimeline(traces).reduce((total, stage) => total + stage.durationMs, 0),
+    cost: toTurnCost(traces),
+    narratorInputTokens: narratorCall?.inputTokens ?? null,
+    configurationChanges,
+  };
+}
+
+/**
+ * Stages in order of first call. Agents of a stage run in parallel: a stage lasts as long as its
+ * slowest agent, whose retries add up.
+ */
+function toStageTimeline(traces: readonly TraceSummaryRecord[]): StageDuration[] {
+  const stages = new Map<string, Map<string, number>>();
+  for (const trace of traces) {
+    const agents = stages.get(trace.stage) ?? new Map<string, number>();
+    const agentKey = trace.agentVersionId ?? trace.agentId ?? trace.stage;
+    agents.set(agentKey, (agents.get(agentKey) ?? 0) + trace.durationMs);
+    stages.set(trace.stage, agents);
+  }
+  return [...stages].map(([stage, agents]) => ({
+    stage,
+    durationMs: Math.max(...agents.values()),
+    agentCount: agents.size,
+  }));
 }
 
 /** Somme des montants connus ; un appel sans montant rend le total partiel plutôt que faux. */

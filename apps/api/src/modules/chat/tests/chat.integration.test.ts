@@ -9,7 +9,7 @@ import { APIError } from 'openai/error';
 import { v7 as uuidv7 } from 'uuid';
 import {
   agentSchema, projectAgentSchema, chatEventSchema, chatHistorySchema, projectSchema,
-  traceCallDetailSchema, turnTraceSummarySchema,
+  traceCallDetailSchema, turnMetricsListSchema, turnTraceSummarySchema,
   memoryViewSchema, memoryTraceSchema, type MemoryMutation, type MemoryProposal,
 } from '@choral-writer/shared';
 
@@ -385,6 +385,14 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
       method: 'GET', url: `/api/projects/${second.id}/turns/${start.turnId}/traces`, headers: { cookie },
     });
     expect(foreignTrace.statusCode).toBe(404);
+    const metricsResponse = await app.inject({
+      method: 'GET', url: `/api/projects/${first.id}/branches/${first.defaultBranchId}/turn-metrics`, headers: { cookie },
+    });
+    expect(metricsResponse.statusCode).toBe(200);
+    expect(turnMetricsListSchema.parse(metricsResponse.json())).toEqual([{
+      turnId: start.turnId, durationMs: traceSummary.timeline.reduce((total, stage) => total + stage.durationMs, 0),
+      cost: { microUsd: 0, complete: false }, narratorInputTokens: 20, configurationChanges: null,
+    }]);
     const [turn] = await database.select().from(schema.chatTurns).where(eq(schema.chatTurns.id, start.turnId));
     expect(turn.status).toBe('completed');
     await send(first.id, 'Elle avance.');

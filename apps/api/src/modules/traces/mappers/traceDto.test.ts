@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { TraceDetailRecord } from '../repositories/traceRepository.js';
-import { toTraceCallDetailDto, toTraceCallSummaryDto, toTurnTraceSummaryDto } from './traceDto.js';
+import { toTraceCallDetailDto, toTraceCallSummaryDto, toTurnMetricsDto, toTurnTraceSummaryDto } from './traceDto.js';
 
 const turnId = '019ad30c-19b0-7000-8000-000000000101';
 const analysisAgentId = '019ad30c-19b0-7000-8000-000000000102';
@@ -33,6 +33,24 @@ function trace(overrides: Partial<TraceDetailRecord> = {}): TraceDetailRecord {
 }
 
 describe('trace DTO mapping', () => {
+  it('times each stage by its slowest parallel agent, retries included, and sums stages into the turn duration', () => {
+    const otherAgentId = '019ad30c-19b0-7000-8000-000000000107';
+    const traces = [
+      trace({ id: analysisCallId, stage: 'analysis', agentId: analysisAgentId, agentVersionId: analysisVersionId, durationMs: 800 }),
+      trace({ id: '019ad30c-19b0-7000-8000-000000000108', stage: 'analysis', agentId: otherAgentId, durationMs: 1000 }),
+      trace({ id: '019ad30c-19b0-7000-8000-000000000109', stage: 'analysis', agentId: analysisAgentId, agentVersionId: analysisVersionId, durationMs: 700 }),
+      trace({ durationMs: 2000, inputTokens: 640 }),
+      trace({ id: '019ad30c-19b0-7000-8000-000000000110', stage: 'guardian', durationMs: 300 }),
+    ];
+
+    expect(toTurnTraceSummaryDto(turnId, traces, null).timeline).toEqual([
+      { stage: 'analysis', durationMs: 1500, agentCount: 2 },
+      { stage: 'narrator', durationMs: 2000, agentCount: 1 },
+      { stage: 'guardian', durationMs: 300, agentCount: 1 },
+    ]);
+    expect(toTurnMetricsDto(turnId, traces, [])).toMatchObject({ durationMs: 3800, narratorInputTokens: 640 });
+  });
+
   it('totals the cost of a turn and flags it as partial when a call has no known amount', () => {
     const priced = trace({ id: analysisCallId, stage: 'analysis', costMicroUsd: 1200, costBasis: 'priced' });
     const narrator = trace({ costMicroUsd: 3400, costBasis: 'priced' });

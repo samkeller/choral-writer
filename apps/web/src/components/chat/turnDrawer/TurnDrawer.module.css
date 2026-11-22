@@ -21,6 +21,14 @@
   max-width: 100%;
 }
 
+.drawerTabList {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin-bottom: var(--mantine-spacing-sm);
+  background: var(--mantine-color-body);
+}
+
 .tabList {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

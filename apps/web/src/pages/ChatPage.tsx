@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Alert, Box, Button, Center, Group, Loader, Modal, Stack, Tabs, Text } from '@mantine/core';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { IconArrowLeft, IconRefresh } from '@tabler/icons-react';
@@ -8,9 +8,11 @@ import { PageHeader } from '../components/PageHeader';
 import { BranchSwitcher } from '../components/chat/BranchSwitcher';
 import { MessageComposer } from '../components/chat/MessageComposer';
 import { MessageList } from '../components/chat/MessageList';
-import { TraceDrawer } from '../components/chat/TraceDrawer';
+import { PipelineFailure } from '../components/chat/PipelineProgress';
+import { TurnDrawer } from '../components/chat/turnDrawer/TurnDrawer';
 import { ProjectConfiguration } from './ProjectConfiguration';
 import { useChat } from '../hooks/useChat';
+import { useTurnMetrics } from '../hooks/useTurnMetrics';
 import { NotFoundPage } from './NotFoundPage';
 import { IconAction } from '../components/atoms/IconAction';
 import styles from './ChatPage.module.css';
@@ -27,6 +29,11 @@ function ProjectChat({ projectId }: { projectId: string }) {
   const setupOpen = !chat.pending && (search.get('tab') === 'config' || search.get('setup') === 'agents');
   const head = chat.history?.turns.at(-1);
   const [traceTurnId, setTraceTurnId] = useState<string | null>(null);
+  const turnMetrics = useTurnMetrics(projectId, chat.history);
+  const metricsByTurn = useMemo(
+    () => new Map((turnMetrics.metrics ?? []).map((metrics) => [metrics.turnId, metrics])),
+    [turnMetrics.metrics],
+  );
 
   useEffect(() => setTraceTurnId(null), [chat.history?.branch.id]);
 
@@ -91,10 +98,13 @@ function ProjectChat({ projectId }: { projectId: string }) {
               partial={chat.partial}
               pending={chat.pending}
               pipelineProgress={chat.pipelineProgress}
+              turnMetrics={metricsByTurn}
+              inspectedTurnId={traceTurnId}
               onInspectTurn={setTraceTurnId}
             />
           </Box>
-          {head?.status === 'failed' && <Text c="red" size="xs" role="alert">{head.error}</Text>}
+          {head?.status === 'failed' && !chat.pending
+            && <PipelineFailure error={head.error} disabled={chat.pending} onRetry={() => void chat.retry()} />}
           {head?.memory?.status === 'failed' && !chat.pending && <Alert color="yellow" title="Mémoire à relancer">
             <Text size="sm">{head.memory.message}</Text>
             <Group gap="xs" mt="xs">
@@ -122,9 +132,14 @@ function ProjectChat({ projectId }: { projectId: string }) {
           )} />
           </Stack>
           {traceTurnId && (
-            <TraceDrawer
+            <TurnDrawer
               projectId={projectId}
+              turnIds={chat.history?.turns.map((turn) => turn.id) ?? []}
+              metrics={turnMetrics.metrics}
+              metricsError={turnMetrics.error}
+              onRetryMetrics={turnMetrics.reload}
               turnId={traceTurnId}
+              onSelectTurn={setTraceTurnId}
               onClose={() => setTraceTurnId(null)}
             />
           )}

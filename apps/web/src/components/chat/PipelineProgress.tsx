@@ -1,106 +1,57 @@
-import { Badge, Group, Loader, Paper, Progress, Stack, Text } from '@mantine/core';
+import { Box, Button, Group, Loader, Text } from '@mantine/core';
+import { IconAlertTriangle, IconRefresh } from '@tabler/icons-react';
 
 import type { ChatPipelineProgress } from '../../hooks/useChat';
+import { pipelineStages, stagePresentation } from '../phases/stagePresentation';
+import { formatSeconds } from './turnFormat';
 
-interface PipelineProgressProps {
-  progress: ChatPipelineProgress;
-}
-
-export function PipelineProgress({ progress }: PipelineProgressProps) {
-  const completedAgents = Object.values(progress.analysis.agents)
-    .filter((agent) => agent.status === 'completed' || agent.status === 'failed').length;
-  const currentStep = progress[progress.activeStage ?? 'analysis'];
-  const labels = { analysis: 'Analyse', narrator: 'Narrateur', guardian: 'Gardien', reducer: 'Écriture mémoire' };
-  const stageLabel = progress.memoryOnly ? 'Mémoire' : labels[progress.activeStage ?? 'analysis'];
-  const elapsed = `${(currentStep.elapsedMs / 1000).toFixed(1)} s`;
-  const progressValue = progress.activeStage === 'analysis' && progress.analysis.agentCount > 0
-    ? Math.round((completedAgents / progress.analysis.agentCount) * 100)
-    : undefined;
+/** The only feedback during a turn: one line with the current stage, its duration and a segment per stage. */
+export function PipelineProgress({ progress }: { progress: ChatPipelineProgress }) {
+  const stage = progress.activeStage ?? 'analysis';
+  const { agents, agentCount } = progress.analysis;
+  const finishedAgents = Object.values(agents).filter((agent) => agent.status !== 'started').length;
+  const agentDetail = stage === 'analysis' && agentCount > 0 ? ` · ${finishedAgents}/${agentCount} agents` : '';
+  const stages = progress.memoryOnly
+    ? pipelineStages.filter((item) => item === 'guardian' || item === 'reducer')
+    : pipelineStages;
 
   return (
-    <Paper p="sm" withBorder bg="dark.7" role="status" aria-live="off">
-      <Stack gap="xs">
-        <Group gap="sm" wrap="nowrap">
-          <Loader size="xs" color="choral.3" aria-hidden="true" />
-          <Stack gap={0} style={{ flex: 1 }}>
-            <Text size="sm" fw={600} aria-live="polite">
-              {stageLabel} en cours
-            </Text>
-            <Text size="xs" c="dimmed">
-              {progress.activeStage === 'analysis'
-                ? progress.analysis.agentCount > 0
-                  ? `${completedAgents}/${progress.analysis.agentCount} agents · ${elapsed}`
-                  : `Aucun agent configuré · ${elapsed}`
-                : elapsed}
-            </Text>
-          </Stack>
-        </Group>
-        {progressValue !== undefined && <Progress value={progressValue} size="xs" color="blue" />}
-        {progress.activeStage === 'analysis' && (
-          <Stack gap={4}>
-            {Object.entries(progress.analysis.agents).map(([agentId, agent]) => {
-              const durationMs = agent.durationMs
-                ?? (agent.startedAt === null ? 0 : Date.now() - agent.startedAt);
-              return (
-                <Group key={agentId} justify="space-between" gap="xs">
-                  <Group gap="xs">
-                    {agent.status === 'started' ? (
-                      <Loader size={12} color="blue" aria-label={`Agent ${agent.name} en cours`} />
-                    ) : (
-                      <Badge size="xs" variant="light" color={agent.status === 'completed' ? 'green' : 'red'}>
-                        {agent.status === 'completed' ? 'Terminé' : 'Échec'}
-                      </Badge>
-                    )}
-                    <Text size="xs">{agent.name}</Text>
-                  </Group>
-                  <Text size="xs" c="dimmed">{(durationMs / 1000).toFixed(1)} s</Text>
-                </Group>
-              );
-            })}
-          </Stack>
-        )}
-        {!progress.memoryOnly && <Group justify="space-between" gap="xs">
-          <PipelineStep
-            label="Analyse"
-            status={progress.analysis.status}
-            duration={progress.analysis.elapsedMs}
-            active={progress.activeStage === 'analysis'}
-          />
-          <PipelineStep
-            label="Narrateur"
-            status={progress.narrator.status}
-            duration={progress.narrator.elapsedMs}
-            active={progress.activeStage === 'narrator'}
-          />
-          {progress.guardian.status !== 'pending' && <PipelineStep label="Gardien" status={progress.guardian.status}
-            duration={progress.guardian.elapsedMs} active={progress.activeStage === 'guardian'} />}
-          {progress.reducer.status !== 'pending' && <PipelineStep label="Mémoire" status={progress.reducer.status}
-            duration={progress.reducer.elapsedMs} active={progress.activeStage === 'reducer'} />}
-        </Group>}
-      </Stack>
-    </Paper>
+    <Group gap="xs" wrap="nowrap" py={4} role="status" aria-live="off">
+      <Loader size={12} color="choral.3" aria-hidden="true" />
+      <Text size="xs" c="dimmed" aria-live="polite" truncate>
+        {progress.memoryOnly ? 'Mémoire' : stagePresentation[stage].label}{agentDetail} · {formatSeconds(progress[stage].elapsedMs)}
+      </Text>
+      <Group gap={2} wrap="nowrap" w={120} style={{ flexShrink: 0 }} aria-hidden="true">
+        {stages.map((item) => {
+          const status = progress[item].status;
+          const reached = status === 'completed' || status === 'running';
+          return (
+            <Box key={item} h={3} style={{ flex: 1, borderRadius: 2 }}
+              bg={status === 'failed' ? 'red.6' : reached ? stagePresentation[item].color : 'dark.4'}
+              opacity={status === 'running' ? 0.6 : 1} />
+          );
+        })}
+      </Group>
+    </Group>
   );
 }
 
-function PipelineStep({
-  label, status, duration, active,
-}: {
-  label: string;
-  status: 'pending' | 'running' | 'completed' | 'failed';
-  duration: number;
-  active: boolean;
+/** Replaces the progress line when the last turn failed. */
+export function PipelineFailure({ error, disabled, onRetry }: {
+  error: string | null;
+  disabled: boolean;
+  onRetry: () => void;
 }) {
-  const color = status === 'completed' ? 'green' : status === 'failed' ? 'red' : active ? 'choral' : 'gray';
-  const text = status === 'pending'
-    ? 'En attente'
-    : status === 'running'
-      ? `${(duration / 1000).toFixed(1)} s`
-      : `${(duration / 1000).toFixed(1)} s`;
-
   return (
-    <Group gap={4}>
-      <Badge size="xs" variant="light" color={color}>{label}</Badge>
-      <Text size="xs" c="dimmed">{text}</Text>
+    <Group gap="xs" wrap="nowrap" py={4} role="alert">
+      <IconAlertTriangle size={14} color="var(--mantine-color-red-5)" aria-hidden="true" style={{ flexShrink: 0 }} />
+      <Text size="xs" c="red.4" style={{ flex: 1, minWidth: 0 }}>
+        Échec du tour{error ? ` : ${error}` : ''}
+      </Text>
+      <Button size="compact-xs" variant="light" color="red" leftSection={<IconRefresh size={12} aria-hidden="true" />}
+        disabled={disabled} onClick={onRetry}>
+        Réessayer
+      </Button>
     </Group>
   );
 }
