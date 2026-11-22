@@ -53,3 +53,5 @@ Leave touched code better than you found it.
 8. Golden rule
     - Choose the simplest design that makes responsibilities clear, dependencies manageable, and future changes localized.
     - Do not optimize for architectural sophistication. Optimize for sustainable simplicity.
+9. Pull requests
+    - Before opening a pull request or writing its description, read and follow `docs/PULL_REQUESTS.md`: description template, autonomous agent review, and the maintainer as sole merger.
