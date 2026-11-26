@@ -7,6 +7,8 @@ import { getTurnTraceSummary } from '../../../api/chat/traceApi';
 import { getErrorMessage } from '../../../api/client';
 import { IconAction } from '../../atoms/IconAction';
 import { MemoryTracePanel } from '../../memories/MemoryTracePanel';
+import { DirectionPanel } from './DirectionPanel';
+import { estimateTensionLevels } from './directionInsights';
 import { StoryPanel } from './StoryPanel';
 import { TraceCallsPanel } from './TraceCallsPanel';
 import { TurnConfigurationPanel } from './TurnConfigurationPanel';
@@ -40,6 +42,7 @@ export function TurnDrawer({
   const summary = useTurnTraceSummary(projectId, turnId);
   const index = turnIds.indexOf(turnId);
   const storyMetrics = storyMetricsOf(turnIds, metricsByTurn);
+  const tensionLevels = storyMetrics ? estimateTensionLevels(storyMetrics)[index] ?? null : null;
   const selectIndex = (target: number) => {
     const targetId = turnIds[target];
     if (targetId) onSelectTurn(targetId);
@@ -91,7 +94,10 @@ export function TurnDrawer({
               </Tabs.List>
               <Tabs.Panel value="overview">
                 <WithSummary state={summary}>
-                  {(loaded) => <TurnOverview summary={loaded} metrics={storyMetrics} index={index} onOpenTab={openTab} onOpenCall={openCall} />}
+                  {(loaded) => (
+                    <TurnOverview summary={loaded} metrics={storyMetrics} index={index} tensionLevels={tensionLevels}
+                      onOpenTab={openTab} onOpenCall={openCall} />
+                  )}
                 </WithSummary>
               </Tabs.Panel>
               <Tabs.Panel value="developments">
@@ -106,6 +112,11 @@ export function TurnDrawer({
               </Tabs.Panel>
               <Tabs.Panel value="cost">
                 <WithSummary state={summary}>{(loaded) => <TurnCostPanel summary={loaded} />}</WithSummary>
+              </Tabs.Panel>
+              <Tabs.Panel value="direction">
+                <WithSummary state={summary}>
+                  {(loaded) => <DirectionPanel trace={loaded.direction} levels={tensionLevels} onOpenTab={openTab} />}
+                </WithSummary>
               </Tabs.Panel>
               <Tabs.Panel value="configuration">
                 <WithSummary state={summary}>

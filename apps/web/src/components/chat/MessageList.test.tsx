@@ -110,7 +110,7 @@ describe('turn lines', () => {
   const retryInput: Message = { ...userMessage, id: 'user-2', content: 'Retry this.' };
   const metrics: TurnMetrics = {
     turnId: firstTurnId, durationMs: 12_400, cost: { microUsd: 4200, complete: true }, narratorInputTokens: 900,
-    configurationChanges: [{ kind: 'systemPromptChanged' }],
+    configurationChanges: [{ kind: 'systemPromptChanged' }], direction: null,
   };
 
   it('puts a clickable line with duration, cost and configuration change under each turn', () => {

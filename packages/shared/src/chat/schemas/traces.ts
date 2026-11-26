@@ -1,6 +1,8 @@
 import { z } from 'zod';
 
-import { recordedAnalysisEnvelopeSchema, turnDevelopmentsSchema, turnDirectionSchema } from '../../pipeline.js';
+import {
+  nudgeTypeSchema, recordedAnalysisEnvelopeSchema, tensionTargetSchema, turnDevelopmentsSchema, turnDirectionSchema,
+} from '../../pipeline.js';
 import { chatExecutionParamsSchema, turnConfigurationSchema } from './turn.js';
 import { memoryContextSchema } from '../../memories.js';
 import { costBasisSchema } from '../../usage/index.js';
@@ -120,6 +122,12 @@ export const turnConfigurationChangeSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('systemPromptChanged') }),
 ]);
 
+/** Ce que le Directeur a décidé pour un tour, réduit à ce qui compare les tours ; une direction en échec n'a rien décidé. */
+export const turnDirectionMetricsSchema = z.discriminatedUnion('status', [
+  z.object({ status: z.literal('success'), tension: tensionTargetSchema, nudges: z.array(nudgeTypeSchema) }),
+  z.object({ status: z.literal('error') }),
+]);
+
 /** Indicateurs d'un tour, légers, pour la ligne sous chaque réponse et les comparaisons entre tours. */
 export const turnMetricsSchema = z.object({
   turnId: z.string().uuid(),
@@ -129,5 +137,7 @@ export const turnMetricsSchema = z.object({
   narratorInputTokens: z.number().int().nonnegative().nullable(),
   /** Nul quand la comparaison est impossible : premier tour, ou configuration non enregistrée. */
   configurationChanges: z.array(turnConfigurationChangeSchema).nullable(),
+  /** Nulle quand le tour s'est déroulé sans Directeur. */
+  direction: turnDirectionMetricsSchema.nullable(),
 });
 export const turnMetricsListSchema = z.array(turnMetricsSchema);

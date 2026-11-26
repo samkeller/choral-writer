@@ -399,7 +399,7 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
     expect(traceSummary.timeline.map((stage) => stage.stage)).toEqual([...new Set(traceSummary.calls.map((call) => call.stage))]);
     expect(turnMetricsListSchema.parse(metricsResponse.json())).toEqual([{
       turnId: start.turnId, durationMs: traceSummary.durationMs,
-      cost: { microUsd: 0, complete: false }, narratorInputTokens: 20, configurationChanges: null,
+      cost: { microUsd: 0, complete: false }, narratorInputTokens: 20, configurationChanges: null, direction: null,
     }]);
     const [turn] = await database.select().from(schema.chatTurns).where(eq(schema.chatTurns.id, start.turnId));
     expect(turn.status).toBe('completed');
@@ -555,6 +555,13 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
       method: 'GET', url: `/api/projects/${project.id}/turns/${next.turnId}/traces`, headers: { cookie },
     })).json());
     expect(failed.direction).toMatchObject({ status: 'error', attempts: 2, direction: null });
+    const metrics = turnMetricsListSchema.parse((await app.inject({
+      method: 'GET', url: `/api/projects/${project.id}/branches/${branchId}/turn-metrics`, headers: { cookie },
+    })).json());
+    expect(metrics.map((turn) => turn.direction)).toEqual([
+      { status: 'success', tension: 'monter', nudges: ['saillance'] },
+      { status: 'error' },
+    ]);
   });
 
   it('records the developments of a turn: the Narrator tells the scene ones, the Guardian learns them all', async () => {
