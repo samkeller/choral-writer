@@ -10,7 +10,7 @@ import { v7 as uuidv7 } from 'uuid';
 import {
   agentSchema, projectAgentSchema, chatEventSchema, chatHistorySchema, projectSchema,
   traceCallDetailSchema, turnMetricsListSchema, turnTraceSummarySchema,
-  memoryViewSchema, memoryTraceSchema, type MemoryMutation, type MemoryProposal,
+  memoryViewSchema, memoryTraceSchema, type MemoryMutation, type MemoryProposal, type MemoryView,
 } from '@choral-writer/shared';
 
 import { buildApp } from '../../../app.js';
@@ -106,6 +106,9 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
     expect(response.statusCode).toBe(201);
     const project = projectSchema.parse(response.json());
     createdIds.push(project.id);
+    expect((await memoryView(project.id, project.defaultBranchId!)).enabled).toBe(true);
+    // Memory starts on; tests outside memory switch it off to count only their own model calls.
+    await memoryChange(project.id, project.defaultBranchId!, { op: 'settings', enabled: false });
     return project;
   }
 
@@ -395,7 +398,7 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
     expect(traceSummary.timeline.map((stage) => stage.stage)).toEqual([...new Set(traceSummary.calls.map((call) => call.stage))]);
     expect(turnMetricsListSchema.parse(metricsResponse.json())).toEqual([{
       turnId: start.turnId, durationMs: traceSummary.durationMs,
-      cost: { microUsd: 0, complete: false }, narratorInputTokens: 20, configurationChanges: null,
+      cost: { microUsd: 0, complete: false }, narratorInputTokens: 20, configurationChanges: null, direction: null,
     }]);
     const [turn] = await database.select().from(schema.chatTurns).where(eq(schema.chatTurns.id, start.turnId));
     expect(turn.status).toBe('completed');
@@ -551,6 +554,13 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
       method: 'GET', url: `/api/projects/${project.id}/turns/${next.turnId}/traces`, headers: { cookie },
     })).json());
     expect(failed.direction).toMatchObject({ status: 'error', attempts: 2, direction: null });
+    const metrics = turnMetricsListSchema.parse((await app.inject({
+      method: 'GET', url: `/api/projects/${project.id}/branches/${branchId}/turn-metrics`, headers: { cookie },
+    })).json());
+    expect(metrics.map((turn) => turn.direction)).toEqual([
+      { status: 'success', tension: 'monter', nudges: ['saillance'] },
+      { status: 'error' },
+    ]);
   });
 
   it('retains the user message and failure trace but never persists a partial assistant reply', async () => {
@@ -720,8 +730,6 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
 
   it('retries a failed variant and repairs its memory with the configuration recorded on the turn', async () => {
     const project = await createProject('Relance variante', 'Prompt du projet.');
-    await memoryChange(project.id, project.defaultBranchId!, { op: 'saveTag',
-      tag: { name: 'Faits', description: 'Faits établis' } });
     await memoryChange(project.id, project.defaultBranchId!, { op: 'settings', enabled: true });
     const original = events((await send(project.id, 'Même saisie.')).body).at(-1);
     if (original?.type !== 'chat.turn.completed') throw new Error('Missing source turn.');
@@ -1053,16 +1061,22 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
     return memoryViewSchema.parse(response.json());
   }
   function propose(proposals: MemoryProposal[]) { guardianOutput = JSON.stringify({ v: 2, proposals }); }
+  /** Projects start with tags, so a test addresses its own tags by name rather than by position. */
+  function tagNamed(view: MemoryView, name: string): string {
+    const tag = view.state.tags.find((item) => item.name === name);
+    if (!tag) throw new Error(`Missing tag ${name}.`);
+    return tag.id;
+  }
 
   it('gives each pipeline agent its configured memory and retains access settings across version selections', async () => {
     const project = await createProject('M6 Accès');
     const branchId = project.defaultBranchId!;
     let view = await memoryChange(project.id, branchId, { op: 'saveTag',
       tag: { name: 'world_rules', description: 'Faits canoniques établis.' } });
-    const truth = view.state.tags[0]!.id;
+    const truth = tagNamed(view, 'world_rules');
     view = await memoryChange(project.id, branchId, { op: 'saveTag',
       tag: { name: 'n_knowledge', description: 'Connaissances et croyances de N.' } });
-    const belief = view.state.tags[1]!.id;
+    const belief = tagNamed(view, 'n_knowledge');
     await memoryChange(project.id, branchId, { op: 'saveEntry',
       entry: { tagIds: [truth], key: 'Max', content: 'Vérité réservée au narrateur', protected: true } });
     await memoryChange(project.id, branchId, { op: 'saveEntry',
@@ -1142,10 +1156,10 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
       expect((await agents.listForProject(project.id)).find((agent) => agent.agentId === analyst.id)?.memoryRead?.tagIds).toEqual([]);
       await memoryChange(project.id, branchId, { op: 'applySetup', proposal: response.json() });
       const result = await memoryView(project.id, branchId);
-      expect(result.state.tags[0]!.name).toBe('world_rules');
+      expect(result.state.tags.map((tag) => tag.name)).toEqual([...before.state.tags.map((tag) => tag.name), 'world_rules']);
       expect(result.state.entries).toEqual([]);
       expect((await agents.listForProject(project.id)).find((agent) => agent.agentId === analyst.id)?.memoryRead)
-        .toEqual({ mode: 'selected', tagIds: [result.state.tags[0]!.id] });
+        .toEqual({ mode: 'selected', tagIds: [tagNamed(result, 'world_rules')] });
     } finally {
       setupOutput = null;
       await agents.configure(project.id, { agents: originalTeam.map(({ agentId, versionId }) => ({ agentId, versionId })) });
@@ -1186,7 +1200,7 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
       FOR EACH ROW EXECUTE FUNCTION choral_writer.m6_test_reject_bank()`);
     try {
       propose([
-        { op: 'create', tagIds: [before.state.tags[0]!.id], key: 'Porte', content: 'Une porte', reason: 'Scène' },
+        { op: 'create', tagIds: [tagNamed(before, 'Savoir')], key: 'Porte', content: 'Une porte', reason: 'Scène' },
       ]);
       const last = events((await send(project.id, 'Une scène complète.')).body).at(-1)!;
       expect(last.type).toBe('chat.turn.completed');
@@ -1209,7 +1223,7 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
     await memoryChange(project.id, branchId, { op: 'settings', enabled: true });
     try {
       for (let turn = 1; turn <= 25; turn++) {
-        propose(turn === 3 ? [{ op: 'create', tagIds: [view.state.tags[0]!.id],
+        propose(turn === 3 ? [{ op: 'create', tagIds: [tagNamed(view, 'Faits durables')],
           key: 'Secret', content: 'Le secret durable du tour trois.', reason: 'Révélation au tour 3' }] : []);
         const response = events((await send(project.id, turn === 3 ? 'Révélation unique au tour trois.' : `Scène ${turn}.`)).body);
         expect(response.at(-1)?.type).toBe('chat.turn.completed');
@@ -1225,11 +1239,11 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
     const project = await createProject('M6 Annulation mémoire');
     const branchId = project.defaultBranchId!;
     const view = await memoryChange(project.id, branchId, { op: 'saveTag',
-      tag: { name: 'Faits', description: 'Informations établies.' } });
+      tag: { name: 'Faits établis', description: 'Informations établies.' } });
     await memoryChange(project.id, branchId, { op: 'settings', enabled: true });
     const controller = new AbortController();
     try {
-      propose([{ op: 'create', tagIds: [view.state.tags[0]!.id], key: 'Mara',
+      propose([{ op: 'create', tagIds: [tagNamed(view, 'Faits établis')], key: 'Mara',
         content: 'Souvenir à annuler', reason: 'Scène' }]);
       const result = await chat.run({ operation: 'send', projectId: project.id, branchId,
         expectedHeadTurnId: null, content: 'Narration conservée.' }, async (event) => {
@@ -1248,9 +1262,9 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
     const project = await createProject('M6 Guardian vide');
     const branchId = project.defaultBranchId!;
     const initial = await memoryChange(project.id, branchId, { op: 'saveTag',
-      tag: { name: 'Faits', description: 'Faits établis' } });
+      tag: { name: 'Faits établis', description: 'Faits établis' } });
     await memoryChange(project.id, branchId, { op: 'saveEntry',
-      entry: { tagIds: [initial.state.tags[0]!.id], key: 'Max', content: 'Mémoire intacte', protected: false } });
+      entry: { tagIds: [tagNamed(initial, 'Faits établis')], key: 'Max', content: 'Mémoire intacte', protected: false } });
     await memoryChange(project.id, branchId, { op: 'settings', enabled: true });
     const before = await memoryView(project.id, branchId);
     try {
@@ -1282,8 +1296,8 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
     const project = await createProject('M6 Branches');
     const branchId = project.defaultBranchId!;
     let view = await memoryChange(project.id, branchId, { op: 'saveTag',
-      tag: { name: 'Faits', description: 'Faits établis' } });
-    const tagId = view.state.tags[0]!.id;
+      tag: { name: 'Faits établis', description: 'Faits établis' } });
+    const tagId = tagNamed(view, 'Faits établis');
     await memoryChange(project.id, branchId, { op: 'saveEntry',
       entry: { tagIds: [tagId], key: 'Max', content: 'État initial A', protected: false } });
     await memoryChange(project.id, branchId, { op: 'settings', enabled: true });
@@ -1344,8 +1358,8 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
     const project = await createProject('M6 Atomicité');
     const branchId = project.defaultBranchId!;
     const initial = await memoryChange(project.id, branchId, { op: 'saveTag',
-      tag: { name: 'Faits', description: 'Informations établies.' } });
-    const tagId = initial.state.tags[0]!.id;
+      tag: { name: 'Faits établis', description: 'Informations établies.' } });
+    const tagId = tagNamed(initial, 'Faits établis');
     await memoryChange(project.id, branchId, { op: 'settings', enabled: true });
     const before = await memoryView(project.id, branchId);
     try {
@@ -1376,7 +1390,7 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
     const project = await createProject('M6 Conflits');
     const branchId = project.defaultBranchId!;
     const initial = await memoryView(project.id, branchId);
-    await memoryChange(project.id, branchId, { op: 'saveTag', tag: { name: 'Faits', description: 'Informations établies.' } });
+    await memoryChange(project.id, branchId, { op: 'saveTag', tag: { name: 'Faits établis', description: 'Informations établies.' } });
     const conflict = await app.inject({ method: 'POST', headers: { cookie },
       url: `/api/projects/${project.id}/branches/${branchId}/memories`,
       payload: { expectedHeadTurnId: null, expectedRevisionId: initial.revisionId,

@@ -14,6 +14,7 @@ function turnColumns() {
     id: chatTurns.id,
     parentTurnId: chatTurns.parentTurnId,
     configuration: chatTurns.configuration,
+    direction: chatTurns.direction,
     completedAt: chatTurns.completedAt,
   };
 }
@@ -52,8 +53,8 @@ export class TraceRepository {
   }
 
   /** Null when the turn does not belong to the project. */
-  async findTurn(projectId: string, turnId: string): Promise<DirectedTurnRecord | null> {
-    const [turn] = await this.database.select({ ...turnColumns(), direction: chatTurns.direction }).from(chatTurns)
+  async findTurn(projectId: string, turnId: string): Promise<TracedTurnRecord | null> {
+    const [turn] = await this.database.select(turnColumns()).from(chatTurns)
       .where(and(eq(chatTurns.projectId, projectId), eq(chatTurns.id, turnId)));
     return turn ?? null;
   }
@@ -123,10 +124,10 @@ export type TracedTurnRecord = {
   id: string;
   parentTurnId: string | null;
   configuration: TurnConfiguration | null;
+  /** What the Director decided; null when the turn ran without direction or its direction failed. */
+  direction: TurnDirection | null;
   completedAt: Date | null;
 };
-/** A turn with what the Director decided; null when it ran without direction. */
-export type DirectedTurnRecord = TracedTurnRecord & { direction: TurnDirection | null };
 export type MetricCallRecord = Awaited<ReturnType<TraceRepository['listMetricCalls']>>[number];
 export type TraceSummaryRecord = Awaited<ReturnType<TraceRepository['listByTurn']>>[number];
 export type TraceDetailRecord = TraceSummaryRecord & {
