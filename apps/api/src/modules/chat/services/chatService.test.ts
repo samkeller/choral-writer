@@ -58,6 +58,7 @@ function setup() {
       configuration: vi.fn<ChatTransactionContext['turns']['configuration']>(),
       directions: vi.fn<ChatTransactionContext['turns']['directions']>().mockResolvedValue([]),
       recordDirection: vi.fn<ChatTransactionContext['turns']['recordDirection']>(),
+      recordDevelopments: vi.fn<ChatTransactionContext['turns']['recordDevelopments']>(),
     },
     recordActivity: vi.fn<ChatTransactionContext['recordActivity']>(),
   } satisfies ChatTransactionContext;
@@ -324,5 +325,50 @@ describe('direction phase', () => {
 
     expect(result.status).toBe('failed');
     expect(narrate).not.toHaveBeenCalled();
+  });
+});
+
+describe('developments', () => {
+  const scene = {
+    kind: 'development', characters: ['Mara'], scope: 'scene', text: 'The lamp goes out.', importance: 'HIGH',
+  } as const;
+  const offscreen = {
+    kind: 'development', characters: ['The postman'], scope: 'offscreen', text: 'The postman leaves.', importance: 'LOW',
+  } as const;
+  const whiteboard: AnalysisEnvelope[] = [{ v: 1, agent: 'World', summary: 'Evening.', items: [scene, offscreen] }];
+
+  it('records what happened during the turn and hands every retained development to the Guardian', async () => {
+    const { context, analyze, direct, narrate, run } = setup();
+    context.projectAgents.push({
+      agentId: 'director', versionId: 'director-version', phase: 'direction', output: 'direction',
+      version: 1, name: 'Director', instructions: '',
+    });
+    analyze.mockResolvedValue(whiteboard);
+    direct.mockResolvedValue({
+      tension: 'tenir', nudges: [],
+      retained: [{ agent: 'World', item: offscreen, why: 'World pressure.' }],
+      dismissed: [{ agent: 'World', item: scene, why: 'Too soon.' }],
+    });
+    narrate.mockResolvedValue({ prose: 'The door opens.', callId: 'narrator-call' });
+
+    await run();
+
+    const happened = [{ agent: 'World', item: offscreen }];
+    expect(context.turns.recordDevelopments).toHaveBeenCalledWith('turn', happened);
+    expect(context.memory.process).toHaveBeenCalledWith(
+      'project', 'branch', expect.anything(), expect.objectContaining({ developments: happened }), expect.any(Function),
+    );
+  });
+
+  it('lets every development happen without a Director', async () => {
+    const { context, analyze, narrate, run } = setup();
+    analyze.mockResolvedValue(whiteboard);
+    narrate.mockResolvedValue({ prose: 'The door opens.', callId: 'narrator-call' });
+
+    await run();
+
+    expect(context.turns.recordDevelopments).toHaveBeenCalledWith('turn', [
+      { agent: 'World', item: scene }, { agent: 'World', item: offscreen },
+    ]);
   });
 });

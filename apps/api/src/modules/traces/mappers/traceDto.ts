@@ -1,8 +1,9 @@
 import type {
-  AnalysisTrace, DirectionTrace, NarratorTrace, StageDuration, TraceCallDetail, TraceCallSummary, TurnConfiguration,
-  TurnConfigurationChange, TurnDirection, TurnMetrics, TurnTraceSummary,
+  AnalysisTrace, AttributedDevelopment, DirectionTrace, NarratorTrace, StageDuration, TraceCallDetail, TraceCallSummary,
+  TurnConfiguration, TurnConfigurationChange, TurnDevelopments, TurnDirection, TurnDirectionMetrics, TurnMetrics,
+  TurnTraceSummary,
 } from '@choral-writer/shared';
-import { analysisEnvelopeSchema, traceCallDetailSchema } from '@choral-writer/shared';
+import { recordedAnalysisEnvelopeSchema, traceCallDetailSchema } from '@choral-writer/shared';
 
 import type { MetricCallRecord, TraceDetailRecord, TraceSummaryRecord } from '../repositories/traceRepository.js';
 
@@ -44,7 +45,10 @@ export function toTraceCallDetailDto(trace: TraceDetailRecord, turnId: string): 
 }
 
 export function toTurnTraceSummaryDto(
-  turn: { id: string; configuration: TurnConfiguration | null; direction: TurnDirection | null; completedAt: Date | null },
+  turn: {
+    id: string; configuration: TurnConfiguration | null; direction: TurnDirection | null;
+    developments: AttributedDevelopment[] | null; completedAt: Date | null;
+  },
   traces: readonly TraceSummaryRecord[],
 ): TurnTraceSummary {
   const turnId = turn.id;
@@ -74,12 +78,12 @@ export function toTurnTraceSummaryDto(
 
   const directionCalls = traces.filter((trace) => trace.stage === 'direction');
   const directionCall = directionCalls.at(-1);
-  const directionTrace: DirectionTrace | null = directionCall ? {
+  const outcome = directionOutcome(turn.direction, directionCalls);
+  const directionTrace: DirectionTrace | null = directionCall && outcome ? {
     agentId: directionCall.agentId,
     agentVersionId: directionCall.agentVersionId,
     name: directionCall.agentName ?? 'Directeur',
-    // A direction is recorded only after a validated call; without one, the narrator fell back.
-    status: turn.direction ? 'success' : 'error',
+    status: outcome.status,
     durationMs: directionCalls.reduce((total, call) => total + call.durationMs, 0),
     attempts: directionCalls.length,
     cost: toTurnCost(directionCalls),
@@ -103,6 +107,7 @@ export function toTurnTraceSummaryDto(
     turnId,
     analysis,
     direction: directionTrace,
+    developments: turn.developments && splitByScope(turn.developments),
     narrator,
     calls: traces.map((trace) => toTraceCallSummaryDto(trace, turnId)),
     timeline,
@@ -113,7 +118,7 @@ export function toTurnTraceSummaryDto(
 }
 
 export function toTurnMetricsDto(
-  turn: { id: string; completedAt: Date | null },
+  turn: { id: string; direction: TurnDirection | null; completedAt: Date | null },
   calls: readonly MetricCallRecord[],
   configurationChanges: TurnConfigurationChange[] | null,
 ): TurnMetrics {
@@ -124,7 +129,36 @@ export function toTurnMetricsDto(
     cost: toTurnCost(calls),
     narratorInputTokens: narratorCall?.inputTokens ?? null,
     configurationChanges,
+    direction: toDirectionMetrics(turn.direction, calls),
   };
+}
+
+function splitByScope(developments: readonly AttributedDevelopment[]): TurnDevelopments {
+  return {
+    scene: developments.filter((development) => development.item.scope === 'scene'),
+    offscreen: developments.filter((development) => development.item.scope === 'offscreen'),
+  };
+}
+
+function toDirectionMetrics(
+  direction: TurnDirection | null, calls: readonly Pick<MeasuredCall, 'stage'>[],
+): TurnDirectionMetrics | null {
+  const outcome = directionOutcome(direction, calls);
+  if (outcome?.status !== 'success') return outcome;
+  return { status: 'success', tension: outcome.direction.tension, nudges: outcome.direction.nudges.map((nudge) => nudge.type) };
+}
+
+type DirectionOutcome = { status: 'success'; direction: TurnDirection } | { status: 'error' };
+
+/**
+ * A direction is recorded only after a validated Director call: a Director call without one means the
+ * direction failed and the narrator fell back to the whole whiteboard. Null for a turn without a Director.
+ */
+function directionOutcome(
+  direction: TurnDirection | null, calls: readonly Pick<MeasuredCall, 'stage'>[],
+): DirectionOutcome | null {
+  if (direction) return { status: 'success', direction };
+  return calls.some((call) => call.stage === 'direction') ? { status: 'error' } : null;
 }
 
 /**
@@ -170,7 +204,7 @@ function parseAnalysisEnvelope(response: string | null) {
   if (!response) return null;
   try {
     const parsed: unknown = JSON.parse(response);
-    const result = analysisEnvelopeSchema.safeParse(parsed);
+    const result = recordedAnalysisEnvelopeSchema.safeParse(parsed);
     return result.success ? result.data : null;
   } catch (error) {
     if (error instanceof SyntaxError) return null;

@@ -36,7 +36,7 @@ function setup(responses: string[]) {
     projectId: 'project',
     turnId: 'turn', executionId: 'run', agent: guardian, agents: [guardian],
     state: emptyMemoryState(), systemPrompt: 'Continue the story in prose.',
-    prose: 'The door creaks.', signal: new AbortController().signal,
+    prose: 'The door creaks.', developments: [], signal: new AbortController().signal,
   };
   return { service, input, create, requests, insert };
 }
@@ -52,8 +52,8 @@ describe('Guardian JSON task', () => {
       expect(first.messages[0]!.content).not.toContain('Continue the story in prose.');
       expect(first.messages[1]!.content).toContain('"projectContext":"Continue the story in prose."');
       expect(first.messages[1]!.content).toContain('"prose":"The door creaks."');
-      expect(first.messages[1]!.content).toContain('Return JSON only');
-      expect(requests[1]!.messages.at(-1)?.content).toContain('previous attempt');
+      expect(first.messages[1]!.content).toContain('Renvoie uniquement du JSON');
+      expect(requests[1]!.messages.at(-1)?.content).toContain('La tentative précédente');
       expect(insert.mock.calls.map(([trace]) => trace.status)).toEqual(['error', 'success']);
       expect(insert.mock.calls[0]![0].response).toBe(invalid);
     },
@@ -64,5 +64,23 @@ describe('Guardian JSON task', () => {
     await expect(service.generate(input)).rejects.toMatchObject({ code: 'LLM_EMPTY_RESPONSE' });
     expect(create).toHaveBeenCalledTimes(2);
     expect(insert.mock.calls.map(([trace]) => trace.status)).toEqual(['error', 'error']);
+  });
+
+  it('reads every development of the turn as established facts, off-screen ones included', async () => {
+    const { service, input, requests } = setup(['{"v":2,"proposals":[],"tagSuggestions":[]}']);
+    await service.generate({ ...input, developments: [
+      { agent: 'Monde', item: {
+        kind: 'development', characters: ['Mara'], scope: 'scene', text: 'La lampe s’éteint.', importance: 'HIGH',
+      } },
+      { agent: 'Absents', item: {
+        kind: 'development', characters: ['Le facteur'], scope: 'offscreen', text: 'Le facteur part.', importance: 'LOW',
+      } },
+    ] });
+
+    const [system, user] = requests[0]!.messages.map((message) => String(message.content));
+    expect(user).toContain('"developments":[{"agent":"Monde","scope":"scene","characters":["Mara"],"text":"La lampe s’éteint."}'
+      + ',{"agent":"Absents","scope":"offscreen","characters":["Le facteur"],"text":"Le facteur part."}]');
+    expect(system).toContain('même quand la prose ne les raconte pas');
+    expect(system).toContain('"personnage/<nom>", sous le tag « Intentions »');
   });
 });

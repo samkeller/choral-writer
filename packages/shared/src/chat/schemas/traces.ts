@@ -1,6 +1,8 @@
 import { z } from 'zod';
 
-import { analysisEnvelopeSchema, turnDirectionSchema } from '../../pipeline.js';
+import {
+  nudgeTypeSchema, recordedAnalysisEnvelopeSchema, tensionTargetSchema, turnDevelopmentsSchema, turnDirectionSchema,
+} from '../../pipeline.js';
 import { chatExecutionParamsSchema, turnConfigurationSchema } from './turn.js';
 import { memoryContextSchema } from '../../memories.js';
 import { costBasisSchema } from '../../usage/index.js';
@@ -54,7 +56,7 @@ export const analysisTraceSchema = z.object({
   status: traceStatusSchema,
   durationMs: z.number().int().nonnegative(),
   attempts: z.number().int().positive(),
-  envelope: analysisEnvelopeSchema.nullable(),
+  envelope: recordedAnalysisEnvelopeSchema.nullable(),
 });
 
 /** A failed direction means the narrator fell back to the whole whiteboard. */
@@ -91,6 +93,11 @@ export const turnTraceSummarySchema = z.object({
   analysis: z.array(analysisTraceSchema),
   /** Null when the turn ran without a Director. */
   direction: directionTraceSchema.nullable(),
+  /**
+   * What happened in the story world during the turn: the developments the Director retained, or all of
+   * them without a direction. Null for a turn recorded before developments were.
+   */
+  developments: turnDevelopmentsSchema.nullable(),
   narrator: narratorTraceSchema.nullable(),
   calls: z.array(traceCallSummarySchema),
   /** Étapes dans l'ordre d'exécution, sans les relances ultérieures de la mémoire. */
@@ -115,6 +122,12 @@ export const turnConfigurationChangeSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('systemPromptChanged') }),
 ]);
 
+/** Ce que le Directeur a décidé pour un tour, réduit à ce qui compare les tours ; une direction en échec n'a rien décidé. */
+export const turnDirectionMetricsSchema = z.discriminatedUnion('status', [
+  z.object({ status: z.literal('success'), tension: tensionTargetSchema, nudges: z.array(nudgeTypeSchema) }),
+  z.object({ status: z.literal('error') }),
+]);
+
 /** Indicateurs d'un tour, légers, pour la ligne sous chaque réponse et les comparaisons entre tours. */
 export const turnMetricsSchema = z.object({
   turnId: z.string().uuid(),
@@ -124,5 +137,7 @@ export const turnMetricsSchema = z.object({
   narratorInputTokens: z.number().int().nonnegative().nullable(),
   /** Nul quand la comparaison est impossible : premier tour, ou configuration non enregistrée. */
   configurationChanges: z.array(turnConfigurationChangeSchema).nullable(),
+  /** Nulle quand le tour s'est déroulé sans Directeur. */
+  direction: turnDirectionMetricsSchema.nullable(),
 });
 export const turnMetricsListSchema = z.array(turnMetricsSchema);

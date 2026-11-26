@@ -580,7 +580,7 @@ describe('projects and chat screens', () => {
   function metricsOf(turnId: string, overrides: Partial<TurnMetrics> = {}): TurnMetrics {
     return {
       turnId, durationMs: 2300, cost: { microUsd: 4100, complete: true },
-      narratorInputTokens: 900, configurationChanges: null, ...overrides,
+      narratorInputTokens: 900, configurationChanges: null, direction: null, ...overrides,
     };
   }
 
@@ -1052,6 +1052,7 @@ describe('projects and chat screens', () => {
         name: 'Directeur', status: 'error', durationMs: 300, attempts: 2, direction: null,
         cost: { microUsd: 120, complete: true },
       },
+      developments: null,
       narrator: { status: 'success', durationMs: 1500, prose: 'La porte résiste.' },
       calls: [
         {
@@ -1131,9 +1132,8 @@ describe('projects and chat screens', () => {
     expect(await drawer.findByRole('button', { name: /^Coût : 0,0004 \$/ })).toBeTruthy();
     expect(drawer.getByRole('button', { name: /^Durée : 2,3 s, Narrateur : 1,5 s/ })).toBeTruthy();
     expect(drawer.getByRole('button', { name: /^Entrée du Narrateur : 900 tokens, premier tour/ })).toBeTruthy();
-    expect(drawer.getByText('Rien à signaler pour ce tour.')).toBeTruthy();
-    const direction = within(drawer.getByRole('region', { name: 'Direction · Directeur' }));
-    expect(direction.getByText('Direction indisponible : le Narrateur a reçu le whiteboard complet.')).toBeTruthy();
+    expect(drawer.getByRole('button', { name: 'Tension : —, direction en échec' })).toBeTruthy();
+    expect(drawer.getByText('Direction en échec après 2 tentative(s) : le Narrateur a reçu le whiteboard complet.')).toBeTruthy();
 
     fireEvent.click(drawer.getByRole('button', { name: 'Coût et durée par appel →' }));
     expect(drawer.getByRole('tab', { name: 'Coût et durée' }).getAttribute('aria-selected')).toBe('true');
@@ -1349,7 +1349,7 @@ describe('projects and chat screens', () => {
       output: 'direction', versions: [{ ...guardian.versions[0]!, id: '019ad30c-19b0-7000-8000-000000000509', name: 'Directeur' }] };
     const recorded = [assignmentOf(narrative, narrative.versions[1]!.id), assignmentOf(guardian), assignmentOf(director)];
     const summary: TurnTraceSummary = {
-      turnId: head.id, analysis: [], direction: null, narrator: null, calls: [], timeline: [], durationMs: 0,
+      turnId: head.id, analysis: [], direction: null, developments: null, narrator: null, calls: [], timeline: [], durationMs: 0,
       cost: { microUsd: 0, complete: true },
       configuration: {
         systemPrompt: 'Prompt enregistré.',

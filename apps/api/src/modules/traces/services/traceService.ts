@@ -1,9 +1,7 @@
 import type { TraceCallDetail, TurnMetrics, TurnTraceSummary } from '@choral-writer/shared';
 
 import { notfoundError } from '../../../errors/errors.js';
-import type {
-  DirectedTurnRecord, MetricCallRecord, TracedTurnRecord, TraceRepository,
-} from '../repositories/traceRepository.js';
+import type { MetricCallRecord, TracedTurnRecord, TraceRepository, TurnTraceRecord } from '../repositories/traceRepository.js';
 import { toTraceCallDetailDto, toTurnMetricsDto, toTurnTraceSummaryDto } from '../mappers/traceDto.js';
 import { turnConfigurationChanges } from './configurationChanges.js';
 
@@ -43,7 +41,7 @@ export class TraceService {
     return toTraceCallDetailDto(trace, turn.id);
   }
 
-  private async turn(projectId: string, turnId: string): Promise<DirectedTurnRecord> {
+  private async turn(projectId: string, turnId: string): Promise<TurnTraceRecord> {
     const turn = await this.repository.findTurn(projectId, turnId);
     if (!turn) throw notfoundError('Ce tour est introuvable.');
     return turn;

@@ -24,6 +24,7 @@ async function main(): Promise<void> {
 
   try {
     await pool.query('select 1');
+    await agents.ensureLibrary();
     await app.listen({ host: '0.0.0.0', port: config.port });
   } catch (error) {
     app.log.error(error, 'Could not start the API server.');

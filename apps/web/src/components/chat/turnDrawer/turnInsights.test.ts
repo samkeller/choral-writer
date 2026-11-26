@@ -8,13 +8,13 @@ const turnId = '019ad30c-19b0-7000-8000-000000000501';
 function metrics(microUsd: number, overrides: Partial<TurnMetrics> = {}): TurnMetrics {
   return {
     turnId, durationMs: 1000, cost: { microUsd, complete: true },
-    narratorInputTokens: 1000, configurationChanges: null, ...overrides,
+    narratorInputTokens: 1000, configurationChanges: null, direction: null, ...overrides,
   };
 }
 
 function summary(microUsd: number, overrides: Partial<TurnTraceSummary> = {}): TurnTraceSummary {
   return {
-    turnId, analysis: [], direction: null, narrator: null, calls: [], timeline: [], durationMs: 0,
+    turnId, analysis: [], direction: null, developments: null, narrator: null, calls: [], timeline: [], durationMs: 0,
     cost: { microUsd, complete: true }, configuration: null, ...overrides,
   };
 }
@@ -61,6 +61,32 @@ describe('turn insights', () => {
     expect(attentionPoints(silent, [metrics(100), metrics(100)], 1)).toEqual([
       { kind: 'analysisAgentWithoutEnvelope', agentName: 'Rythme', callId: call.id },
     ]);
+  });
+
+  it('flags each intervention of the Director, a failed direction and a Director gone since the previous turn', () => {
+    const directorTrace = {
+      agentId: null, agentVersionId: null, name: 'Directeur', status: 'success' as const, durationMs: 10, attempts: 1,
+      cost: { microUsd: 10, complete: true },
+      direction: {
+        tension: 'monter' as const,
+        nudges: [
+          { type: 'saillance' as const, target: 'Un objet', basis: null },
+          { type: 'complication' as const, target: 'Une tentative', basis: null },
+        ],
+        retained: [],
+        dismissed: [],
+      },
+    };
+    const directedStory = [metrics(100, { direction: { status: 'success', tension: 'tenir', nudges: [] } }), metrics(100)];
+
+    expect(attentionPoints(summary(100, { direction: directorTrace }), [metrics(100), metrics(100)], 1)).toEqual([
+      { kind: 'directorNudge', type: 'saillance', target: 'Un objet' },
+      { kind: 'directorNudge', type: 'complication', target: 'Une tentative' },
+    ]);
+    expect(attentionPoints(summary(100, { direction: { ...directorTrace, status: 'error', attempts: 2, direction: null } }),
+      [metrics(100), metrics(100)], 1)).toEqual([{ kind: 'directionFailed', attempts: 2 }]);
+    expect(attentionPoints(summary(100), directedStory, 1)).toEqual([{ kind: 'directorDisabled' }]);
+    expect(attentionPoints(summary(100), [metrics(100), metrics(100)], 1)).toEqual([]);
   });
 
   it('reports a partial cost and failed calls instead of comparing an unknown amount', () => {

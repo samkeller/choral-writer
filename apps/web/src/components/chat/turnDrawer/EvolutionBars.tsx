@@ -1,18 +1,20 @@
 import { Box, Group, Text, Tooltip, UnstyledButton } from '@mantine/core';
 
 /**
- * One vertical bar per turn, as tall as its value relative to the largest one.
+ * One vertical bar per turn, as tall as its value relative to `scaleMax`, or to the largest value without one
+ * (a fixed scale keeps the same height for the same value across stories).
  * The current turn is outlined; clicking a bar opens that turn.
  */
-export function EvolutionBars({ values, current, color, describe, onSelect, height = 80 }: {
+export function EvolutionBars({ values, current, color, describe, onSelect, height = 80, scaleMax }: {
   values: (number | null)[];
   current: number;
   color: string;
   describe: (value: number | null, turnNumber: number) => string;
   onSelect: (index: number) => void;
   height?: number;
+  scaleMax?: number;
 }) {
-  const max = Math.max(0, ...values.map((value) => value ?? 0));
+  const max = scaleMax ?? Math.max(0, ...values.map((value) => value ?? 0));
   if (max === 0) return <Text size="sm" c="dimmed">Aucune mesure disponible pour ce récit.</Text>;
 
   return (

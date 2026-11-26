@@ -47,3 +47,35 @@ describe('narratorSystemPrompt', () => {
     expect(prompt).not.toContain('ANALYSES DES AGENTS');
   });
 });
+
+describe('narratorSystemPrompt with developments', () => {
+  const scene = {
+    kind: 'development', characters: ['Mara'], scope: 'scene', text: 'La lampe s’éteint.', importance: 'HIGH',
+  } as const;
+  const offscreen = {
+    kind: 'development', characters: ['Le facteur'], scope: 'offscreen', text: 'Le facteur quitte le village.', importance: 'NORMAL',
+  } as const;
+  const whiteboard = [{ v: 1 as const, agent: 'Monde', summary: 'Le soir tombe.', items: [scene, offscreen] }];
+
+  it('gives the Narrator the scene developments and their rule, never the off-screen ones', () => {
+    const prompt = narratorSystemPrompt('Contexte.', whiteboard, emptyMemory, null);
+
+    expect(prompt).toContain('- développement dans la scène (personnages : Mara ; importance haute) : La lampe s’éteint.');
+    expect(prompt).toContain('DÉVELOPPEMENTS DANS LA SCÈNE');
+    expect(prompt).toContain('ne les contredis pas');
+    expect(prompt).not.toContain('Le facteur quitte le village.');
+  });
+
+  it('drops an off-screen development the Director retained', () => {
+    const prompt = narratorSystemPrompt('Contexte.', whiteboard, emptyMemory, {
+      tension: 'tenir', nudges: [],
+      retained: [{ agent: 'Monde', item: offscreen, why: 'Utile plus tard.' }],
+      dismissed: [{ agent: 'Monde', item: scene, why: 'Trop tôt.' }],
+    });
+
+    expect(prompt).not.toContain('Le facteur quitte le village.');
+    expect(prompt).not.toContain('La lampe s’éteint.');
+    expect(prompt).not.toContain('DÉVELOPPEMENTS DANS LA SCÈNE');
+    expect(prompt).toContain('Aucune contribution des agents n’est retenue à ce tour.');
+  });
+});

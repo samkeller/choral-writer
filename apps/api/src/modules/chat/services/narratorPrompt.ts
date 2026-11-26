@@ -1,7 +1,9 @@
-import type { AnalysisEnvelope, MemoryContext, TurnDirection } from '@choral-writer/shared';
+import type { AnalysisEnvelope, AnalysisItem, MemoryContext, TurnDirection } from '@choral-writer/shared';
+import { isDevelopment } from '@choral-writer/shared';
 
 import { formatMemoryContext } from '../../memories/services/memoryState.js';
 import { nudgeDescriptions, tensionLabels } from './directionVocabulary.js';
+import { isToldInScene } from './turnDevelopments.js';
 import { formatItem } from './whiteboardFormat.js';
 
 const narratorRules = [
@@ -15,6 +17,8 @@ const directionRules = [
   '- Ta prose reste d’abord une réponse à la saisie : ce que le personnage joué par l’utilisateur fait ou dit a bien lieu ; seuls ses résultats et les réactions des autres peuvent être infléchis.',
   '- La tension et les nudges sont des pressions sur la manière de raconter, pas des faits : n’invente pas d’événement pour les satisfaire et intègre-les organiquement, au besoin sur plusieurs tours.',
 ].join('\n');
+
+const sceneDevelopmentRules = 'DÉVELOPPEMENTS DANS LA SCÈNE. Les contributions de type « développement dans la scène » arrivent à ce tour : ne les contredis pas. Tu restes libre de la manière et du moment de les raconter, et ta prose répond d’abord à la saisie.';
 
 /** Rend le whiteboard en texte lisible : le JSON brut détournait le Narrateur vers un registre de données. */
 export function formatWhiteboard(whiteboard: readonly AnalysisEnvelope[]): string {
@@ -54,12 +58,27 @@ export function formatDirection(direction: TurnDirection): string {
   ].join('\n\n');
 }
 
-/** With a direction, the Narrator reads it instead of the whiteboard; without one, the whole whiteboard. */
+/**
+ * What the Narrator reads, rendered, and the items it contains. With a direction, he reads it instead
+ * of the whiteboard; without one, the whole whiteboard. Either way, he never reads an off-screen
+ * development: it has happened, but is not his to tell.
+ */
+function narratorMaterial(
+  whiteboard: readonly AnalysisEnvelope[], direction: TurnDirection | null,
+): { text: string; items: AnalysisItem[] } {
+  if (direction) {
+    const retained = direction.retained.filter((selection) => isToldInScene(selection.item));
+    return { text: formatDirection({ ...direction, retained }), items: retained.map((selection) => selection.item) };
+  }
+  const envelopes = whiteboard.map((envelope) => ({ ...envelope, items: envelope.items.filter(isToldInScene) }));
+  return { text: formatWhiteboard(envelopes), items: envelopes.flatMap((envelope) => envelope.items) };
+}
+
 export function narratorSystemPrompt(
   systemPrompt: string, whiteboard: readonly AnalysisEnvelope[], memory: MemoryContext,
   direction: TurnDirection | null,
 ): string {
-  const material = direction ? formatDirection(direction) : formatWhiteboard(whiteboard);
-  return [systemPrompt, narratorRules, material, formatMemoryContext(memory)]
-    .filter(Boolean).join('\n\n');
+  const material = narratorMaterial(whiteboard, direction);
+  return [systemPrompt, narratorRules, material.items.some(isDevelopment) && sceneDevelopmentRules, material.text,
+    formatMemoryContext(memory)].filter(Boolean).join('\n\n');
 }
