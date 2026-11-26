@@ -565,7 +565,6 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
       ...(await agents.listForProject(project.id)).map(({ agentId, versionId }) => ({ agentId, versionId })),
       { agentId: world.id, versionId: world.versions[0]!.id },
     ] });
-    await memoryChange(project.id, branchId, { op: 'saveTag', tag: { name: 'Faits', description: 'Faits établis' } });
     await memoryChange(project.id, branchId, { op: 'settings', enabled: true });
     const scene = { kind: 'development', characters: ['Mara'], scope: 'scene', text: 'La lampe s’éteint.', importance: 'HIGH' };
     const offscreen = {
