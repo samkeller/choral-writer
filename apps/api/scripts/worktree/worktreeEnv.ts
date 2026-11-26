@@ -4,8 +4,11 @@ const WORKTREE_NAME_MAX_LENGTH = 40;
 
 export const WORKTREE_DATABASE_PREFIX = 'choral_writer_wt_';
 
-/** Premier port d'API proposé : `3001` reste celui du checkout principal par défaut. */
-export const FIRST_WORKTREE_PORT = 3002;
+/** Port de l'API quand `PORT` est absent du `.env`, comme dans `apps/api/src/config.ts`. */
+export const DEFAULT_API_PORT = 3001;
+
+/** Premier port d'API proposé par défaut aux worktrees. */
+export const FIRST_WORKTREE_PORT = DEFAULT_API_PORT + 1;
 
 export function assertWorktreeName(name: string): void {
   if (name.length > WORKTREE_NAME_MAX_LENGTH || !WORKTREE_NAME_PATTERN.test(name)) {

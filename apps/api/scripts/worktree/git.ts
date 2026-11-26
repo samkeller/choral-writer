@@ -26,12 +26,9 @@ export function parseWorktreeList(porcelain: string): WorktreeEntry[] {
     });
 }
 
+/** Compare deux chemins comme le système de fichiers (sans casse sous Windows). */
 export function samePath(left: string, right: string): boolean {
-  const normalize = (value: string) => {
-    const resolved = path.resolve(value);
-    return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
-  };
-  return normalize(left) === normalize(right);
+  return path.relative(left, right) === '';
 }
 
 /** Dossier du checkout principal, quel que soit le worktree d'où le script est lancé. */
@@ -46,8 +43,21 @@ export function listWorktrees(repoDir: string): WorktreeEntry[] {
   return parseWorktreeList(capture('git', ['worktree', 'list', '--porcelain'], { cwd: repoDir }));
 }
 
+export function assertBranchName(repoDir: string, name: string): void {
+  const valid =
+    !name.startsWith('-') &&
+    succeeds('git', ['check-ref-format', '--branch', name], { cwd: repoDir });
+  if (!valid) throw new Error(`Nom de branche invalide : « ${name} ».`);
+}
+
+export function branchExists(repoDir: string, branch: string): boolean {
+  return succeeds('git', ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`], {
+    cwd: repoDir,
+  });
+}
+
 export function fetchBase(repoDir: string, base: string): void {
-  run('git', ['fetch', 'origin', base], { cwd: repoDir });
+  run('git', ['fetch', 'origin', '--', base], { cwd: repoDir });
 }
 
 export function addWorktree(repoDir: string, dir: string, branch: string, base: string): void {

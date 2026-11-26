@@ -9,6 +9,8 @@ import { parseArgs } from 'node:util';
 
 import {
   addWorktree,
+  assertBranchName,
+  branchExists,
   deleteBranch,
   fetchBase,
   hasLocalChanges,
@@ -16,7 +18,6 @@ import {
   listWorktrees,
   mainCheckoutDir,
   pruneWorktrees,
-  samePath,
 } from './git.js';
 import { runPnpm } from './process.js';
 import {
@@ -26,7 +27,9 @@ import {
   dropDatabase,
   findPostgresBin,
 } from './postgres.js';
+import { planRemoval } from './removalPlan.js';
 import {
+  DEFAULT_API_PORT,
   deriveWorktreeEnv,
   FIRST_WORKTREE_PORT,
   nextUnreservedPort,
@@ -39,20 +42,30 @@ const APP_SCHEMA = 'choral_writer';
 const DEFAULT_BASE = 'feat/v2';
 
 const USAGE = `Usage :
-  pnpm wt:new <nom> [--branch <branche>] [--base <branche>] [--empty] [--pg-bin <dossier>] [--parent-dir <dossier>]
-  pnpm wt:remove <nom> [--base <branche>] [--force] [--parent-dir <dossier>]`;
+  pnpm wt:new <nom> [--branch <branche>] [--base <branche>] [--empty] [--first-port <port>] [--pg-bin <dossier>] [--parent-dir <dossier>]
+  pnpm wt:remove <nom> [--branch <branche>] [--base <branche>] [--force] [--parent-dir <dossier>]`;
 
 interface Context {
   name: string;
   mainDir: string;
+  parentDir: string;
   worktreeDir: string;
   databaseName: string;
+  /** Branche créée par `wt:new` ; pour `wt:remove`, celle visée si aucun worktree n'est enregistré. */
+  branch: string;
   base: string;
 }
 
-function resolveContext(name: string, values: { base?: string; 'parent-dir'?: string }): Context {
+function resolveContext(
+  name: string,
+  values: { base?: string; branch?: string; 'parent-dir'?: string },
+): Context {
   const databaseName = worktreeDatabaseName(name);
   const mainDir = mainCheckoutDir(process.cwd());
+  const branch = values.branch ?? `feat/${name}`;
+  const base = values.base ?? DEFAULT_BASE;
+  assertBranchName(mainDir, branch);
+  assertBranchName(mainDir, base);
   // Relatif au checkout principal : pnpm lance ce script depuis `apps/api`.
   const parentDir = path.resolve(
     mainDir,
@@ -61,9 +74,11 @@ function resolveContext(name: string, values: { base?: string; 'parent-dir'?: st
   return {
     name,
     mainDir,
+    parentDir,
     worktreeDir: path.resolve(parentDir, name),
     databaseName,
-    base: values.base ?? DEFAULT_BASE,
+    branch,
+    base,
   };
 }
 
@@ -81,7 +96,7 @@ function reservedPorts(mainDir: string): Set<number> {
   const ports = listWorktrees(mainDir).flatMap((worktree) => {
     const envPath = path.join(worktree.path, '.env');
     if (!existsSync(envPath)) return [];
-    const port = Number(readEnvValue(readFileSync(envPath, 'utf8'), 'PORT') ?? 3001);
+    const port = Number(readEnvValue(readFileSync(envPath, 'utf8'), 'PORT') ?? DEFAULT_API_PORT);
     return Number.isInteger(port) ? [port] : [];
   });
   return new Set(ports);
@@ -95,10 +110,10 @@ function isPortFree(port: number): Promise<boolean> {
   });
 }
 
-async function pickApiPort(mainDir: string): Promise<number> {
+async function pickApiPort(mainDir: string, firstPort: number): Promise<number> {
   const reserved = reservedPorts(mainDir);
   for (;;) {
-    const port = nextUnreservedPort(reserved, FIRST_WORKTREE_PORT);
+    const port = nextUnreservedPort(reserved, firstPort);
     if (await isPortFree(port)) return port;
     reserved.add(port);
   }
@@ -109,17 +124,18 @@ async function pickApiPort(mainDir: string): Promise<number> {
  * option si ce checkout n'est pas installé (pnpm prend alors son store par défaut).
  */
 function mainStoreDirArgs(mainDir: string): string[] {
+  // Malgré son extension, pnpm écrit ce fichier en JSON.
   const modulesYaml = path.join(mainDir, 'node_modules', '.modules.yaml');
   if (!existsSync(modulesYaml)) return [];
-  const match = /"?storeDir"?:\s*"?([^"\r\n]+)"?/.exec(readFileSync(modulesYaml, 'utf8'));
-  return match ? ['--store-dir', JSON.parse(`"${match[1]}"`) as string] : [];
+  const { storeDir } = JSON.parse(readFileSync(modulesYaml, 'utf8')) as { storeDir?: unknown };
+  return typeof storeDir === 'string' ? ['--store-dir', storeDir] : [];
 }
 
 async function createWorktree(
   context: Context,
-  options: { branch: string; empty: boolean; pgBin?: string },
+  options: { empty: boolean; firstPort: number; pgBin?: string },
 ): Promise<void> {
-  const { mainDir, worktreeDir, databaseName, base } = context;
+  const { mainDir, worktreeDir, databaseName, branch, base } = context;
   const mainEnv = readMainEnv(mainDir);
   const binDir = options.empty ? undefined : findPostgresBin(options.pgBin ?? process.env.PG_BIN);
 
@@ -127,11 +143,11 @@ async function createWorktree(
   if (await databaseExists(mainEnv.databaseUrl, databaseName)) {
     throw new Error(`La base ${databaseName} existe déjà.`);
   }
-  const port = await pickApiPort(mainDir);
+  const port = await pickApiPort(mainDir, options.firstPort);
   const storeDirArgs = mainStoreDirArgs(mainDir);
 
   fetchBase(mainDir, base);
-  addWorktree(mainDir, worktreeDir, options.branch, base);
+  addWorktree(mainDir, worktreeDir, branch, base);
   try {
     writeFileSync(
       path.join(worktreeDir, '.env'),
@@ -158,62 +174,71 @@ async function createWorktree(
     runPnpm(['--filter', '@choral-writer/shared', 'build'], worktreeDir);
   } catch (error) {
     console.error(
-      `\nLa préparation a échoué ; nettoyer avec : pnpm wt:remove ${context.name} --force`,
+      `\nLa préparation a échoué ; nettoyer avec : pnpm wt:remove ${context.name} --branch ${branch} --force`,
     );
     throw error;
   }
 
   console.log(`
 Worktree prêt : ${worktreeDir}
-  branche : ${options.branch} (depuis origin/${base})
+  branche : ${branch} (depuis origin/${base})
   base    : ${databaseName}${options.empty ? ' (vide + migrations)' : ''}
   API     : port ${port} ; Vite prend 5175 ou le port libre suivant
 Démarrer : cd "${worktreeDir}" && pnpm dev`);
 }
 
+/** `undefined` quand git ne lit plus le dossier, par exemple après une suppression interrompue. */
+function readLocalChanges(dir: string): boolean | undefined {
+  try {
+    return hasLocalChanges(dir);
+  } catch {
+    return undefined;
+  }
+}
+
 async function deleteWorktree(context: Context, force: boolean): Promise<void> {
-  const { mainDir, worktreeDir, databaseName, base } = context;
+  const { mainDir, parentDir, worktreeDir, databaseName, base } = context;
   const fromWorktree = path.relative(worktreeDir, process.cwd());
   if (!fromWorktree.startsWith('..') && !path.isAbsolute(fromWorktree)) {
     throw new Error('Lancer la suppression depuis un autre checkout que le worktree supprimé.');
   }
-  const worktree = listWorktrees(mainDir).find((entry) => samePath(entry.path, worktreeDir));
-  const branch = worktree?.branch;
-  const hasFiles = existsSync(worktreeDir);
-
-  if (!worktree && hasFiles) {
-    throw new Error(`${worktreeDir} n'est pas un worktree du dépôt : le supprimer à la main.`);
-  }
-  if (!force) {
-    if (hasFiles && hasLocalChanges(worktreeDir)) {
-      throw new Error(
-        `${worktreeDir} contient des modifications non commitées ; relancer avec --force pour les perdre.`,
-      );
-    }
-    if (branch) {
+  const dirExists = existsSync(worktreeDir);
+  const plan = planRemoval({
+    mainDir,
+    parentDir,
+    worktreeDir,
+    worktrees: listWorktrees(mainDir),
+    dirExists,
+    hasLocalChanges: dirExists ? readLocalChanges(worktreeDir) : false,
+    fallbackBranch: context.branch,
+    fallbackBranchExists: branchExists(mainDir, context.branch),
+    isMerged: (branch) => {
       fetchBase(mainDir, base);
-      if (!isMergedInto(mainDir, branch, base)) {
-        throw new Error(
-          `La branche ${branch} n'est pas fusionnée dans origin/${base} ; relancer avec --force pour la supprimer quand même.`,
-        );
-      }
-    }
-  }
+      return isMergedInto(mainDir, branch, base);
+    },
+    force,
+  });
 
-  if (hasFiles) {
-    // Supprimer le dossier avant de désenregistrer le worktree : si un fichier reste
-    // verrouillé (serveur encore lancé sous Windows), une nouvelle tentative reste possible.
+  // Ordre choisi pour qu'une relance reprenne là où une étape a échoué :
+  // dossier (un fichier verrouillé sous Windows l'interrompt), worktree, branche, base.
+  if (plan.removeDir) {
     console.log(`Suppression de ${worktreeDir}…`);
     rmSync(worktreeDir, { recursive: true, force: true, maxRetries: 5 });
-  } else {
-    console.warn(`Aucun dossier ${worktreeDir}.`);
   }
   pruneWorktrees(mainDir);
+  if (plan.branch) deleteBranch(mainDir, plan.branch);
 
   await dropDatabase(readMainEnv(mainDir).databaseUrl, databaseName);
   console.log(`Base ${databaseName} supprimée (si elle existait).`);
+}
 
-  if (branch) deleteBranch(mainDir, branch);
+function parsePort(value: string | undefined): number {
+  if (value === undefined) return FIRST_WORKTREE_PORT;
+  const port = Number(value);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error(`Port invalide : « ${value} ».`);
+  }
+  return port;
 }
 
 async function main(argv: string[]): Promise<void> {
@@ -224,6 +249,7 @@ async function main(argv: string[]): Promise<void> {
       base: { type: 'string' },
       branch: { type: 'string' },
       empty: { type: 'boolean', default: false },
+      'first-port': { type: 'string' },
       force: { type: 'boolean', default: false },
       'parent-dir': { type: 'string' },
       'pg-bin': { type: 'string' },
@@ -235,8 +261,8 @@ async function main(argv: string[]): Promise<void> {
   const context = resolveContext(name, values);
   if (command === 'new') {
     await createWorktree(context, {
-      branch: values.branch ?? `feat/${name}`,
       empty: values.empty,
+      firstPort: parsePort(values['first-port']),
       pgBin: values['pg-bin'],
     });
   } else if (command === 'remove') {
