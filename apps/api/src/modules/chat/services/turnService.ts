@@ -1,4 +1,4 @@
-import type { ChatTurn, TurnConfiguration, TurnDirection } from '@choral-writer/shared';
+import type { AttributedDevelopment, ChatTurn, TurnConfiguration, TurnDirection } from '@choral-writer/shared';
 
 import { ApiError } from '../../../errors/errors.js';
 import type { ChatTurnRepository } from '../repositories/turnRepository.js';
@@ -39,6 +39,12 @@ export class ChatTurnService {
   async recordDirection(id: string, direction: TurnDirection): Promise<void> {
     if (!await this.repository.recordDirection(id, direction)) {
       throw new Error('Cannot record the direction of a missing or terminal chat turn.');
+    }
+  }
+
+  async recordDevelopments(id: string, developments: AttributedDevelopment[]): Promise<void> {
+    if (!await this.repository.recordDevelopments(id, developments)) {
+      throw new Error('Cannot record the developments of a missing or terminal chat turn.');
     }
   }
 

@@ -8,7 +8,9 @@ import { choralWriterSchema } from '../../namespace.js';
 import { projects } from '../project.js';
 import { chatMessages } from './message.js';
 import { chatBranches } from './branch.js';
-import type { MemoryResult, MemoryState, TurnConfiguration, TurnDirection } from '@choral-writer/shared';
+import type {
+  AttributedDevelopment, MemoryResult, MemoryState, TurnConfiguration, TurnDirection,
+} from '@choral-writer/shared';
 
 /**
  * One execution of the narrative pipeline for a user message.
@@ -35,6 +37,8 @@ export const chatTurns = choralWriterSchema.table('chat_turn', {
   configuration: jsonb('configuration').$type<TurnConfiguration>(),
   /** Null when the turn ran without a Director, or when the narrator fell back to the whole whiteboard. */
   direction: jsonb('direction').$type<TurnDirection>(),
+  /** Developments that happened during the turn, as their agents wrote them. Null for turns recorded before them. */
+  developments: jsonb('developments').$type<AttributedDevelopment[]>(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   completedAt: timestamp('completed_at', { withTimezone: true }),
 }, (table): PgTableExtraConfigValue[] => [

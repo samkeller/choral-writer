@@ -12,7 +12,9 @@ import { DEFAULT_GUARDIAN_ID, DEFAULT_NARRATOR_ID } from './defaultNarrators.js'
 const PUBLISHED_FINGERPRINTS: Record<string, string> = {
   '019aee00-0000-7000-8000-000000000201': '2ae6979cbea7063a', // Continuité v1
   '019aee00-0000-7000-8000-000000000202': 'cac74bc5792d5040', // Personnages et Intentions v1
+  '019aee00-0000-7000-8000-000000000302': 'c76c938e0a0d5677', // Personnages et Intentions v2
   '019aee00-0000-7000-8000-000000000203': '18c40e528b58ab22', // Hors champ v1
+  '019aee00-0000-7000-8000-000000000303': '8db395ece1b355d9', // Hors champ v2
   '019aee00-0000-7000-8000-000000000204': '970d239f7547c1c0', // Dramaturgie v1
   '019aee00-0000-7000-8000-000000000205': 'c64fea172cd7ad5e', // Monde et règles v1
   '019aee00-0000-7000-8000-000000000206': '8b766906ad3c6646', // Directeur mesuré v1

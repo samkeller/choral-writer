@@ -10,6 +10,7 @@ import type {
 } from '../types/chat.types.js';
 import { isAnalysisAgent } from './analysisService.js';
 import { isDirectorAgent, RECENT_DIRECTION_TURNS, type DirectorInput } from './directorService.js';
+import { turnDevelopments } from './turnDevelopments.js';
 import { memoryContext } from '../../memories/services/memoryState.js';
 import type { NarratorOutput } from '../types/narrator.types.js';
 import { ApiError } from '../../../errors/errors.js';
@@ -114,6 +115,8 @@ export class ChatService {
             signal,
           })
           : null;
+        const developments = turnDevelopments(whiteboard, direction);
+        await context.turns.recordDevelopments(turnId, developments);
 
         const narratorStartedAt = performance.now();
         await emit({ type: 'chat.pipeline.stage', turnId, stage: 'narrator', status: 'started' });
@@ -150,7 +153,7 @@ export class ChatService {
         outcome = { status: 'completed', content: narration.prose };
         memoryResult = await context.memory.process(command.projectId, input.branchId, memory, {
           turnId, systemPrompt: pipeline.systemPrompt,
-          agents: pipeline.agents, prose: narration.prose, signal,
+          agents: pipeline.agents, prose: narration.prose, developments, signal,
         }, async (stage, status, elapsedMs) => {
           if (!signal.aborted) await emit({ type: 'chat.pipeline.stage', turnId, stage, status, elapsedMs });
         });
@@ -181,7 +184,7 @@ export class ChatService {
       const configuration = await recordedConfiguration(context, turnId);
       const result = await context.memory.process(projectId, branchId, view, {
         turnId, systemPrompt: configuration.systemPrompt, agents: configuration.agents,
-        prose: source.narrator, signal,
+        prose: source.narrator, developments: source.developments, signal,
       }, async () => {});
       await context.recordActivity(new Date());
       return result;

@@ -34,11 +34,12 @@ import { MemoriesService } from '../../memories/services/memoriesService.js';
 describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', () => {
   const pool = createTestPool();
   const database = drizzle(pool, { schema });
-  const analysisContent = JSON.stringify({
+  const defaultAnalysisContent = JSON.stringify({
     v: 1, agent: 'Chaos', summary: 'There may be a trap.', items: [
       { kind: 'observation', text: 'A wire is visible.', importance: 'HIGH' },
     ],
   });
+  let analysisContent = defaultAnalysisContent;
   let guardianOutput: string | null = null;
   let setupOutput: string | null = null;
   let directorOutput = '{}';
@@ -55,7 +56,7 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
     const system = params.messages[0]?.content;
     const content = typeof system === 'string' && system.includes('Tu diriges ce tour') ? directorOutput
       : typeof system === 'string' && system.includes('Propose a compact memory routing configuration')
-      ? setupOutput ?? '{}' : typeof system === 'string' && system.includes('Maintain memory from established narrative events')
+      ? setupOutput ?? '{}' : typeof system === 'string' && system.includes('Tiens la mémoire à jour')
         ? guardianOutput ?? analysisContent : analysisContent;
     return {
       id: 'analysis', object: 'chat.completion', created: 0, model: 'simulated-model',
@@ -563,6 +564,87 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
     ]);
   });
 
+  it('records the developments of a turn: the Narrator tells the scene ones, the Guardian learns them all', async () => {
+    const project = await createProject('Développements');
+    const branchId = project.defaultBranchId!;
+    const world = await agents.create({ name: 'Monde', instructions: 'Fais avancer le monde.', phase: 'analysis', output: 'envelope' });
+    await agents.configure(project.id, { agents: [
+      ...(await agents.listForProject(project.id)).map(({ agentId, versionId }) => ({ agentId, versionId })),
+      { agentId: world.id, versionId: world.versions[0]!.id },
+    ] });
+    await memoryChange(project.id, branchId, { op: 'settings', enabled: true });
+    const scene = { kind: 'development', characters: ['Mara'], scope: 'scene', text: 'La lampe s’éteint.', importance: 'HIGH' };
+    const offscreen = {
+      kind: 'development', characters: ['Le facteur'], scope: 'offscreen', text: 'Le facteur quitte le village.', importance: 'LOW',
+    };
+    analysisContent = JSON.stringify({ v: 1, agent: 'Monde', summary: 'Le soir tombe.', items: [scene, offscreen] });
+    try {
+      propose([]);
+      const callsBefore = create.mock.calls.length;
+      const completed = events((await send(project.id, 'J’attends.')).body).at(-1);
+      if (completed?.type !== 'chat.turn.completed') throw new Error('Missing completed turn.');
+      const requests = create.mock.calls.slice(callsBefore).map(([params]) => params);
+      const narratorPrompt = String(requests.find((params) => params.stream)?.messages[0]?.content);
+      expect(narratorPrompt).toContain('La lampe s’éteint.');
+      expect(narratorPrompt).not.toContain('Le facteur quitte le village.');
+      const guardianRequest = JSON.stringify(requests.find((params) =>
+        String(params.messages[0]?.content).includes('Tiens la mémoire à jour'))?.messages);
+      expect(guardianRequest).toContain('La lampe s’éteint.');
+      expect(guardianRequest).toContain('Le facteur quitte le village.');
+
+      const summary = turnTraceSummarySchema.parse((await app.inject({
+        method: 'GET', url: `/api/projects/${project.id}/turns/${completed.turnId}/traces`, headers: { cookie },
+      })).json());
+      expect(summary.developments).toEqual({
+        scene: [{ agent: 'Monde', item: scene }],
+        offscreen: [{ agent: 'Monde', item: offscreen }],
+      });
+
+      const view = await memoryView(project.id, branchId);
+      const repair = await app.inject({ method: 'POST', headers: { cookie },
+        url: `/api/projects/${project.id}/branches/${branchId}/turns/${completed.turnId}/memory/retry`,
+        payload: { expectedHeadTurnId: completed.turnId, expectedRevisionId: view.revisionId,
+          expectedCatalogRevisionId: view.catalogRevisionId } });
+      expect(repair.statusCode, repair.body).toBe(200);
+      expect(JSON.stringify(create.mock.calls.at(-1)![0].messages)).toContain('Le facteur quitte le village.');
+    } finally {
+      analysisContent = defaultAnalysisContent;
+      guardianOutput = null;
+    }
+  });
+
+  it('still reads a turn recorded under the former contract, where development was a free-form kind', async () => {
+    const project = await createProject('Ancien format');
+    const analyst = await agents.create({ name: 'Chaos', instructions: 'Find uncertainty.', phase: 'analysis', output: 'envelope' });
+    const director = await agents.create({ name: 'Directeur ancien', instructions: '', phase: 'direction', output: 'direction' });
+    await agents.configure(project.id, { agents: [
+      ...(await agents.listForProject(project.id)).map(({ agentId, versionId }) => ({ agentId, versionId })),
+      { agentId: analyst.id, versionId: analyst.versions[0]!.id },
+      { agentId: director.id, versionId: director.versions[0]!.id },
+    ] });
+    directorOutput = JSON.stringify({ v: 1, retained: [{ item: 'c1', why: 'Concret.' }], dismissed: [], tension: 'tenir', nudges: [] });
+    const started = events((await send(project.id, 'J’attends.')).body).find((event) => event.type === 'chat.turn.started');
+    if (started?.type !== 'chat.turn.started') throw new Error('Missing started turn.');
+    const legacyItem = { kind: 'development', text: 'Un fait générique.', importance: 'NORMAL' };
+    await pool.query('update choral_writer.chat_turn set direction = $1, developments = null where id = $2', [
+      JSON.stringify({ tension: 'tenir', nudges: [{ type: 'saillance', target: 'Le fait.', basis: { agent: 'Chaos', item: legacyItem } }],
+        retained: [{ agent: 'Chaos', item: legacyItem, why: 'Concret.' }], dismissed: [] }),
+      started.turnId,
+    ]);
+    await pool.query('update choral_writer.llm_call set response = $1 where turn_id = $2 and stage = $3', [
+      JSON.stringify({ v: 1, agent: 'Chaos', summary: 'Résumé.', items: [legacyItem] }), started.turnId, 'analysis',
+    ]);
+
+    const response = await app.inject({
+      method: 'GET', url: `/api/projects/${project.id}/turns/${started.turnId}/traces`, headers: { cookie },
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    const summary = turnTraceSummarySchema.parse(response.json());
+    expect(summary.analysis).toMatchObject([{ name: 'Chaos', status: 'success', envelope: { items: [legacyItem] } }]);
+    expect(summary.direction?.direction?.retained).toEqual([{ agent: 'Chaos', item: legacyItem, why: 'Concret.' }]);
+    expect(summary.developments).toBeNull();
+  });
+
   it('retains the user message and failure trace but never persists a partial assistant reply', async () => {
     const project = await createProject('Erreur fournisseur');
     const normal = generate;
@@ -780,7 +862,7 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
           expectedCatalogRevisionId: view.catalogRevisionId } });
       expect(repair.statusCode, repair.body).toBe(200);
       const guardianRequest = JSON.stringify(create.mock.calls.at(-1)![0].messages);
-      expect(guardianRequest).toContain('Maintain memory from established narrative events');
+      expect(guardianRequest).toContain('Tiens la mémoire à jour');
       expect(guardianRequest).toContain('Prompt variante.');
       expect(guardianRequest).not.toContain('Prompt du projet.');
     } finally { guardianOutput = null; }
@@ -1108,12 +1190,12 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
       expect(narration.messages[0]!.content).toContain('Vérité réservée au narrateur');
       expect(narration.messages[0]!.content).not.toContain('Croyance réservée à N');
       const guardian = calls.find((params) => typeof params.messages[0]?.content === 'string'
-        && params.messages[0].content.includes('Maintain memory from'))!;
+        && params.messages[0].content.includes('Tiens la mémoire à jour'))!;
       expect(guardian.messages[0]!.content).not.toContain('Mission spécifique de N.');
       expect(guardian.messages[1]!.content).toContain('Connaissances et croyances de N.');
       expect(guardian.messages[1]!.content).toContain('Croyance réservée à N');
       expect(guardian.messages).toHaveLength(2);
-      expect(guardian.messages[1]!.content).toContain('Return JSON only');
+      expect(guardian.messages[1]!.content).toContain('Renvoie uniquement du JSON');
       const turn = (await history(project.id, branchId)).turns.at(-1)!;
       const persisted = await database.select().from(schema.llmCall).where(eq(schema.llmCall.turnId, turn.id));
       const analysisTrace = persisted.find((call) => call.stage === 'analysis')!;

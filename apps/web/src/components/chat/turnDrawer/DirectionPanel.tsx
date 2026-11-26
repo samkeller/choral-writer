@@ -2,6 +2,7 @@ import { Alert, Anchor, Badge, Box, Group, SimpleGrid, Stack, Text, Tooltip } fr
 import { IconInfoCircle } from '@tabler/icons-react';
 import type { DirectionTrace, TurnDirection } from '@choral-writer/shared';
 
+import { DevelopmentScopeBadge } from '../../llm/DevelopmentScopeBadge';
 import { phasePresentation } from '../../phases/phasePresentation';
 import { formatCost, formatSeconds } from '../turnFormat';
 import { DrawerBlock } from './DrawerBlock';
@@ -144,6 +145,7 @@ function Contributions({ contributions, empty }: { contributions: Contribution[]
           <Group gap={6} wrap="nowrap">
             <Badge size="sm" variant="light" color={phasePresentation.analysis.color} tt="none">{agent}</Badge>
             <Text size="xs" c="dimmed">{item.kind}</Text>
+            <DevelopmentScopeBadge item={item} />
           </Group>
           <Text size="sm">{item.text}</Text>
           <Text size="xs" c="dimmed">Raison : {why}</Text>

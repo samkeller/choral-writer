@@ -18,7 +18,7 @@ const originalAdapter = api.defaults.adapter;
 
 function summary(turnId: string, microUsd: number, narratorMs: number): TurnTraceSummary {
   return {
-    turnId, analysis: [], direction: null, narrator: null, calls: [],
+    turnId, analysis: [], direction: null, developments: null, narrator: null, calls: [],
     timeline: [{ stage: 'narrator', durationMs: narratorMs, agentCount: 1 }], durationMs: narratorMs,
     cost: { microUsd, complete: true }, configuration: null,
   };
@@ -53,7 +53,13 @@ const summaries = new Map([
         tension: 'monter' as const,
         nudges: [{ type: 'complication' as const, target: 'Personnage A', basis: worldItem }],
         retained: [{ ...worldItem, why: 'Utile à la scène.' }],
-        dismissed: [{ agent: 'Rythme', item: { kind: 'suggestion', text: 'Une idée générique.', importance: 'LOW' as const }, why: 'Hors sujet.' }],
+        dismissed: [
+          { agent: 'Rythme', item: { kind: 'suggestion', text: 'Une idée générique.', importance: 'LOW' as const }, why: 'Hors sujet.' },
+          { agent: 'Absents', item: {
+            kind: 'development' as const, characters: ['Personnage B'], scope: 'offscreen' as const,
+            text: 'Un départ générique.', importance: 'LOW' as const,
+          }, why: 'Trop tôt.' },
+        ],
       },
     },
     calls: [{
@@ -157,10 +163,13 @@ describe('TurnDrawer', () => {
     const retained = within(drawer.getByRole('region', { name: 'Contributions retenues · 1' }));
     expect(retained.getByText('Monde')).toBeTruthy();
     expect(retained.getByText('Raison : Utile à la scène.')).toBeTruthy();
-    const dismissed = within(drawer.getByRole('region', { name: 'Contributions écartées · 1' }));
+    // A contribution recorded before scopes existed reads as a perspective: no scope badge.
+    expect(retained.queryByText(/^Dans la scène|^Hors champ/)).toBeNull();
+    const dismissed = within(drawer.getByRole('region', { name: 'Contributions écartées · 2' }));
     expect(dismissed.getByText('Rythme')).toBeTruthy();
     expect(dismissed.getByText('Une idée générique.')).toBeTruthy();
     expect(dismissed.getByText('Raison : Hors sujet.')).toBeTruthy();
+    expect(dismissed.getByText('Hors champ · Personnage B')).toBeTruthy();
   });
 
   it('says so on the Direction tab when the turn ran without a Director', async () => {

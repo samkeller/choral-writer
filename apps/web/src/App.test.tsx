@@ -1052,6 +1052,7 @@ describe('projects and chat screens', () => {
         name: 'Directeur', status: 'error', durationMs: 300, attempts: 2, direction: null,
         cost: { microUsd: 120, complete: true },
       },
+      developments: null,
       narrator: { status: 'success', durationMs: 1500, prose: 'La porte résiste.' },
       calls: [
         {
@@ -1348,7 +1349,7 @@ describe('projects and chat screens', () => {
       output: 'direction', versions: [{ ...guardian.versions[0]!, id: '019ad30c-19b0-7000-8000-000000000509', name: 'Directeur' }] };
     const recorded = [assignmentOf(narrative, narrative.versions[1]!.id), assignmentOf(guardian), assignmentOf(director)];
     const summary: TurnTraceSummary = {
-      turnId: head.id, analysis: [], direction: null, narrator: null, calls: [], timeline: [], durationMs: 0,
+      turnId: head.id, analysis: [], direction: null, developments: null, narrator: null, calls: [], timeline: [], durationMs: 0,
       cost: { microUsd: 0, complete: true },
       configuration: {
         systemPrompt: 'Prompt enregistré.',
