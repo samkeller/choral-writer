@@ -24,8 +24,8 @@ Il publie un seul commentaire (`gh pr comment <n> --body-file <fichier>`) titré
 - **Pourquoi avant quoi.** Le problème ou la décision qui motive la PR vient en premier ; le ticket est cité par son titre et son lien.
 - **Comportement visible d'abord**, impact technique ensuite.
 - **Honnêteté sur l'incertitude.** Tout ce qui n'a pas été exécuté ou observé va dans « Non vérifié », nommément. Une vérification n'est listée comme passée que si elle a été lancée.
-- **Testable par un humain.** « Comment tester » part d'un état précis : branche, migrations, données. Il donne des étapes numérotées, chacune avec son résultat attendu. Il couvre au moins le parcours principal et un cas limite.
-- **Captures pour toute modification d'UI**, avant et après, prises sur des données fictives. `gh` ne sait pas téléverser d'images. Faute de captures, le dire dans « Non vérifié ».
+- **Testable par un humain.** « Comment tester » part d'un état précis : branche, migrations, données. Il donne des étapes numérotées, chacune avec son résultat attendu. Il couvre au moins le parcours principal et un cas limite. Les données de départ sont de préférence les projets de démo (`pnpm db:seed:demo`, voir [`DEVELOPMENT.md`](./DEVELOPMENT.md#données-de-démo)) : l'état se décrit alors en une ligne, « lancer le seed, ouvrir le projet Démo · X ». Une PR qui change ce que le pipeline enregistre complète ces données.
+- **Captures pour toute modification d'UI**, avant et après, prises sur des données fictives, comme les projets de démo. `gh` ne sait pas téléverser d'images. Faute de captures, le dire dans « Non vérifié ».
 - **Dépôt public.** Pas d'extrait de récit, de prompt réel, de whiteboard, de nom de projet, de secret ni de donnée personnelle, captures comprises.
 
 ## Modèle
@@ -46,7 +46,7 @@ Ticket : [<titre du ticket>](<lien>)
 <choix d'architecture et alternatives écartées, en une ligne chacun>
 
 ## Comment tester
-Prérequis : environnement prêt selon `docs/DEVELOPMENT.md`, puis `gh pr checkout <n>`, `pnpm install`, <`pnpm db:migrate` si migration>, `pnpm dev`. Données de départ : <état nécessaire et comment l'obtenir>.
+Prérequis : environnement prêt selon `docs/DEVELOPMENT.md`, puis `gh pr checkout <n>`, `pnpm install`, <`pnpm db:migrate` si migration>, `pnpm dev`. Données de départ : <`pnpm db:seed:demo`, puis le projet de démo et le tour à ouvrir ; sinon l'état nécessaire et comment l'obtenir>.
 1. <action> → <résultat attendu>
 2. <cas limite> → <résultat attendu>
 
