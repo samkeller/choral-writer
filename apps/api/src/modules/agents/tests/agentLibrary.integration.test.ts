@@ -34,7 +34,7 @@ describe.skipIf(!process.env.DATABASE_URL)('agent library and starting tags with
     return project;
   }
 
-  it('seeds the library once and keeps its agents in the library', async () => {
+  it('seeds every library version once and keeps its agents in the library', async () => {
     await agents.ensureLibrary();
     await agents.ensureLibrary();
     const library = (await agents.list()).filter((agent) => LIBRARY_AGENTS.some((item) => item.id === agent.id));
@@ -42,28 +42,32 @@ describe.skipIf(!process.env.DATABASE_URL)('agent library and starting tags with
     for (const expected of LIBRARY_AGENTS) {
       const agent = library.find((item) => item.id === expected.id)!;
       expect(agent).toMatchObject({ phase: expected.phase, output: expected.output });
-      expect(agent.versions.at(-1)).toMatchObject({ version: 1, name: expected.name, instructions: expected.instructions });
+      expect(agent.versions.map(({ id, version, name, instructions }) => ({ id, version, name, instructions })))
+        .toEqual([...expected.versions].reverse());
     }
     await expect(agents.remove(LIBRARY_AGENTS[0]!.id)).rejects.toMatchObject({ code: 'AGENT_IN_USE' });
   });
 
-  it('lets a project enable a library Director next to its default team', async () => {
+  it('lets a project enable a library Director, which keeps its pinned version when the library grows', async () => {
     await agents.ensureLibrary();
     const project = await createProject('Bibliothèque');
     const team = await agents.listForProject(project.id);
-    const director = (await agents.list()).find((agent) => agent.id === LIBRARY_AGENTS.find((item) => item.output === 'direction')!.id)!;
+    const director = LIBRARY_AGENTS.find((agent) => agent.output === 'direction' && agent.versions.length > 1)!;
+    const pinned = director.versions[0]!.id;
     const configured = await agents.configure(project.id, { agents: [
       ...team.map(({ agentId, versionId }) => ({ agentId, versionId })),
-      { agentId: director.id, versionId: director.versions[0]!.id },
+      { agentId: director.id, versionId: pinned },
     ] });
     expect(configured.find((agent) => agent.agentId === director.id))
-      .toMatchObject({ phase: 'direction', output: 'direction', memoryRead: { mode: 'none', tagIds: [] } });
+      .toMatchObject({ phase: 'direction', output: 'direction', versionId: pinned, memoryRead: { mode: 'none', tagIds: [] } });
+    await agents.ensureLibrary();
+    expect((await agents.listForProject(project.id)).find((agent) => agent.agentId === director.id)?.versionId).toBe(pinned);
   });
 
-  it('creates every project with the starting tags, memory still switched off', async () => {
+  it('creates every project with the starting tags and memory switched on', async () => {
     const project = await createProject('Tags de départ');
     const view = await new MemoryRepository(database, project.id).view(project.defaultBranchId!);
-    expect(view?.enabled).toBe(false);
+    expect(view?.enabled).toBe(true);
     expect(view?.state.tags.map((tag) => tag.name)).toEqual(['Faits', 'Monde', 'Intentions', 'Fils ouverts']);
     expect(view?.state.entries).toEqual([]);
     const other = await createProject('Autres tags');

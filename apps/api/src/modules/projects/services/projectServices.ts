@@ -36,8 +36,8 @@ export class ProjectsService {
       const repository = new ProjectRepository(tx);
       const project = await repository.create(input);
       await new AgentRepository(tx).createDefaults(project.id);
-      // Memory stays off until the user turns it on: each turn would otherwise add a Guardian call.
-      await new MemoryRepository(tx, project.id).saveSettings({ tags: startingTags(uuidv7) }, false);
+      // Memory starts on: without it the Guardian never runs, so offscreen developments and Intentions are lost.
+      await new MemoryRepository(tx, project.id).saveSettings({ tags: startingTags(uuidv7) }, true);
       const branch = await this.branchesForTransaction(tx, project.id).createMain();
       return repository.setDefaultBranch(project.id, branch.id);
     });

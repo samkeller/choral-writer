@@ -106,6 +106,9 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
     expect(response.statusCode).toBe(201);
     const project = projectSchema.parse(response.json());
     createdIds.push(project.id);
+    expect((await memoryView(project.id, project.defaultBranchId!)).enabled).toBe(true);
+    // Memory starts on; tests outside memory switch it off to count only their own model calls.
+    await memoryChange(project.id, project.defaultBranchId!, { op: 'settings', enabled: false });
     return project;
   }
 
