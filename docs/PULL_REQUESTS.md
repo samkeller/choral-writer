@@ -46,7 +46,7 @@ Ticket : [<titre du ticket>](<lien>)
 <choix d'architecture et alternatives écartées, en une ligne chacun>
 
 ## Comment tester
-Prérequis : environnement prêt selon `docs/DEVELOPMENT.md`, puis `gh pr checkout <n>`, `pnpm install`, <`pnpm db:migrate` si migration>, `pnpm dev`. Données de départ : <état nécessaire et comment l'obtenir>.
+Prérequis : worktree isolé selon `docs/DEVELOPMENT.md` (`pnpm wt:new <nom> --base <branche de la PR>`), puis `pnpm dev` dans ce worktree. Données de départ : <état nécessaire et comment l'obtenir>.
 1. <action> → <résultat attendu>
 2. <cas limite> → <résultat attendu>
 

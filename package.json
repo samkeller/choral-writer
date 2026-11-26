@@ -10,7 +10,9 @@
     "test": "pnpm --filter @choral-writer/api --filter @choral-writer/web test",
     "start": "pnpm --filter @choral-writer/api start",
     "db:generate": "pnpm --filter @choral-writer/api db:generate",
-    "db:migrate": "pnpm --filter @choral-writer/api db:migrate"
+    "db:migrate": "pnpm --filter @choral-writer/api db:migrate",
+    "wt:new": "pnpm --filter @choral-writer/api exec tsx scripts/worktree/cli.ts new",
+    "wt:remove": "pnpm --filter @choral-writer/api exec tsx scripts/worktree/cli.ts remove"
   },
   "devDependencies": {
     "concurrently": "^9.2.0"
