@@ -59,20 +59,26 @@ export function formatDirection(direction: TurnDirection): string {
 }
 
 /**
- * With a direction, the Narrator reads it instead of the whiteboard; without one, the whole whiteboard.
- * Either way, he never reads an off-screen development: it has happened, but is not his to tell.
+ * What the Narrator reads, rendered, and the items it contains. With a direction, he reads it instead
+ * of the whiteboard; without one, the whole whiteboard. Either way, he never reads an off-screen
+ * development: it has happened, but is not his to tell.
  */
+function narratorMaterial(
+  whiteboard: readonly AnalysisEnvelope[], direction: TurnDirection | null,
+): { text: string; items: AnalysisItem[] } {
+  if (direction) {
+    const retained = direction.retained.filter((selection) => isToldInScene(selection.item));
+    return { text: formatDirection({ ...direction, retained }), items: retained.map((selection) => selection.item) };
+  }
+  const envelopes = whiteboard.map((envelope) => ({ ...envelope, items: envelope.items.filter(isToldInScene) }));
+  return { text: formatWhiteboard(envelopes), items: envelopes.flatMap((envelope) => envelope.items) };
+}
+
 export function narratorSystemPrompt(
   systemPrompt: string, whiteboard: readonly AnalysisEnvelope[], memory: MemoryContext,
   direction: TurnDirection | null,
 ): string {
-  const sceneWhiteboard = whiteboard.map((envelope) => ({ ...envelope, items: envelope.items.filter(isToldInScene) }));
-  const sceneDirection = direction
-    && { ...direction, retained: direction.retained.filter((selection) => isToldInScene(selection.item)) };
-  const items: AnalysisItem[] = sceneDirection
-    ? sceneDirection.retained.map((selection) => selection.item)
-    : sceneWhiteboard.flatMap((envelope) => envelope.items);
-  const material = sceneDirection ? formatDirection(sceneDirection) : formatWhiteboard(sceneWhiteboard);
-  return [systemPrompt, narratorRules, items.some(isDevelopment) && sceneDevelopmentRules, material,
+  const material = narratorMaterial(whiteboard, direction);
+  return [systemPrompt, narratorRules, material.items.some(isDevelopment) && sceneDevelopmentRules, material.text,
     formatMemoryContext(memory)].filter(Boolean).join('\n\n');
 }

@@ -2,7 +2,7 @@ import type {
   AnalysisTrace, AttributedDevelopment, DirectionTrace, NarratorTrace, StageDuration, TraceCallDetail, TraceCallSummary, TurnConfiguration,
   TurnConfigurationChange, TurnDevelopments, TurnDirection, TurnMetrics, TurnTraceSummary,
 } from '@choral-writer/shared';
-import { analysisEnvelopeSchema, traceCallDetailSchema } from '@choral-writer/shared';
+import { recordedAnalysisEnvelopeSchema, traceCallDetailSchema } from '@choral-writer/shared';
 
 import type { MetricCallRecord, TraceDetailRecord, TraceSummaryRecord } from '../repositories/traceRepository.js';
 
@@ -181,7 +181,7 @@ function parseAnalysisEnvelope(response: string | null) {
   if (!response) return null;
   try {
     const parsed: unknown = JSON.parse(response);
-    const result = analysisEnvelopeSchema.safeParse(parsed);
+    const result = recordedAnalysisEnvelopeSchema.safeParse(parsed);
     return result.success ? result.data : null;
   } catch (error) {
     if (error instanceof SyntaxError) return null;

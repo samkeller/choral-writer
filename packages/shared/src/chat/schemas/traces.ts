@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { analysisEnvelopeSchema, turnDevelopmentsSchema, turnDirectionSchema } from '../../pipeline.js';
+import { recordedAnalysisEnvelopeSchema, turnDevelopmentsSchema, turnDirectionSchema } from '../../pipeline.js';
 import { chatExecutionParamsSchema, turnConfigurationSchema } from './turn.js';
 import { memoryContextSchema } from '../../memories.js';
 import { costBasisSchema } from '../../usage/index.js';
@@ -54,7 +54,7 @@ export const analysisTraceSchema = z.object({
   status: traceStatusSchema,
   durationMs: z.number().int().nonnegative(),
   attempts: z.number().int().positive(),
-  envelope: analysisEnvelopeSchema.nullable(),
+  envelope: recordedAnalysisEnvelopeSchema.nullable(),
 });
 
 /** A failed direction means the narrator fell back to the whole whiteboard. */

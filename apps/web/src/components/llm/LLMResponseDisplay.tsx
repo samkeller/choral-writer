@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Code, SegmentedControl, Stack, Text } from '@mantine/core';
-import { analysisEnvelopeSchema } from '@choral-writer/shared';
+import { recordedAnalysisEnvelopeSchema } from '@choral-writer/shared';
 
 import { AnalysisEnvelopeDisplay } from './AnalysisEnvelopeDisplay';
 import { MarkdownContent } from './MarkdownContent';
@@ -44,7 +44,7 @@ export function LLMResponseDisplay({ response }: LLMResponseDisplayProps) {
     );
   }
 
-  const envelope = analysisEnvelopeSchema.safeParse(parsed.value);
+  const envelope = recordedAnalysisEnvelopeSchema.safeParse(parsed.value);
   return (
     <Stack gap="sm" className={styles.response}>
       <SegmentedControl

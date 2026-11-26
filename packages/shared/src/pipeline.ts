@@ -27,14 +27,25 @@ const developmentItemSchema = z.object({
   importance: analysisImportanceSchema,
 }).strict();
 
-export const analysisItemSchema = z.union([developmentItemSchema, perspectiveItemSchema]);
+/** Validates what an analysis agent returns: a `development` item must carry its characters and scope. */
+const analysisItemSchema = z.union([developmentItemSchema, perspectiveItemSchema]);
 export type AnalysisItem = z.infer<typeof analysisItemSchema>;
 export type DevelopmentItem = z.infer<typeof developmentItemSchema>;
 
+/**
+ * Reads items already recorded (traced envelopes, persisted directions). An item recorded before
+ * developments existed may have the free-form kind `development` without a scope: it reads as a
+ * perspective, since nothing happened then.
+ */
+const recordedItemSchema = z.union([developmentItemSchema, perspectiveItemSchema.extend({
+  kind: z.string().trim().min(1),
+})]);
+
 export function isDevelopment(item: AnalysisItem): item is DevelopmentItem {
-  return item.kind === DEVELOPMENT_KIND;
+  return item.kind === DEVELOPMENT_KIND && 'scope' in item;
 }
 
+/** The contract an analysis agent's output is validated against. */
 export const analysisEnvelopeSchema = z.object({
   v: z.literal(1),
   agent: z.string().trim().min(1),
@@ -44,6 +55,11 @@ export const analysisEnvelopeSchema = z.object({
 
 export type AnalysisEnvelope = z.infer<typeof analysisEnvelopeSchema>;
 
+/** Reads an envelope already traced, including one recorded under the former item contract. */
+export const recordedAnalysisEnvelopeSchema = analysisEnvelopeSchema.extend({
+  items: z.array(recordedItemSchema),
+});
+
 /** Target the Director sets for a turn's tension. */
 export const tensionTargetSchema = z.enum(['monter', 'tenir', 'relacher', 'basculer']);
 export type TensionTarget = z.infer<typeof tensionTargetSchema>;
@@ -52,10 +68,13 @@ export type TensionTarget = z.infer<typeof tensionTargetSchema>;
 export const nudgeTypeSchema = z.enum(['saillance', 'retard', 'pression', 'complication', 'relance']);
 export type NudgeType = z.infer<typeof nudgeTypeSchema>;
 
-/** A whiteboard item as its analysis agent wrote it, with the agent that wrote it. */
+/**
+ * A whiteboard item as its analysis agent wrote it, with the agent that wrote it. It is read from
+ * recorded directions, hence the tolerant item schema.
+ */
 export const attributedItemSchema = z.object({
   agent: z.string(),
-  item: analysisItemSchema,
+  item: recordedItemSchema,
 });
 export type AttributedItem = z.infer<typeof attributedItemSchema>;
 

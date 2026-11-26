@@ -94,7 +94,7 @@ export class GuardianService {
       'Préfère la mémoire actuelle corrigée à une conversation périmée. Ne la modifie que si de NOUVEAUX événements le justifient.',
       'Ne modifie, n’archive, ne retague et ne contourne jamais une entrée protégée. Signale un conflit non résolu dans tagSuggestions seulement quand un nouveau contrat de lecture est nécessaire.',
       'DÉVELOPPEMENTS. "developments" liste ce qui est arrivé dans le monde du récit à ce tour, avec sa portée : "scene" (dans la scène) ou "offscreen" (hors champ). Ce sont des faits établis, même quand la prose ne les raconte pas : un fait hors champ s’enregistre comme une entrée ordinaire.',
-      'INTENTIONS. Chaque personnage qui compte a une entrée de clé "personnage/<nom>", sous le tag « Intention » s’il existe : son objectif, son plan en cours, sa situation et ses relations utiles, en quelques lignes. Mets-la à jour quand la scène ou un développement la fait évoluer, crée-la quand elle manque, et ne la duplique jamais.',
+      'INTENTIONS. Chaque personnage qui compte a une entrée de clé "personnage/<nom>", sous le tag « Intentions » s’il existe : son objectif, son plan en cours, sa situation et ses relations utiles, en quelques lignes. Mets-la à jour quand la scène ou un développement la fait évoluer, crée-la quand elle manque, et ne la duplique jamais.',
       'Renvoie {"v":2,"proposals":[],"tagSuggestions":[]}. Les listes vides sont valides ; préfère peu de changements, mais utiles.',
       'Propositions autorisées, chacune avec une raison non vide qui renvoie aux faits établis du tour :',
       '{"op":"create","key":"titre court","content":"texte autonome","tagIds":["UUID existant"],"reason":"..."}',

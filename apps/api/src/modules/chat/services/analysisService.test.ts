@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from 'vitest';
 import type {
   ChatCompletion, ChatCompletionCreateParamsNonStreaming, ChatCompletionCreateParamsStreaming,
 } from 'openai/resources/chat/completions';
-import { analysisEnvelopeSchema, type ProjectAgent } from '@choral-writer/shared';
+import {
+  analysisEnvelopeSchema, isDevelopment, recordedAnalysisEnvelopeSchema, type ProjectAgent,
+} from '@choral-writer/shared';
 
 import type { LlmCallTrace } from '../../../llm/call-llm.js';
 import { createCallLLM } from '../../../llm/call-llm.js';
@@ -239,5 +241,14 @@ describe('analysis envelope contract', () => {
     ['a perspective with characters', { kind: 'risque', characters: ['Mara'], text: 'Un risque.', importance: 'LOW' }],
   ])('rejects %s', (_case, item) => {
     expect(analysisEnvelopeSchema.safeParse(envelope(item)).success).toBe(false);
+  });
+
+  it('reads a recorded development without scope as a perspective, while still refusing it from the model', () => {
+    const legacy = envelope({ kind: 'development', text: 'Un fait générique.', importance: 'NORMAL' });
+
+    expect(analysisEnvelopeSchema.safeParse(legacy).success).toBe(false);
+    const recorded = recordedAnalysisEnvelopeSchema.parse(legacy);
+    expect(isDevelopment(recorded.items[0]!)).toBe(false);
+    expect(isDevelopment(recordedAnalysisEnvelopeSchema.parse(envelope(development)).items[0]!)).toBe(true);
   });
 });

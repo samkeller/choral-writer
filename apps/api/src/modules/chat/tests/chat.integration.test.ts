@@ -604,6 +604,38 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
     }
   });
 
+  it('still reads a turn recorded under the former contract, where development was a free-form kind', async () => {
+    const project = await createProject('Ancien format');
+    const analyst = await agents.create({ name: 'Chaos', instructions: 'Find uncertainty.', phase: 'analysis', output: 'envelope' });
+    const director = await agents.create({ name: 'Directeur ancien', instructions: '', phase: 'direction', output: 'direction' });
+    await agents.configure(project.id, { agents: [
+      ...(await agents.listForProject(project.id)).map(({ agentId, versionId }) => ({ agentId, versionId })),
+      { agentId: analyst.id, versionId: analyst.versions[0]!.id },
+      { agentId: director.id, versionId: director.versions[0]!.id },
+    ] });
+    directorOutput = JSON.stringify({ v: 1, retained: [{ item: 'c1', why: 'Concret.' }], dismissed: [], tension: 'tenir', nudges: [] });
+    const started = events((await send(project.id, 'J’attends.')).body).find((event) => event.type === 'chat.turn.started');
+    if (started?.type !== 'chat.turn.started') throw new Error('Missing started turn.');
+    const legacyItem = { kind: 'development', text: 'Un fait générique.', importance: 'NORMAL' };
+    await pool.query('update choral_writer.chat_turn set direction = $1, developments = null where id = $2', [
+      JSON.stringify({ tension: 'tenir', nudges: [{ type: 'saillance', target: 'Le fait.', basis: { agent: 'Chaos', item: legacyItem } }],
+        retained: [{ agent: 'Chaos', item: legacyItem, why: 'Concret.' }], dismissed: [] }),
+      started.turnId,
+    ]);
+    await pool.query('update choral_writer.llm_call set response = $1 where turn_id = $2 and stage = $3', [
+      JSON.stringify({ v: 1, agent: 'Chaos', summary: 'Résumé.', items: [legacyItem] }), started.turnId, 'analysis',
+    ]);
+
+    const response = await app.inject({
+      method: 'GET', url: `/api/projects/${project.id}/turns/${started.turnId}/traces`, headers: { cookie },
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    const summary = turnTraceSummarySchema.parse(response.json());
+    expect(summary.analysis).toMatchObject([{ name: 'Chaos', status: 'success', envelope: { items: [legacyItem] } }]);
+    expect(summary.direction?.direction?.retained).toEqual([{ agent: 'Chaos', item: legacyItem, why: 'Concret.' }]);
+    expect(summary.developments).toBeNull();
+  });
+
   it('retains the user message and failure trace but never persists a partial assistant reply', async () => {
     const project = await createProject('Erreur fournisseur');
     const normal = generate;

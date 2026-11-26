@@ -81,6 +81,6 @@ describe('Guardian JSON task', () => {
     expect(user).toContain('"developments":[{"agent":"Monde","scope":"scene","characters":["Mara"],"text":"La lampe s’éteint."}'
       + ',{"agent":"Absents","scope":"offscreen","characters":["Le facteur"],"text":"Le facteur part."}]');
     expect(system).toContain('même quand la prose ne les raconte pas');
-    expect(system).toContain('"personnage/<nom>", sous le tag « Intention »');
+    expect(system).toContain('"personnage/<nom>", sous le tag « Intentions »');
   });
 });

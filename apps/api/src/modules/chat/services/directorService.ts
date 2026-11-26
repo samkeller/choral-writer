@@ -8,6 +8,7 @@ import { ApiError } from '../../../errors/errors.js';
 import type { CallLLMInput, createCallLLM } from '../../../llm/call-llm.js';
 import { conversationMessages } from './conversationMessages.js';
 import { nudgeDescriptions, tensionLabels } from './directionVocabulary.js';
+import { isToldInScene } from './turnDevelopments.js';
 import { formatItem } from './whiteboardFormat.js';
 
 export type DirectorAgent = ProjectAgent & { phase: 'direction'; output: 'direction' };
@@ -71,9 +72,12 @@ export function forbiddenNudgeTypes(recentDirections: readonly (TurnDirection | 
 
 /**
  * Validates the output against the whiteboard the Director read: every item is either retained
- * or dismissed exactly once, every basis names a retained item, and nudge types do not repeat.
+ * or dismissed exactly once, every basis names a retained item that is not an off-screen
+ * development (the nudge would carry it to the Narrator), and nudge types do not repeat.
  */
-export function directorOutputContract(itemIds: readonly string[], forbidden: readonly NudgeType[]) {
+export function directorOutputContract(items: readonly IdentifiedItem[], forbidden: readonly NudgeType[]) {
+  const itemIds = items.map((item) => item.id);
+  const offscreen = new Set(items.filter(({ item }) => !isToldInScene(item)).map((item) => item.id));
   return directorOutputSchema.superRefine((output, context) => {
     const known = new Set(itemIds);
     const selected = [...output.retained, ...output.dismissed].map((selection) => selection.item);
@@ -84,6 +88,9 @@ export function directorOutputContract(itemIds: readonly string[], forbidden: re
     const retained = new Set(output.retained.map((selection) => selection.item));
     if (output.nudges.some((nudge) => nudge.basis !== null && !retained.has(nudge.basis))) {
       issue('Un basis doit désigner une contribution retenue.');
+    }
+    if (output.nudges.some((nudge) => nudge.basis !== null && offscreen.has(nudge.basis))) {
+      issue('Un basis ne peut pas désigner un développement hors champ.');
     }
     const types = output.nudges.map((nudge) => nudge.type);
     if (new Set(types).size !== types.length) issue('Deux nudges ont le même type.');
@@ -114,12 +121,12 @@ function directorContract(forbidden: readonly NudgeType[]): string {
     'Tu diriges ce tour : tu orientes la scène sans jamais en fixer l’issue.',
     'Renvoie exactement un objet JSON de cette forme :',
     '{"v":1,"retained":[{"item":"<identifiant>","why":"<raison>"}],"dismissed":[{"item":"<identifiant>","why":"<raison>"}],"tension":"monter | tenir | relacher | basculer","nudges":[{"type":"<type>","target":"<ce sur quoi porte la pression>","basis":"<identifiant> | null"}]}',
-    '- Chaque contribution du whiteboard figure une seule fois, dans "retained" ou dans "dismissed", avec une raison courte. Les contributions retenues sont transmises telles quelles au Narrateur ; les écartées disparaissent de son prompt.',
+    '- Chaque contribution du whiteboard figure une seule fois, dans "retained" ou dans "dismissed", avec une raison courte. Les contributions retenues sont transmises telles quelles au Narrateur, sauf les développements hors champ ; les écartées disparaissent de son prompt.',
     '- Un développement est un fait qu’un agent fait arriver à ce tour. Retenu, il a lieu : dans la scène, le Narrateur le raconte ; hors champ, le Narrateur ne le reçoit pas mais la mémoire l’enregistre. Écarté, il n’a pas lieu. Tu ne changes ni son texte ni sa portée.',
     `- "tension" est la cible du tour : ${Object.entries(tensionLabels).map(([value, label]) => `${value} (${label})`).join(', ')}.`,
     '- "nudges" : de 0 à 2 pressions sur la manière de raconter, de types différents, parmi :',
     ...Object.entries(nudgeDescriptions).map(([type, description]) => `  - ${type} : ${description} ;`),
-    '- Un nudge n’introduit aucun fait, ne contient ni prose ni réplique, et ne fixe jamais une issue.',
+    '- Un nudge n’introduit aucun fait, ne contient ni prose ni réplique, et ne fixe jamais une issue. Il ne s’appuie jamais sur un développement hors champ et ne le mentionne pas : le Narrateur ne doit pas l’apprendre.',
     '- "basis" est obligatoire quand le nudge implique un personnage incarné par un agent d’analyse : c’est l’identifiant de la contribution de cet agent, qui doit figurer dans "retained". Sinon, null.',
     '- Un agent qui incarne un personnage fait autorité sur ce que ce personnage veut et accepte : construis autour d’un refus, ne l’annule pas. Si deux agents-personnages se contredisent, choisis lequel mettre au premier plan sans faire céder l’autre.',
     '- Tu peux contrarier l’issue de ce que tente le protagoniste et les réactions des autres, jamais ce que le protagoniste fait ou dit.',
@@ -176,7 +183,7 @@ export class ChatDirectorService {
         input.history,
         input.userMessage,
       ),
-      schema: directorOutputContract(items.map((item) => item.id), forbidden),
+      schema: directorOutputContract(items, forbidden),
       signal: input.signal,
     };
 
