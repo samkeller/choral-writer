@@ -5,10 +5,15 @@ import type { Database } from '../../../db/client.js';
 import type { ProjectsService } from '../../projects/services/projectServices.js';
 import { AgentRepository } from '../repository/agentsRepository.js';
 import { assertValidAgentSelection } from './agentSelection.js';
-import { DEFAULT_GUARDIAN_ID, DEFAULT_NARRATOR_ID } from '../repository/defaultNarrators.js';
+import { isBuiltInAgent } from '../repository/agentLibrary.js';
 
 export class AgentsService {
   constructor(private readonly database: Database, private readonly projects: ProjectsService) {}
+
+  /** Run at startup: the library is application data, not a migration, so it is seeded idempotently. */
+  ensureLibrary(): Promise<void> {
+    return this.database.transaction((tx) => new AgentRepository(tx).ensureLibrary());
+  }
 
   list(): Promise<Agent[]> {
     return this.database.transaction((tx) => new AgentRepository(tx).list(), {
@@ -45,8 +50,8 @@ export class AgentsService {
     await this.database.transaction(async (tx) => {
       const repository = new AgentRepository(tx);
       if (!await repository.lock(agentId)) throw notfoundError('Cet agent n’existe pas.');
-      if ([DEFAULT_NARRATOR_ID, DEFAULT_GUARDIAN_ID].includes(agentId) || await repository.used(agentId)) {
-        throw new ApiError(409, 'AGENT_IN_USE', 'Cet agent est utilisé ou fourni par défaut. Détachez-le des projets avant de le supprimer.');
+      if (isBuiltInAgent(agentId) || await repository.used(agentId)) {
+        throw new ApiError(409, 'AGENT_IN_USE', 'Cet agent est utilisé ou fourni avec l’application. Détachez-le des projets avant de le supprimer.');
       }
       await repository.remove(agentId);
     });
