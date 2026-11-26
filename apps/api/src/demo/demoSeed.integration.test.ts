@@ -133,15 +133,17 @@ describe.skipIf(!process.env.DATABASE_URL)('demo data with PostgreSQL', () => {
     expect(summaries.some((summary) => summary.cost.complete && summary.cost.microUsd > 0)).toBe(true);
     const changes = metrics.flatMap((metric) => metric.configurationChanges ?? []).map((change) => change.kind);
     expect(changes).toEqual(expect.arrayContaining(['agentChanged', 'agentRemoved']));
+    expect(metrics.some((metric) => metric.direction?.status === 'success' && metric.direction.nudges.length > 0)).toBe(true);
+    expect(metrics.some((metric) => metric.direction === null)).toBe(true);
   });
 
-  it('clears the demo projects and their unused agents', async () => {
+  it('clears the demo projects and keeps the library', async () => {
     await clearDemoProjects(database);
 
     const ids = projectSchema.array().parse(await get('/api/projects')).map((project) => project.id);
     expect(ids).not.toEqual(expect.arrayContaining([DEMO_PROJECT_IDS[0]]));
     expect(ids).toContain(unrelatedProjectId);
     const agents = agentDtoSchema.array().parse(await get('/api/agents'));
-    expect(agents.some((agent) => agent.versions.some((version) => version.name.startsWith('Démo · ')))).toBe(false);
+    expect(agents.some((agent) => agent.id === '019aee00-0000-7000-8000-000000000106')).toBe(true);
   });
 });

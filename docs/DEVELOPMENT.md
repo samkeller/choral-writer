@@ -39,18 +39,19 @@ Le frontend utilise React 19, TypeScript, Vite, React Router 7, Mantine 8 et Tab
 `pnpm db:seed:demo` écrit directement dans la base pointée par `.env`, sans appel LLM,
 deux projets fictifs préfixés « Démo · » :
 
-- **La cloche de Port-Lénic** : une équipe complète (trois agents d'analyse, un Directeur,
-  le Narrateur et le Gardien par défaut), la mémoire activée avec ses tags et ses Intentions,
-  et des tours tracés (coûts, tokens, durées, analyses, direction, configuration). On y trouve
-  un tour antérieur sans configuration enregistrée ni coût, une analyse relancée après une
-  réponse invalide, un changement de version d'agent, un dernier tour en échec sur la branche
-  principale et une branche « Alternative 1 » régénérée sans Directeur.
+- **La cloche de Port-Lénic** : une équipe complète tirée de la bibliothèque d'agents (trois
+  agents d'analyse, le Directeur mesuré, le Narrateur scénique et le Gardien des Intentions),
+  la mémoire activée avec les tags de départ et des Intentions, et des tours tracés (coûts,
+  tokens, durées, analyses, direction, configuration). On y trouve un tour antérieur sans
+  configuration enregistrée ni coût, une analyse relancée après une réponse invalide, le passage
+  du Directeur de la version 1 à la version 2, un dernier tour en échec sur la branche principale
+  et une branche « Alternative 1 » régénérée sans Directeur.
 - **Expédition au col des Brumes** : un petit projet sans Directeur.
 
 La commande est idempotente : elle remplace ces projets, repérés par leurs identifiants fixes
-(`019aee20-…`), sans toucher aux autres. Les agents de démo encore utilisés par un autre projet
-sont conservés tels quels. `pnpm db:seed:demo --clear` supprime les projets de démo et les agents
-de démo inutilisés. La commande refuse de s'exécuter avec `NODE_ENV=production`.
+(`019aee20-…`), sans toucher aux autres. Elle ajoute au besoin les agents de la bibliothèque, comme
+le serveur au démarrage. `pnpm db:seed:demo --clear` supprime seulement les projets de démo.
+La commande refuse de s'exécuter avec `NODE_ENV=production`.
 
 Le contenu est décrit dans `apps/api/src/demo/demoScenario.ts` ; `demoRows.ts` le traduit en lignes
 conformes aux schémas réels, en validant les sorties comme le pipeline. Une nouvelle donnée de trace

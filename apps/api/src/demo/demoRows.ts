@@ -1,7 +1,7 @@
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 import { v7 as uuidv7 } from 'uuid';
 import {
-  analysisEnvelopeSchema, memoryProposalsSchema,
+  analysisEnvelopeSchema, defaultMemoryRead, memoryProposalsSchema,
   type AnalysisEnvelope, type LlmStage, type MemoryContext, type MemoryProposal, type MemoryResult, type MemoryState,
   type ProjectAgent, type TurnDirection,
 } from '@choral-writer/shared';
@@ -17,10 +17,8 @@ import {
 import { narratorSystemPrompt } from '../modules/chat/services/narratorPrompt.js';
 import { turnConfiguration } from '../modules/chat/services/turnConfiguration.js';
 import { formatItem } from '../modules/chat/services/whiteboardFormat.js';
-import { demoTags, type DemoProject, type DemoTag, type DemoTeamMember, type DemoTurn } from './demoScenario.js';
-
-/** The built-in Narrator and Guardian, in their latest versions, completing every demo team. */
-export type RestitutionAgents = { narrator: ProjectAgent; guardian: ProjectAgent };
+import { startingTags } from '../modules/memories/services/startingTags.js';
+import { demoTagNames, type DemoProject, type DemoTag, type DemoTeamMember, type DemoTurn } from './demoScenario.js';
 
 export type DemoProjectRows = {
   /** Inserted without its default branch, which references a branch inserted after it. */
@@ -87,32 +85,34 @@ type CallInput = {
  * Director contract, Guardian proposals), so an inconsistent description fails here, not in the UI.
  * Request prompts are abbreviated: they carry the context of each stage, not its full output contract.
  */
-export function buildDemoProjectRows(
-  project: DemoProject, restitution: RestitutionAgents, startedAt: Date, id: () => string = uuidv7,
-): DemoProjectRows {
-  const tagIds = new Map((Object.keys(demoTags) as DemoTag[]).map((tag) => [tag, id()]));
+export function buildDemoProjectRows(project: DemoProject, startedAt: Date, id: () => string = uuidv7): DemoProjectRows {
+  const tags = startingTags(id);
   const tagId = (tag: DemoTag) => {
-    const value = tagIds.get(tag);
-    if (!value) throw new Error(`Unknown demo tag ${tag}.`);
+    const value = tags.find((candidate) => candidate.name === demoTagNames[tag])?.id;
+    if (!value) throw new Error(`Demo tag ${tag} is not a starting tag.`);
     return value;
   };
   const initialMemory: MemoryState = {
     v: 2,
-    tags: (Object.keys(demoTags) as DemoTag[]).map((tag) => ({ id: tagId(tag), ...demoTags[tag] })),
+    tags,
     entries: project.memory.map((entry) => ({
       id: id(), key: entry.key, content: entry.content, tagIds: entry.tags.map(tagId),
       protected: entry.protected ?? false, archived: false, source: 'user', turnId: null,
       updatedAt: startedAt.toISOString(),
     })),
   };
-  const team = (members: readonly DemoTeamMember[]): ProjectAgent[] => [
-    ...members.map((member) => toProjectAgent(member, tagId)), restitution.narrator, restitution.guardian,
-  ];
+  const team = (members: readonly DemoTeamMember[]) => {
+    const agents = members.map((member) => toProjectAgent(member, tagId));
+    const narrator = agents.find((agent) => agent.output === 'narrative');
+    const guardian = agents.find((agent) => agent.output === 'memory_proposals');
+    if (!narrator || !guardian) throw new Error('A demo team needs a Narrator and a Guardian.');
+    return { agents, narrator, guardian };
+  };
 
   const rows: DemoProjectRows = {
     project: { id: project.id, name: project.name, systemPrompt: project.systemPrompt, createdAt: startedAt },
     branches: [], messages: [], turns: [],
-    projectAgents: team(project.team).map(({ agentId, versionId, phase, output, memoryRead }) => ({
+    projectAgents: team(project.team).agents.map(({ agentId, versionId, phase, output, memoryRead }) => ({
       projectId: project.id, agentId, versionId, phase, output, memoryRead,
     })),
     memorySettings: { projectId: project.id, revisionId: id(), enabled: true, catalog: { v: 2, tags: initialMemory.tags } },
@@ -158,7 +158,7 @@ export function buildDemoProjectRows(
     const startedAtMs = clock;
     const before = parent?.memoryAfter ?? initialMemory;
     const history = parent?.history ?? [];
-    const agents = team(turn.team);
+    const { agents, narrator, guardian } = team(turn.team);
     const priced = !turn.legacy;
 
     const user = userMessage(turn, played, id);
@@ -210,9 +210,9 @@ export function buildDemoProjectRows(
       });
     }
 
-    const narratorMemory = memoryContext(before, restitution.narrator);
+    const narratorMemory = memoryContext(before, narrator);
     const narratorMessages = dialogue(narratorSystemPrompt(
-      [project.systemPrompt, restitution.narrator.instructions].filter(Boolean).join('\n\n'),
+      [project.systemPrompt, narrator.instructions].filter(Boolean).join('\n\n'),
       whiteboard, narratorMemory, direction,
     ));
     let end: number;
@@ -221,12 +221,12 @@ export function buildDemoProjectRows(
     let assistant: { id: string; content: string } | null = null;
     if (turn.outcome.status === 'failed') {
       end = call({
-        turnId, stage: 'narrator', agent: restitution.narrator, priced, startedAt: directionEnd,
+        turnId, stage: 'narrator', agent: narrator, priced, startedAt: directionEnd,
         memory: narratorMemory, messages: narratorMessages, response: null, error: turn.outcome.error,
       });
     } else {
       end = call({
-        turnId, stage: 'narrator', agent: restitution.narrator, priced, startedAt: directionEnd,
+        turnId, stage: 'narrator', agent: narrator, priced, startedAt: directionEnd,
         memory: narratorMemory, messages: narratorMessages, response: turn.outcome.prose,
       });
       assistant = { id: id(), content: turn.outcome.prose };
@@ -238,15 +238,15 @@ export function buildDemoProjectRows(
         });
         const guardianStart = end;
         end = call({
-          turnId, stage: 'guardian', agent: restitution.guardian, priced, startedAt: guardianStart, stageExecutionId: runId,
-          memory: memoryContext(before, restitution.guardian), response: JSON.stringify(proposals),
+          turnId, stage: 'guardian', agent: guardian, priced, startedAt: guardianStart, stageExecutionId: runId,
+          memory: memoryContext(before, guardian), response: JSON.stringify(proposals),
           messages: [
-            { role: 'system', content: restitution.guardian.instructions },
+            { role: 'system', content: guardian.instructions },
             { role: 'user', content: JSON.stringify({ projectContext: project.systemPrompt, prose: turn.outcome.prose }) },
           ],
         });
         const reduced = reduceProposals(
-          before, proposals.proposals, restitution.guardian, turnId, id, new Date(end).toISOString(),
+          before, proposals.proposals, guardian, turnId, id, new Date(end).toISOString(),
         );
         memoryAfter = reduced.state;
         memoryResult = {
@@ -307,14 +307,14 @@ export function buildDemoProjectRows(
 }
 
 function toProjectAgent(member: DemoTeamMember, tagId: (tag: DemoTag) => string): ProjectAgent {
-  const version = member.agent.versions[member.version - 1];
+  const version = member.agent.versions.find((candidate) => candidate.version === member.version);
   if (!version) throw new Error(`Demo agent ${member.agent.id} has no version ${member.version}.`);
   return {
     agentId: member.agent.id, versionId: version.id, phase: member.agent.phase, output: member.agent.output,
     version: member.version, name: version.name, instructions: version.instructions,
-    memoryRead: member.agent.output === 'direction'
-      ? { mode: 'none', tagIds: [] }
-      : { mode: 'selected', tagIds: (member.reads ?? []).map(tagId) },
+    memoryRead: member.agent.phase === 'analysis'
+      ? { mode: 'selected', tagIds: (member.reads ?? []).map(tagId) }
+      : defaultMemoryRead(member.agent.output),
   };
 }
 
