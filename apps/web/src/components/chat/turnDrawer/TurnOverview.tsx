@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Anchor, Box, Group, Paper, SimpleGrid, Stack, Text, UnstyledButton } from '@mantine/core';
+import { Anchor, Box, Group, Paper, SimpleGrid, Stack, Text, Tooltip, UnstyledButton } from '@mantine/core';
 import {
   IconAdjustments, IconAlertTriangle, IconArrowRight, IconCoin, IconCompass, IconStack2,
 } from '@tabler/icons-react';
@@ -10,7 +10,7 @@ import { formatCost, formatDelta, formatSeconds, formatTokens, formatUsd } from 
 import { DrawerBlock } from './DrawerBlock';
 import { configurationChangeLabel } from './TurnConfigurationPanel';
 import { type TensionLevels, tensionScale } from './directionInsights';
-import { nudgeDescriptions, tensionMoves } from './directionPresentation';
+import { TENSION_ESTIMATE_HINT, nudgeDescriptions, tensionMoveLabels } from './directionPresentation';
 import { TurnTimeline } from './TurnTimeline';
 import type { TurnDrawerTab } from './turnDrawerTabs';
 import { type AttentionPoint, attentionPoints, averageCompleteCost } from './turnInsights';
@@ -34,7 +34,7 @@ export function TurnOverview({ summary, metrics, index, tensionLevels, onOpenTab
 
   return (
     <Stack gap="sm">
-      <SimpleGrid cols={{ base: 1, xs: 2, sm: summary.direction ? 4 : 3 }} spacing="xs">
+      <SimpleGrid cols={summary.direction ? { base: 1, xs: 2, sm: 4 } : { base: 1, xs: 3 }} spacing="xs">
         <Indicator label="Coût" value={formatCost(summary.cost)} onClick={() => onOpenTab('cost')}
           hint={summary.cost.complete && average ? `${formatDelta(summary.cost.microUsd, average)} vs moyenne du récit` : 'pas de moyenne comparable'} />
         <Indicator label="Durée" value={formatSeconds(summary.durationMs)} onClick={() => onOpenTab('cost')}
@@ -45,7 +45,7 @@ export function TurnOverview({ summary, metrics, index, tensionLevels, onOpenTab
             : narratorTokens !== null && previousTokens ? `${formatDelta(narratorTokens, previousTokens)} vs tour précédent`
               : 'pas de tour précédent comparable'} />
         {summary.direction && (
-          <Indicator label="Tension visée" onClick={() => onOpenTab('direction')}
+          <Indicator label="Tension" onClick={() => onOpenTab('direction')}
             {...describeTension(summary.direction, tensionLevels)} />
         )}
       </SimpleGrid>
@@ -70,22 +70,31 @@ export function TurnOverview({ summary, metrics, index, tensionLevels, onOpenTab
   );
 }
 
-/** The tension in words: its level on the named scale when the story is known, the Director's move otherwise. */
-function describeTension(trace: DirectionTrace, levels: TensionLevels | null): { value: string; hint: string } {
+/** The move the Director decided, then the estimated level, flagged as such, when the story is known. */
+function describeTension(trace: DirectionTrace, levels: TensionLevels | null): { value: string; hint: string; tooltip?: string } {
   if (!trace.direction) return { value: '—', hint: 'direction en échec' };
-  const move = tensionMoves[trace.direction.tension];
-  return levels ? { value: tensionScale[levels.current], hint: `le Directeur ${move}` } : { value: move, hint: 'niveau inconnu' };
+  const value = tensionMoveLabels[trace.direction.tension];
+  if (!levels) return { value, hint: 'niveau estimé indisponible' };
+  return { value, hint: `niveau estimé : ${tensionScale[levels.current]}`, tooltip: TENSION_ESTIMATE_HINT };
 }
 
-function Indicator({ label, value, hint, onClick }: { label: string; value: string; hint: string; onClick: () => void }) {
+function Indicator({ label, value, hint, tooltip, onClick }: {
+  label: string;
+  value: string;
+  hint: string;
+  tooltip?: string;
+  onClick: () => void;
+}) {
   return (
-    <UnstyledButton onClick={onClick} aria-label={`${label} : ${value}, ${hint}`}>
-      <Paper withBorder p="xs" radius="md" bg="dark.7" h="100%">
-        <Text size="xs" c="dimmed">{label}</Text>
-        <Text size="lg" fw={700} lh={1.3}>{value}</Text>
-        <Text size="xs" c="dimmed">{hint}</Text>
-      </Paper>
-    </UnstyledButton>
+    <Tooltip label={tooltip} disabled={!tooltip} multiline w={280}>
+      <UnstyledButton onClick={onClick} aria-label={`${label} : ${value}, ${hint}`}>
+        <Paper withBorder p="xs" radius="md" bg="dark.7" h="100%">
+          <Text size="xs" c="dimmed">{label}</Text>
+          <Text size="lg" fw={700} lh={1.3}>{value}</Text>
+          <Text size="xs" c="dimmed">{hint}</Text>
+        </Paper>
+      </UnstyledButton>
+    </Tooltip>
   );
 }
 
@@ -135,12 +144,11 @@ function describeAttentionPoint(point: AttentionPoint): { icon: ReactNode; color
         text: `${point.count} appel(s) en échec pendant ce tour.`,
       };
     case 'directorNudge':
-      return point.type === 'complication' ? {
-        icon: <IconCompass size={16} />, color: 'red', tab: 'direction',
-        text: `Tentative contrariée : le Directeur pousse vers complication (${point.target}).`,
-      } : {
+      return {
         icon: <IconCompass size={16} />, color: phasePresentation.direction.color, tab: 'direction',
-        text: `Le Directeur pousse vers ${point.type}, pour ${nudgeDescriptions[point.type]} : ${point.target}.`,
+        text: point.type === 'complication'
+          ? `Complication poussée par le Directeur, pour ${nudgeDescriptions.complication} : ${point.target}.`
+          : `Le Directeur pousse vers ${point.type}, pour ${nudgeDescriptions[point.type]} : ${point.target}.`,
       };
     case 'directionFailed':
       return {

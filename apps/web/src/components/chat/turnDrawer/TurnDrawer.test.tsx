@@ -124,8 +124,10 @@ describe('TurnDrawer', () => {
     await drawer.findByText(/Tour plus cher que la moyenne du récit/);
     expect(drawer.getByText(/L’entrée du Narrateur grossit : 2,0 k tokens contre 800/)).toBeTruthy();
     expect(drawer.getByText('Configuration modifiée depuis le tour précédent : Rythme v1 → v2.')).toBeTruthy();
-    expect(drawer.getByRole('button', { name: 'Tension visée : montée, le Directeur fait monter la tension' })).toBeTruthy();
-    expect(drawer.getByText('Tentative contrariée : le Directeur pousse vers complication (Personnage A).')).toBeTruthy();
+    expect(drawer.getByRole('button', { name: 'Tension : monte, niveau estimé : montée' })).toBeTruthy();
+    expect(drawer.getByText(
+      'Complication poussée par le Directeur, pour contrarier l’issue d’une tentative du protagoniste : Personnage A.',
+    )).toBeTruthy();
     expect(drawer.getByRole('button', { name: /^Entrée du Narrateur : 2,0 k tokens, \+150 % vs tour précédent/ })).toBeTruthy();
 
     const configurationPoint = drawer.getByText(/Configuration modifiée/).parentElement!;
@@ -138,13 +140,16 @@ describe('TurnDrawer', () => {
     render(<Harness initialTurnId={secondTurnId} />);
     const drawer = within(await screen.findByRole('dialog'));
 
-    fireEvent.click(await drawer.findByRole('button', { name: /^Tension visée/ }));
+    fireEvent.click(await drawer.findByRole('button', { name: /^Tension : monte/ }));
 
     expect(drawer.getByRole('tab', { name: 'Direction' }).getAttribute('aria-selected')).toBe('true');
-    const scale = within(await drawer.findByRole('list', { name: 'Échelle de tension' }));
-    expect(scale.getByRole('listitem', { name: 'frémissement (tour précédent)' })).toBeTruthy();
-    expect(scale.getByRole('listitem', { name: 'montée (visée)' })).toBeTruthy();
-    expect(drawer.getByText('Le Directeur fait monter la tension d’un cran : de frémissement à montée.')).toBeTruthy();
+    expect(await drawer.findByText('Tension : monte')).toBeTruthy();
+    expect(drawer.getByText(/^Le Directeur fait monter la tension\./)).toBeTruthy();
+    const scale = within(drawer.getByRole('list', { name: 'Niveau de tension estimé' }));
+    expect(scale.getByRole('listitem', { name: 'frémissement (estimé au tour précédent)' })).toBeTruthy();
+    expect(scale.getByRole('listitem', { name: 'montée (estimé pour ce tour)' })).toBeTruthy();
+    expect(drawer.getByText('Niveau estimé : de frémissement à montée.')).toBeTruthy();
+    expect(drawer.getByLabelText(/^Niveau estimé\. Niveau estimé : il cumule les mouvements du Directeur/)).toBeTruthy();
     expect(drawer.getByText(/Pousse vers/).textContent)
       .toBe('Pousse vers complication (contrarier l’issue d’une tentative du protagoniste) : Personnage A');
     expect(drawer.getByText('En appui sur la contribution de Monde : « Un fait générique. »')).toBeTruthy();
@@ -191,9 +196,11 @@ describe('TurnDrawer', () => {
     expect(drawer.getByText('Récit · 2 tour(s)')).toBeTruthy();
     const direction = within(drawer.getByRole('region', { name: 'Direction · 2 tour(s) dirigé(s)' }));
     expect(direction.getByText('100 %').nextSibling?.textContent).toBe('des tours dirigés avec au moins une intervention');
-    expect(direction.getByText('50 %').nextSibling?.textContent)
-      .toBe('des tours dirigés où une tentative du protagoniste est contrariée');
-    expect(direction.getByRole('button', { name: 'Tour 2 : montée' })).toBeTruthy();
+    expect(direction.getByText('50 %').nextSibling?.textContent).toBe('des tours dirigés où le Directeur pousse une complication');
+    // Heights follow the fixed scale (paroxysme at the top), not the highest level of this story.
+    const bar = (name: string) => (direction.getByRole('button', { name }).firstElementChild as HTMLElement).style.height;
+    expect(bar('Tour 1 : tension monte, niveau estimé frémissement')).toBe('40%');
+    expect(bar('Tour 2 : tension monte, niveau estimé montée')).toBe('60%');
     fireEvent.click(drawer.getByRole('button', { name: 'Tour 1 : 0,0010 $' }));
 
     await drawer.findByRole('heading', { name: 'Tour 1 / 2' });

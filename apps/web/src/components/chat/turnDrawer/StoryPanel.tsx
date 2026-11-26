@@ -6,6 +6,8 @@ import { formatCost, formatSeconds, formatUsd } from '../turnFormat';
 import { DrawerBlock } from './DrawerBlock';
 import { EvolutionBars } from './EvolutionBars';
 import { type StoryDirectionRates, estimateTensionLevels, storyDirectionRates, tensionScale } from './directionInsights';
+import { EstimateHint } from './DirectionPanel';
+import { tensionMoveLabels } from './directionPresentation';
 import { averageCompleteCost } from './turnInsights';
 
 /** « Récit » : the whole branch at a glance, to place the current turn in it. */
@@ -52,25 +54,31 @@ function StoryDirection({ metrics, rates, index, onSelectTurn }: {
   index: number;
   onSelectTurn: (index: number) => void;
 }) {
-  const levels = estimateTensionLevels(metrics);
   // A bar per directed turn only: the estimated level of an undirected turn is a carry-over, not a decision.
-  const values = metrics.map((turn, position) => (turn.direction?.status === 'success' ? levels[position]!.current + 1 : null));
+  const values = estimateTensionLevels(metrics)
+    .map(({ current }, position) => (metrics[position]?.direction?.status === 'success' ? current + 1 : null));
   return (
     <DrawerBlock title={`Direction · ${rates.directedTurns} tour(s) dirigé(s)`}>
       <Stack gap="sm">
         <SimpleGrid cols={{ base: 1, xs: 2 }} spacing="xs">
           <Figure label="des tours dirigés avec au moins une intervention" value={formatShare(rates.nudgeShare)} />
-          <Figure label="des tours dirigés où une tentative du protagoniste est contrariée" value={formatShare(rates.thwartedShare)} />
+          <Figure label="des tours dirigés où le Directeur pousse une complication" value={formatShare(rates.complicationShare)} />
         </SimpleGrid>
         <Stack gap={4}>
-          <Text size="xs" c="dimmed">Tension estimée au fil des tours</Text>
+          <EstimateHint label="Niveau de tension estimé au fil des tours" />
           <EvolutionBars values={values} current={index} color={`${phasePresentation.direction.color}.7`} height={56}
-            onSelect={onSelectTurn}
-            describe={(value, turnNumber) => `Tour ${turnNumber} : ${value === null ? 'sans direction' : tensionScale[value - 1]}`} />
+            scaleMax={tensionScale.length} onSelect={onSelectTurn}
+            describe={(value, turnNumber) => (value === null
+              ? `Tour ${turnNumber} : sans direction`
+              : `Tour ${turnNumber} : tension ${directionLabel(metrics[turnNumber - 1])}, niveau estimé ${tensionScale[value - 1]}`)} />
         </Stack>
       </Stack>
     </DrawerBlock>
   );
+}
+
+function directionLabel(turn: TurnMetrics | undefined): string {
+  return turn?.direction?.status === 'success' ? tensionMoveLabels[turn.direction.tension] : '—';
 }
 
 function formatShare(share: number): string {

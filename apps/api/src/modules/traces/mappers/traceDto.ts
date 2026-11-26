@@ -74,12 +74,12 @@ export function toTurnTraceSummaryDto(
 
   const directionCalls = traces.filter((trace) => trace.stage === 'direction');
   const directionCall = directionCalls.at(-1);
-  const directionTrace: DirectionTrace | null = directionCall ? {
+  const outcome = directionOutcome(turn.direction, directionCalls);
+  const directionTrace: DirectionTrace | null = directionCall && outcome ? {
     agentId: directionCall.agentId,
     agentVersionId: directionCall.agentVersionId,
     name: directionCall.agentName ?? 'Directeur',
-    // A direction is recorded only after a validated call; without one, the narrator fell back.
-    status: turn.direction ? 'success' : 'error',
+    status: outcome.status,
     durationMs: directionCalls.reduce((total, call) => total + call.durationMs, 0),
     attempts: directionCalls.length,
     cost: toTurnCost(directionCalls),
@@ -128,13 +128,24 @@ export function toTurnMetricsDto(
   };
 }
 
-/** Like the trace summary, a Director call without a recorded direction means the direction failed. */
 function toDirectionMetrics(
   direction: TurnDirection | null, calls: readonly Pick<MeasuredCall, 'stage'>[],
 ): TurnDirectionMetrics | null {
-  if (direction) {
-    return { status: 'success', tension: direction.tension, nudges: direction.nudges.map((nudge) => nudge.type) };
-  }
+  const outcome = directionOutcome(direction, calls);
+  if (outcome?.status !== 'success') return outcome;
+  return { status: 'success', tension: outcome.direction.tension, nudges: outcome.direction.nudges.map((nudge) => nudge.type) };
+}
+
+type DirectionOutcome = { status: 'success'; direction: TurnDirection } | { status: 'error' };
+
+/**
+ * A direction is recorded only after a validated Director call: a Director call without one means the
+ * direction failed and the narrator fell back to the whole whiteboard. Null for a turn without a Director.
+ */
+function directionOutcome(
+  direction: TurnDirection | null, calls: readonly Pick<MeasuredCall, 'stage'>[],
+): DirectionOutcome | null {
+  if (direction) return { status: 'success', direction };
   return calls.some((call) => call.stage === 'direction') ? { status: 'error' } : null;
 }
 

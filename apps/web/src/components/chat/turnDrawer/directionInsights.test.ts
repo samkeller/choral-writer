@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { NudgeType, TensionTarget, TurnDirectionMetrics, TurnMetrics } from '@choral-writer/shared';
 
 import { estimateTensionLevels, storyDirectionRates } from './directionInsights';
-import { describeTensionMove } from './directionPresentation';
+import { describeEstimatedLevel } from './directionPresentation';
 
 function turn(direction: TurnDirectionMetrics | null): TurnMetrics {
   return {
@@ -32,19 +32,16 @@ describe('direction insights', () => {
       directed('monter'), turn(null), turn({ status: 'error' }),
     ];
 
-    expect(storyDirectionRates(story)).toEqual({ directedTurns: 4, nudgeShare: 0.5, thwartedShare: 0.25 });
+    expect(storyDirectionRates(story)).toEqual({ directedTurns: 4, nudgeShare: 0.5, complicationShare: 0.25 });
     expect(storyDirectionRates([turn(null), turn({ status: 'error' })])).toBeNull();
   });
 
-  it('tells the tension move on the named scale, or without it when the story is unknown', () => {
-    expect(describeTensionMove('monter', { previous: 1, current: 2 }))
-      .toBe('Le Directeur fait monter la tension d’un cran : de frémissement à montée.');
-    expect(describeTensionMove('monter', { previous: 4, current: 4 }))
-      .toBe('Le Directeur fait monter la tension, déjà au plus haut : paroxysme.');
-    expect(describeTensionMove('relacher', { previous: 0, current: 0 }))
-      .toBe('Le Directeur relâche la tension, déjà au plus bas : calme.');
-    expect(describeTensionMove('basculer', { previous: 3, current: 3 }))
-      .toBe('Le Directeur fait basculer la scène, sans changer le niveau estimé : crise.');
-    expect(describeTensionMove('tenir', null)).toBe('Le Directeur maintient la tension.');
+  it('tells the estimated level as an estimate, without inventing a cause when a move hits an end of the scale', () => {
+    expect(describeEstimatedLevel('monter', { previous: 1, current: 2 })).toBe('Niveau estimé : de frémissement à montée.');
+    expect(describeEstimatedLevel('monter', { previous: 4, current: 4 }))
+      .toBe('Niveau estimé : paroxysme, inchangé (borne de l’échelle).');
+    expect(describeEstimatedLevel('relacher', { previous: 0, current: 0 }))
+      .toBe('Niveau estimé : calme, inchangé (borne de l’échelle).');
+    expect(describeEstimatedLevel('basculer', { previous: 3, current: 3 })).toBe('Niveau estimé : crise, inchangé.');
   });
 });

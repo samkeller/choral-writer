@@ -27,8 +27,11 @@ export type StoryDirectionRates = {
   directedTurns: number;
   /** Share of directed turns with at least one nudge. */
   nudgeShare: number;
-  /** Share of directed turns where a `complication` nudge thwarted an attempt of the protagonist. */
-  thwartedShare: number;
+  /**
+   * Share of directed turns where the Director pushed a `complication`: an intention, since the Narrator
+   * may not thwart the attempt after all.
+   */
+  complicationShare: number;
 };
 
 /** Null for a story without any successful direction. */
@@ -38,6 +41,6 @@ export function storyDirectionRates(metrics: readonly TurnMetrics[]): StoryDirec
   return {
     directedTurns: directed.length,
     nudgeShare: directed.filter((direction) => direction.nudges.length > 0).length / directed.length,
-    thwartedShare: directed.filter((direction) => direction.nudges.includes('complication')).length / directed.length,
+    complicationShare: directed.filter((direction) => direction.nudges.includes('complication')).length / directed.length,
   };
 }

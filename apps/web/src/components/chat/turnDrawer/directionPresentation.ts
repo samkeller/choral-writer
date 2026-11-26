@@ -2,13 +2,25 @@ import type { NudgeType, TensionTarget } from '@choral-writer/shared';
 
 import { type TensionLevels, tensionScale } from './directionInsights';
 
-/** What a Director does to the tension, as a verb phrase. */
-export const tensionMoves = {
-  monter: 'fait monter la tension',
-  tenir: 'maintient la tension',
-  relacher: 'relâche la tension',
-  basculer: 'fait basculer la scène',
+/** The tension move the Director decided, in one word: the actual data, unlike the estimated level. */
+export const tensionMoveLabels = {
+  monter: 'monte',
+  tenir: 'tient',
+  relacher: 'relâche',
+  basculer: 'bascule',
 } satisfies Record<TensionTarget, string>;
+
+/** The tension move the Director decided, in a sentence. */
+export const tensionMoveSentences = {
+  monter: 'Le Directeur fait monter la tension.',
+  tenir: 'Le Directeur maintient la tension.',
+  relacher: 'Le Directeur relâche la tension.',
+  basculer: 'Le Directeur fait basculer la scène.',
+} satisfies Record<TensionTarget, string>;
+
+/** Shown wherever an estimated level appears, so that it never reads as a decision of the Director. */
+export const TENSION_ESTIMATE_HINT =
+  'Niveau estimé : il cumule les mouvements du Directeur depuis le début du récit, en partant de « calme ».';
 
 /** Which way the pressure of a nudge pushes the telling of a turn. */
 export const nudgeDescriptions = {
@@ -19,20 +31,11 @@ export const nudgeDescriptions = {
   relance: 'donner prise au joueur après une stagnation',
 } satisfies Record<NudgeType, string>;
 
-/** The tension move in a sentence, placed on the named scale when the story levels are known. */
-export function describeTensionMove(target: TensionTarget, levels: TensionLevels | null): string {
-  const move = `Le Directeur ${tensionMoves[target]}`;
-  if (!levels) return `${move}.`;
+/** The estimated level of a turn, told as an estimate; a move that hits an end of the scale leaves it unchanged. */
+export function describeEstimatedLevel(target: TensionTarget, levels: TensionLevels): string {
   const from = tensionScale[levels.previous];
   const to = tensionScale[levels.current];
-  switch (target) {
-    case 'monter':
-      return levels.current > levels.previous ? `${move} d’un cran : de ${from} à ${to}.` : `${move}, déjà au plus haut : ${to}.`;
-    case 'relacher':
-      return levels.current < levels.previous ? `${move} d’un cran : de ${from} à ${to}.` : `${move}, déjà au plus bas : ${to}.`;
-    case 'tenir':
-      return `${move} : ${to}.`;
-    case 'basculer':
-      return `${move}, sans changer le niveau estimé : ${to}.`;
-  }
+  if (levels.current !== levels.previous) return `Niveau estimé : de ${from} à ${to}.`;
+  const bounded = target === 'monter' || target === 'relacher';
+  return `Niveau estimé : ${to}, inchangé${bounded ? ' (borne de l’échelle)' : ''}.`;
 }

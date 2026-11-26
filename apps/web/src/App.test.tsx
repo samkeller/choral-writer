@@ -1131,7 +1131,7 @@ describe('projects and chat screens', () => {
     expect(await drawer.findByRole('button', { name: /^Coût : 0,0004 \$/ })).toBeTruthy();
     expect(drawer.getByRole('button', { name: /^Durée : 2,3 s, Narrateur : 1,5 s/ })).toBeTruthy();
     expect(drawer.getByRole('button', { name: /^Entrée du Narrateur : 900 tokens, premier tour/ })).toBeTruthy();
-    expect(drawer.getByRole('button', { name: 'Tension visée : —, direction en échec' })).toBeTruthy();
+    expect(drawer.getByRole('button', { name: 'Tension : —, direction en échec' })).toBeTruthy();
     expect(drawer.getByText('Direction en échec après 2 tentative(s) : le Narrateur a reçu le whiteboard complet.')).toBeTruthy();
 
     fireEvent.click(drawer.getByRole('button', { name: 'Coût et durée par appel →' }));
