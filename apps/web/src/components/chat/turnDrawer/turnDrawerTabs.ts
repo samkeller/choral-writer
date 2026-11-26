@@ -3,6 +3,7 @@ export const turnDrawerTabs = [
   { value: 'context', label: 'Contexte' },
   { value: 'cost', label: 'Coût et durée' },
   { value: 'direction', label: 'Direction' },
+  { value: 'developments', label: 'Développements' },
   { value: 'configuration', label: 'Configuration' },
   { value: 'memory', label: 'Mémoire' },
   { value: 'story', label: 'Récit' },

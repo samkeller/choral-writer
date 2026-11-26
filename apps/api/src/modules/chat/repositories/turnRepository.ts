@@ -1,7 +1,9 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { v7 as uuidv7 } from 'uuid';
-import type { ChatTurn, MemoryResult, TurnConfiguration, TurnDirection } from '@choral-writer/shared';
+import type {
+  AttributedDevelopment, ChatTurn, MemoryResult, TurnConfiguration, TurnDirection,
+} from '@choral-writer/shared';
 
 import type { Database, Transaction } from '../../../db/client.js';
 import { chatMessages } from '../../../db/entities/chat/message.js';
@@ -110,6 +112,14 @@ export class ChatTurnRepository {
   /** Only a running execution records its direction. */
   async recordDirection(id: string, direction: TurnDirection): Promise<boolean> {
     const [row] = await this.database.update(chatTurns).set({ direction }).where(and(
+      eq(chatTurns.projectId, this.projectId), eq(chatTurns.id, id), eq(chatTurns.status, 'running'),
+    )).returning({ id: chatTurns.id });
+    return row !== undefined;
+  }
+
+  /** Only a running execution records its developments. */
+  async recordDevelopments(id: string, developments: AttributedDevelopment[]): Promise<boolean> {
+    const [row] = await this.database.update(chatTurns).set({ developments }).where(and(
       eq(chatTurns.projectId, this.projectId), eq(chatTurns.id, id), eq(chatTurns.status, 'running'),
     )).returning({ id: chatTurns.id });
     return row !== undefined;

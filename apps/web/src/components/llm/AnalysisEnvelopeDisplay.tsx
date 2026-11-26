@@ -3,6 +3,7 @@ import { Badge, Group, Paper, Select, Stack, Text } from '@mantine/core';
 import type { AnalysisEnvelope } from '@choral-writer/shared';
 
 import styles from './AnalysisEnvelopeDisplay.module.css';
+import { DevelopmentScopeBadge } from './DevelopmentScopeBadge';
 
 const importanceOrder = { HIGH: 0, NORMAL: 1, LOW: 2 };
 
@@ -51,6 +52,7 @@ export function AnalysisEnvelopeDisplay({
             <Group gap="xs" mb={4}>
               <Badge variant="light" color="blue">{item.kind}</Badge>
               <ImportanceBadge importance={item.importance} />
+              <DevelopmentScopeBadge item={item} />
             </Group>
             <Text size="sm">{item.text}</Text>
           </div>

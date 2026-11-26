@@ -1,6 +1,8 @@
 import { z } from 'zod';
 
-import { analysisEnvelopeSchema, nudgeTypeSchema, tensionTargetSchema, turnDirectionSchema } from '../../pipeline.js';
+import {
+  nudgeTypeSchema, recordedAnalysisEnvelopeSchema, tensionTargetSchema, turnDevelopmentsSchema, turnDirectionSchema,
+} from '../../pipeline.js';
 import { chatExecutionParamsSchema, turnConfigurationSchema } from './turn.js';
 import { memoryContextSchema } from '../../memories.js';
 import { costBasisSchema } from '../../usage/index.js';
@@ -54,7 +56,7 @@ export const analysisTraceSchema = z.object({
   status: traceStatusSchema,
   durationMs: z.number().int().nonnegative(),
   attempts: z.number().int().positive(),
-  envelope: analysisEnvelopeSchema.nullable(),
+  envelope: recordedAnalysisEnvelopeSchema.nullable(),
 });
 
 /** A failed direction means the narrator fell back to the whole whiteboard. */
@@ -91,6 +93,11 @@ export const turnTraceSummarySchema = z.object({
   analysis: z.array(analysisTraceSchema),
   /** Null when the turn ran without a Director. */
   direction: directionTraceSchema.nullable(),
+  /**
+   * What happened in the story world during the turn: the developments the Director retained, or all of
+   * them without a direction. Null for a turn recorded before developments were.
+   */
+  developments: turnDevelopmentsSchema.nullable(),
   narrator: narratorTraceSchema.nullable(),
   calls: z.array(traceCallSummarySchema),
   /** Étapes dans l'ordre d'exécution, sans les relances ultérieures de la mémoire. */

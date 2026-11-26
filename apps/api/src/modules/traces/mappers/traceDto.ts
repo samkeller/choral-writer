@@ -1,8 +1,9 @@
 import type {
-  AnalysisTrace, DirectionTrace, NarratorTrace, StageDuration, TraceCallDetail, TraceCallSummary, TurnConfiguration,
-  TurnConfigurationChange, TurnDirection, TurnDirectionMetrics, TurnMetrics, TurnTraceSummary,
+  AnalysisTrace, AttributedDevelopment, DirectionTrace, NarratorTrace, StageDuration, TraceCallDetail, TraceCallSummary,
+  TurnConfiguration, TurnConfigurationChange, TurnDevelopments, TurnDirection, TurnDirectionMetrics, TurnMetrics,
+  TurnTraceSummary,
 } from '@choral-writer/shared';
-import { analysisEnvelopeSchema, traceCallDetailSchema } from '@choral-writer/shared';
+import { recordedAnalysisEnvelopeSchema, traceCallDetailSchema } from '@choral-writer/shared';
 
 import type { MetricCallRecord, TraceDetailRecord, TraceSummaryRecord } from '../repositories/traceRepository.js';
 
@@ -44,7 +45,10 @@ export function toTraceCallDetailDto(trace: TraceDetailRecord, turnId: string): 
 }
 
 export function toTurnTraceSummaryDto(
-  turn: { id: string; configuration: TurnConfiguration | null; direction: TurnDirection | null; completedAt: Date | null },
+  turn: {
+    id: string; configuration: TurnConfiguration | null; direction: TurnDirection | null;
+    developments: AttributedDevelopment[] | null; completedAt: Date | null;
+  },
   traces: readonly TraceSummaryRecord[],
 ): TurnTraceSummary {
   const turnId = turn.id;
@@ -103,6 +107,7 @@ export function toTurnTraceSummaryDto(
     turnId,
     analysis,
     direction: directionTrace,
+    developments: turn.developments && splitByScope(turn.developments),
     narrator,
     calls: traces.map((trace) => toTraceCallSummaryDto(trace, turnId)),
     timeline,
@@ -125,6 +130,13 @@ export function toTurnMetricsDto(
     narratorInputTokens: narratorCall?.inputTokens ?? null,
     configurationChanges,
     direction: toDirectionMetrics(turn.direction, calls),
+  };
+}
+
+function splitByScope(developments: readonly AttributedDevelopment[]): TurnDevelopments {
+  return {
+    scene: developments.filter((development) => development.item.scope === 'scene'),
+    offscreen: developments.filter((development) => development.item.scope === 'offscreen'),
   };
 }
 
@@ -192,7 +204,7 @@ function parseAnalysisEnvelope(response: string | null) {
   if (!response) return null;
   try {
     const parsed: unknown = JSON.parse(response);
-    const result = analysisEnvelopeSchema.safeParse(parsed);
+    const result = recordedAnalysisEnvelopeSchema.safeParse(parsed);
     return result.success ? result.data : null;
   } catch (error) {
     if (error instanceof SyntaxError) return null;

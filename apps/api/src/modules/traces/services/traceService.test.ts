@@ -39,7 +39,7 @@ type RepositoryMethod = 'findTurn' | 'findBranchHead' | 'listAncestry' | 'listMe
 
 function repositoryMock(overrides: Partial<Record<RepositoryMethod, ReturnType<typeof vi.fn>>> = {}) {
   return {
-    findTurn: vi.fn(async () => tracedTurn(turnId, null)),
+    findTurn: vi.fn(async () => ({ ...tracedTurn(turnId, null), developments: null })),
     findBranchHead: vi.fn(async () => null),
     listAncestry: vi.fn(async () => []),
     listMetricCalls: vi.fn(async () => []),
@@ -62,7 +62,7 @@ describe('TraceService', () => {
 
   it('returns the configuration the turn ran with, or null for a turn that predates recording', async () => {
     const configuration = { systemPrompt: 'Prompt.', agents: [] };
-    const recorded = repositoryMock({ findTurn: vi.fn(async () => tracedTurn(turnId, null, configuration)) });
+    const recorded = repositoryMock({ findTurn: vi.fn(async () => ({ ...tracedTurn(turnId, null, configuration), developments: null })) });
 
     expect((await new TraceService(recorded).summary(projectId, turnId)).configuration).toEqual(configuration);
     expect((await new TraceService(repositoryMock()).summary(projectId, turnId)).configuration).toBeNull();

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { AttributedDevelopment } from '@choral-writer/shared';
 
 import type { TraceDetailRecord } from '../repositories/traceRepository.js';
 import { toTraceCallDetailDto, toTraceCallSummaryDto, toTurnMetricsDto, toTurnTraceSummaryDto } from './traceDto.js';
@@ -9,7 +10,7 @@ const analysisVersionId = '019ad30c-19b0-7000-8000-000000000103';
 const analysisCallId = '019ad30c-19b0-7000-8000-000000000104';
 const narratorCallId = '019ad30c-19b0-7000-8000-000000000105';
 
-const runningTurn = { id: turnId, configuration: null, direction: null, completedAt: null };
+const runningTurn = { id: turnId, configuration: null, direction: null, developments: null, completedAt: null };
 
 function trace(overrides: Partial<TraceDetailRecord> = {}): TraceDetailRecord {
   return {
@@ -64,7 +65,7 @@ describe('trace DTO mapping', () => {
       id: '019ad30c-19b0-7000-8000-000000000112', stage: 'guardian', durationMs: 60_000, costMicroUsd: 20,
       createdAt: new Date('2025-01-01T01:00:00.000Z'),
     });
-    const finished = { id: turnId, configuration: null, direction: null, completedAt };
+    const finished = { id: turnId, configuration: null, direction: null, developments: null, completedAt };
 
     const summary = toTurnTraceSummaryDto(finished, [narrator, guardian, retry]);
     expect(summary.timeline).toEqual([
@@ -206,6 +207,21 @@ describe('trace DTO mapping', () => {
     expect(toTurnTraceSummaryDto(runningTurn, [invalid, trace({ costBasis: 'unpriced' })]).direction)
       .toMatchObject({ status: 'error', direction: null, attempts: 1, cost: { microUsd: 100, complete: true } });
     expect(toTurnTraceSummaryDto(runningTurn, []).direction).toBeNull();
+  });
+
+  it('splits the developments of the turn into scene and off-screen, and keeps older turns apart', () => {
+    const scene: AttributedDevelopment = { agent: 'Monde', item: {
+      kind: 'development', characters: ['Mara'], scope: 'scene', text: 'La lampe s’éteint.', importance: 'HIGH',
+    } };
+    const offscreen: AttributedDevelopment = { agent: 'Absents', item: {
+      kind: 'development', characters: [], scope: 'offscreen', text: 'Un orage approche.', importance: 'LOW',
+    } };
+
+    expect(toTurnTraceSummaryDto({ ...runningTurn, developments: [offscreen, scene] }, []).developments)
+      .toEqual({ scene: [scene], offscreen: [offscreen] });
+    expect(toTurnTraceSummaryDto({ ...runningTurn, developments: [] }, []).developments)
+      .toEqual({ scene: [], offscreen: [] });
+    expect(toTurnTraceSummaryDto(runningTurn, []).developments).toBeNull();
   });
 
   it('reduces the direction of a turn to its tension and nudge types, telling a failed direction from none', () => {
