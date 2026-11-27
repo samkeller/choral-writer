@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Alert, Button, Center, Checkbox, Group, Loader, Modal, Select, Stack, Text, Textarea } from '@mantine/core';
+import { Alert, Button, Center, Group, Loader, Modal, Stack, Text, Textarea } from '@mantine/core';
 import { IconPencilPlus } from '@tabler/icons-react';
 import type {
   Agent, AgentVersionInput, ChatTurn, Project, ReplayConfiguration, TurnConfiguration,
@@ -8,11 +8,9 @@ import type {
 import { publishNextVersion } from '../../api/agents/agentsApi';
 import { getTurnTraceSummary } from '../../api/chat/traceApi';
 import { getErrorMessage } from '../../api/client';
-import {
-  agentSelections, replaceVersion, requiredVersionOptions, selectVersion, selectedVersion, toggleOptionalAgent,
-  useAgentTeam,
-} from '../../hooks/useAgentTeam';
+import { agentSelections, selectedVersion, useAgentTeam } from '../../hooks/useAgentTeam';
 import { AgentForm } from '../agents/AgentForm';
+import { AgentTeamPipeline } from '../agents/AgentTeamPipeline';
 import { IconAction } from '../atoms/IconAction';
 
 type Team = ReturnType<typeof useAgentTeam>;
@@ -113,11 +111,13 @@ function ReplayForm({ project, failed, start, onClose, onReplay }: {
           </Alert>
         )}
         {!team.loading && !team.error && <>
-          <RequiredAgentRow team={team} output="narrative" label="Narrateur" onEditVersion={editVersion} />
-          <RequiredAgentRow team={team} output="memory_proposals" label="Gardien" onEditVersion={editVersion} />
-          <OptionalAgents team={team} output="envelope" title="Agents d’analyse" onEditVersion={editVersion}
-            empty="Aucun agent d’analyse dans la bibliothèque." />
-          <OptionalAgents team={team} output="direction" title="Directeur (facultatif, un seul)" onEditVersion={editVersion} />
+          <AgentTeamPipeline team={team} extras={(agent) => ({
+            actions: (
+              <IconAction label={`Nouvelle version de ${displayName(team, agent)}`} onClick={() => editVersion(agent)}>
+                <IconPencilPlus size={18} aria-hidden="true" />
+              </IconAction>
+            ),
+          })} />
           <Textarea label="Prompt du projet" value={systemPrompt} autosize minRows={4} maxRows={12}
             maxLength={50_000} onChange={(event) => setSystemPrompt(event.currentTarget.value)} />
         </>}
@@ -128,68 +128,6 @@ function ReplayForm({ project, failed, start, onClose, onReplay }: {
         </Group>
       </Stack>
     </form>
-  );
-}
-
-function RequiredAgentRow({ team, output, label, onEditVersion }: {
-  team: Team;
-  output: Exclude<Agent['output'], 'envelope'>;
-  label: string;
-  onEditVersion: (agent: Agent) => void;
-}) {
-  const selected = team.agents.find((agent) => agent.output === output && selectedVersion(agent, team.versionIds));
-  return (
-    <Group align="flex-end" gap="xs" wrap="nowrap">
-      <Select label={label} style={{ flex: 1, minWidth: 0 }} searchable allowDeselect={false}
-        value={selected ? selectedVersion(selected, team.versionIds)?.id ?? null : null}
-        placeholder="Choisir cet agent et sa version" data={requiredVersionOptions(team.agents, output)}
-        onChange={(versionId) => {
-          if (versionId) team.change(selectVersion(team.versionIds, team.agents, output, versionId));
-        }} />
-      {selected && (
-        <IconAction label={`Nouvelle version de ${displayName(team, selected)}`} onClick={() => onEditVersion(selected)}>
-          <IconPencilPlus size={18} aria-hidden="true" />
-        </IconAction>
-      )}
-    </Group>
-  );
-}
-
-/** Agents a team may go without: analysis agents, and the Director (at most one). */
-function OptionalAgents({ team, output, title, empty, onEditVersion }: {
-  team: Team;
-  output: Extract<Agent['output'], 'envelope' | 'direction'>;
-  title: string;
-  /** Shown when the library has none; without it, the section is hidden. */
-  empty?: string;
-  onEditVersion: (agent: Agent) => void;
-}) {
-  const candidates = team.agents.filter((agent) => agent.output === output);
-  if (candidates.length === 0 && !empty) return null;
-  return (
-    <Stack gap="xs">
-      <Text size="sm" fw={500}>{title}</Text>
-      {candidates.map((agent) => {
-        const name = displayName(team, agent);
-        const selected = selectedVersion(agent, team.versionIds);
-        return (
-          <Group key={agent.id} gap="xs" wrap="nowrap">
-            <Checkbox label={name} checked={Boolean(selected)} style={{ flex: 1, minWidth: 0 }}
-              onChange={(event) => team.change(toggleOptionalAgent(team.versionIds, team.agents, agent, event.currentTarget.checked))} />
-            <Select aria-label={`Version de ${name}`} w={160} allowDeselect={false} disabled={!selected}
-              value={(selected ?? agent.versions[0])?.id ?? null}
-              data={agent.versions.map((version) => ({ value: version.id, label: `v${version.version} · ${version.name}` }))}
-              onChange={(versionId) => {
-                if (versionId && selected) team.change(replaceVersion(team.versionIds, agent, versionId));
-              }} />
-            <IconAction label={`Nouvelle version de ${name}`} onClick={() => onEditVersion(agent)}>
-              <IconPencilPlus size={18} aria-hidden="true" />
-            </IconAction>
-          </Group>
-        );
-      })}
-      {candidates.length === 0 && <Text size="sm" c="dimmed">{empty}</Text>}
-    </Stack>
   );
 }
 
