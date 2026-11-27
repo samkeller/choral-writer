@@ -20,6 +20,10 @@ export const projectSchema = projectDtoSchema.extend({
 
 export const projectParamsSchema = z.object({ projectId: z.string().uuid() });
 
+/** The story branch: the one the project opens on. */
+export const projectDefaultBranchInputSchema = z.object({ branchId: z.string().uuid() }).strict();
+
 export type ProjectInput = z.infer<typeof projectInputSchema>;
+export type ProjectDefaultBranchInput = z.infer<typeof projectDefaultBranchInputSchema>;
 export type Project = z.infer<typeof projectSchema>;
 export type ProjectDto = z.infer<typeof projectDtoSchema>;

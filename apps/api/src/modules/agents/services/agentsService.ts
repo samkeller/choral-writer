@@ -4,7 +4,7 @@ import { ApiError, notfoundError } from '../../../errors/errors.js';
 import type { Database } from '../../../db/client.js';
 import type { ProjectsService } from '../../projects/services/projectServices.js';
 import { AgentRepository } from '../repository/agentsRepository.js';
-import { assertValidAgentSelection } from './agentSelection.js';
+import { replaceProjectTeam } from './agentSelection.js';
 import { isBuiltInAgent } from '../repository/agentLibrary.js';
 
 export class AgentsService {
@@ -65,9 +65,7 @@ export class AgentsService {
   async configure(projectId: string, input: ProjectAgentsInput): Promise<ProjectAgent[]> {
     return this.projects.withLockedProject(projectId, async (_project, tx) => {
       const repository = new AgentRepository(tx);
-      const resolved = await repository.resolveSelections(input.agents);
-      assertValidAgentSelection(input.agents, resolved);
-      await repository.replace(projectId, resolved);
+      await replaceProjectTeam(repository, projectId, input.agents);
       return repository.listForProject(projectId);
     });
   }

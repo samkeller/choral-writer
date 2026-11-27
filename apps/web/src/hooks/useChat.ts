@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import type { ChatBranch, ChatCommand, ChatHistory, Message, Project, ReplayConfiguration } from '@choral-writer/shared';
 
 import { ClientApiError, getErrorMessage } from '../api/client';
-import { getProject } from '../api/projects/projectsApi';
+import { getProject, setDefaultBranch } from '../api/projects/projectsApi';
 import { getBranches, getChatHistory, streamTurn } from '../api/chat/chatApi';
 import { getMemory, retryMemory } from '../api/memories/memoriesApi';
 import { initialPipelineProgress, updatePipelineProgress } from './chatPipelineProgress';
@@ -90,6 +90,15 @@ export function useChat(projectId: string) {
       const next = new URLSearchParams(current);
       next.set('branch', branchId);
       return next;
+    });
+  }
+
+  /** Makes the branch the story branch, the one the project opens on, then shows it. */
+  function chooseBranch(branchId: string) {
+    if (activeRequest.current) return;
+    // Shown once saved, so that the reload that follows reads the project as it now is.
+    void setDefaultBranch(projectId, branchId).then(() => selectBranch(branchId), (chooseError: unknown) => {
+      setError(`Cette branche n’a pas pu devenir celle du récit : ${getErrorMessage(chooseError)}`);
     });
   }
 
@@ -239,6 +248,9 @@ export function useChat(projectId: string) {
   return {
     project, branches, history, messages, loading, error, pending, partial, pipelineProgress, failedBranchId,
     selectBranch,
+    chooseBranch,
+    /** Takes in a project the server changed, such as after an adoption, without reloading the conversation. */
+    replaceProject: setProject,
     send: (content: string) => execute({ operation: 'send', content }),
     /** Without a configuration, a regeneration runs with the project's. */
     regenerate: (configuration?: ReplayConfiguration) => execute(replay('regenerate', configuration)),

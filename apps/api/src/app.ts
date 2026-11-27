@@ -14,7 +14,9 @@ import { registerProjectRoutes } from './modules/projects/routes/projectRoutes.j
 import type { ProjectsService } from './modules/projects/services/projectServices.js';
 import { registerAgentRoutes } from './modules/agents/routes/agentRoutes.js';
 import type { AgentsService } from './modules/agents/services/agentsService.js';
-import { ChatController, type ChatService } from './modules/chat/index.js';
+import {
+  ChatController, registerVariantAdoptionRoutes, type ChatService, type VariantAdoptionService,
+} from './modules/chat/index.js';
 import { notfoundError } from './errors/errors.js';
 import { registerChatRoutes } from './modules/chat/routes/chatRoutes.js';
 import { registerTraceRoutes } from './modules/traces/routes/traceRoutes.js';
@@ -29,7 +31,7 @@ export function buildApp(
   config: AuthConfig,
   services?: {
     projects: ProjectsService; agents: AgentsService; chat: ChatService; traces: TraceService;
-    memories?: MemoriesService; attribution?: AttributionService;
+    memories?: MemoriesService; attribution?: AttributionService; adoption?: VariantAdoptionService;
   },
 ) {
   const isDevelopment = config.nodeEnv === 'development';
@@ -111,6 +113,7 @@ export function buildApp(
     registerChatRoutes(app, new ChatController(services.chat));
     registerTraceRoutes(app, new TraceController(services.traces));
     if (services.attribution) registerAttributionRoutes(app, new AttributionController(services.attribution));
+    if (services.adoption) registerVariantAdoptionRoutes(app, services.adoption);
     if (services.memories) registerMemoryRoutes(app, new MemoryController(services.memories, services.chat));
   }
 

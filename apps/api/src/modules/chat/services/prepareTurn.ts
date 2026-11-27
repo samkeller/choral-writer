@@ -32,7 +32,10 @@ export async function prepareTurn(services: ChatEntityServices, command: ChatCom
     retryOfTurnId: null,
     regeneratedFromTurnId: null,
   };
-  if (command.operation === 'retry') return { ...input, retryOfTurnId: source.id };
+  // A retried variant stays a variant of the same original: comparable, adoptable, and replayed from its memory.
+  if (command.operation === 'retry') {
+    return { ...input, retryOfTurnId: source.id, regeneratedFromTurnId: source.regeneratedFromTurnId };
+  }
   const alternative = await services.branches.fork(branch, source.parentTurnId);
   return { ...input, branchId: alternative.id, regeneratedFromTurnId: source.id };
 }

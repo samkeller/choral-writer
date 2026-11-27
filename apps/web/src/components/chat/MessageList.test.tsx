@@ -129,6 +129,26 @@ describe('turn lines', () => {
 
     expect(onInspectTurn.mock.calls).toEqual([[firstTurnId], [failedTurnId]]);
   });
+
+  it('offers to compare a completed variant with its original, and only a variant', () => {
+    const onCompareTurn = vi.fn();
+    const variantInput: Message = { ...userMessage, id: 'user-3' };
+    const variantAnswer: Message = { ...assistantMessage, id: 'assistant-3' };
+    const variant = { ...turn('019ad30c-19b0-7000-8000-000000000703', variantInput, variantAnswer), regeneratedFromTurnId: firstTurnId };
+    render(
+      <MantineProvider env="test" forceColorScheme="dark">
+        <MessageList messages={[userMessage, assistantMessage, variantInput, variantAnswer]}
+          turns={[turn(firstTurnId, userMessage, assistantMessage), variant]}
+          partial="" pending={false} pipelineProgress={null} turnMetrics={new Map()}
+          inspectedTurnId={null} onInspectTurn={vi.fn()} onCompareTurn={onCompareTurn} />
+      </MantineProvider>,
+    );
+
+    const compare = screen.getAllByRole('button', { name: 'Comparer avec l’original' });
+    expect(compare).toHaveLength(1);
+    fireEvent.click(compare[0]!);
+    expect(onCompareTurn).toHaveBeenCalledWith(variant.id);
+  });
 });
 
 describe('PipelineProgress', () => {

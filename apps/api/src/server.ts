@@ -4,7 +4,7 @@ import { db, pool } from './db/client.js';
 import { callLLM } from './llm/index.js';
 import { AgentsService } from './modules/agents/services/agentsService.js';
 import { ProjectsService } from './modules/projects/services/projectServices.js';
-import { createChatBranchService, createChatService } from './modules/chat/index.js';
+import { VariantAdoptionService, createChatBranchService, createChatService } from './modules/chat/index.js';
 import { createAttributionService, createTraceService } from './modules/traces/index.js';
 import { MemoriesService } from './modules/memories/services/memoriesService.js';
 
@@ -22,6 +22,7 @@ async function main(): Promise<void> {
     traces,
     memories,
     attribution: createAttributionService(db, callLLM, traces),
+    adoption: new VariantAdoptionService(projects),
   });
 
   try {

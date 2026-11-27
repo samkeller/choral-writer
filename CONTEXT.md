@@ -10,6 +10,8 @@ Vocabulaire du domaine. Ce fichier ne décrit pas l'implémentation.
 - **PNJ** : personnage non joué par l'utilisateur.
 - **Hors champ** : ce qui existe et évolue dans le monde du récit sans apparaître dans la scène en cours.
 - **Développement** : un fait qui arrive dans le monde du récit pendant un tour, dans la scène ou hors champ. Un développement hors champ est arrivé même si le récit ne le raconte pas.
+- **Branche du récit** : la branche sur laquelle le récit continue, celle qu'ouvre le projet. Choisir une branche en fait la branche du récit.
+- **Variante** : une nouvelle version d'un tour, rejouée depuis le même point du récit sur une nouvelle branche, souvent avec une autre configuration. Le tour dont elle découle est la **version d'origine**. **Adopter** la variante fait de sa configuration celle du projet et de sa branche la branche du récit ; garder l'original ne change rien.
 - **Intention** : ce qu'un personnage poursuit d'un tour à l'autre (objectif, plan en cours, situation, relations utiles).
 
 ## Pipeline

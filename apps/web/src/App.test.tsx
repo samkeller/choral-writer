@@ -603,9 +603,15 @@ describe('projects and chat screens', () => {
       }],
     };
     const histories = new Map([[branch.id, original]]);
+    /** The project as the server holds it: choosing a branch in the header makes it the story branch. */
+    let stored = project;
     adapter.mockImplementation(async (config) => {
       if (config.url === '/session') return respond(config, 200, { authenticated: true });
-      if (config.url === `/projects/${project.id}`) return respond(config, 200, project);
+      if (config.url === `/projects/${project.id}`) return respond(config, 200, stored);
+      if (config.url === `/projects/${project.id}/default-branch` && config.method === 'put') {
+        stored = { ...stored, defaultBranchId: JSON.parse(String(config.data)).branchId };
+        return respond(config, 200, stored);
+      }
       if (config.url === `/projects/${project.id}/branches`) {
         return respond(config, 200, [...histories.values()].map((item) => item.branch));
       }
@@ -635,8 +641,79 @@ describe('projects and chat screens', () => {
         }],
       };
     }
-    return { original, histories, alternativeId, newTurnId, alternative, user };
+    return {
+      original, histories, alternativeId, newTurnId, alternative, user,
+      storedProject: () => stored,
+      adopt: (adopted: ProjectDto) => { stored = adopted; },
+    };
   }
+
+  /** The alternative displayed, with what the comparison reads for both versions and the adoption route. */
+  function comparableChat() {
+    const fixture = existingChat();
+    fixture.histories.set(fixture.alternativeId, fixture.alternative('completed'));
+    const chatAdapter = adapter.getMockImplementation()!;
+    const summaryOf = (turnId: string, prose: string): TurnTraceSummary => ({
+      turnId, analysis: [], direction: null, developments: null, calls: [], timeline: [], durationMs: 1000,
+      narrator: { status: 'success', durationMs: 1000, prose }, cost: { microUsd: 100, complete: true }, configuration: null,
+    });
+    const summaries = new Map([
+      [fixture.original.turns[0]!.id, summaryOf(fixture.original.turns[0]!.id, 'Réponse originale.')],
+      [fixture.newTurnId, summaryOf(fixture.newTurnId, 'Réponse alternative.')],
+    ]);
+    adapter.mockImplementation(async (config) => {
+      const [, turnId, resource] = config.url?.match(/turns\/([^/]+)\/(traces|attribution|adoption)$/) ?? [];
+      if (resource === 'traces') return respond(config, 200, summaries.get(turnId!));
+      if (resource === 'attribution') return respond(config, 200, {
+        attribution: { whatHappened: 'Un résumé générique.', contributions: [], callId: turnId, createdAt: project.createdAt },
+        failure: null, cost: { microUsd: 1, complete: true, calls: 1 },
+      });
+      if (resource === 'adoption' && turnId === fixture.newTurnId) {
+        fixture.adopt({ ...fixture.storedProject(), systemPrompt: 'Prompt de la variante.', defaultBranchId: fixture.alternativeId });
+        return respond(config, 200, fixture.storedProject());
+      }
+      return chatAdapter(config);
+    });
+    const requestsTo = (pattern: RegExp) => adapter.mock.calls.filter(([config]) => pattern.test(config.url ?? ''));
+    return { ...fixture, requestsTo };
+  }
+
+  it('adopts a compared variant, then makes the original the story branch again from the header', async () => {
+    const fixture = comparableChat();
+    renderApp(`/projects/${project.id}?branch=${fixture.alternativeId}`);
+    fireEvent.click(await screen.findByRole('button', { name: 'Comparer avec l’original' }));
+    const drawer = within(await screen.findByRole('dialog', { name: 'Comparer deux versions du tour' }));
+    await drawer.findAllByText('Un résumé générique.');
+
+    fireEvent.click(drawer.getByRole('button', { name: 'Adopter la variante' }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Comparer deux versions du tour' })).toBeNull());
+    expect(fixture.storedProject().defaultBranchId).toBe(fixture.alternativeId);
+    expect(screen.getByTestId('location').textContent).toContain(`branch=${fixture.alternativeId}`);
+    expect(screen.getByText('Réponse alternative.')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Branche de conversation' }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Principale' }));
+
+    await screen.findByText('Réponse originale.');
+    expect(screen.getByTestId('location').textContent).toContain(`branch=${branch.id}`);
+    expect(fixture.storedProject().defaultBranchId).toBe(branch.id);
+  });
+
+  it('keeps the original: back on its branch, without any request that changes the project', async () => {
+    const fixture = comparableChat();
+    renderApp(`/projects/${project.id}?branch=${fixture.alternativeId}`);
+    fireEvent.click(await screen.findByRole('button', { name: 'Comparer avec l’original' }));
+    const drawer = within(await screen.findByRole('dialog', { name: 'Comparer deux versions du tour' }));
+    await drawer.findAllByText('Un résumé générique.');
+
+    fireEvent.click(drawer.getByRole('button', { name: 'Garder l’original' }));
+
+    await screen.findByText('Réponse originale.');
+    expect(screen.getByTestId('location').textContent).toContain(`branch=${branch.id}`);
+    expect(fixture.requestsTo(/\/(adoption|default-branch)$/)).toEqual([]);
+    expect(fixture.storedProject()).toEqual(project);
+  });
 
   it.each(['success', 'failed', 'conflict'] as const)(
     'retries only memory inside the story timeline without navigating or changing narration (%s)',

@@ -159,6 +159,7 @@ describe('response DTO boundary', () => {
       get: async () => project,
       create: async () => project,
       update: async () => project,
+      setDefaultBranch: async () => project,
       remove: async () => {},
     });
     registerAgentRoutes(app, {

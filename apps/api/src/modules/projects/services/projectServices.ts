@@ -47,6 +47,14 @@ export class ProjectsService {
     return this.withLockedProject(id, (_project, tx) => new ProjectRepository(tx).update(id, input));
   }
 
+  /** Makes one of the project's branches its story branch, the one it opens on. */
+  setDefaultBranch(id: string, branchId: string): Promise<Project> {
+    return this.withLockedProject(id, async (_project, tx) => {
+      await this.branchesForTransaction(tx, id).get(branchId);
+      return new ProjectRepository(tx).setDefaultBranch(id, branchId);
+    });
+  }
+
   remove(id: string): Promise<void> {
     return this.withLockedProject(id, (_project, tx) => new ProjectRepository(tx).remove(id));
   }
