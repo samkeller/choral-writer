@@ -89,22 +89,25 @@ s'ajoute à ces deux fichiers. `demoRows.test.ts` valide le scénario sans base,
 ## Évaluation de bout en bout
 
 `pnpm eval:v2` joue un scénario fictif de dix saisies (`apps/api/src/evaluation/evaluationScenario.ts`)
-avec deux configurations : une équipe « type V1 », celle d'un nouveau projet (Narrateur et Gardien),
-et une équipe V2 tirée de la bibliothèque (cinq agents d'analyse, Directeur mesuré, Narrateur scénique,
+avec deux configurations : une équipe « type V1 », un nouveau projet comme sur `main` (Narrateur et
+Gardien par défaut, mémoire désactivée), et une équipe V2 tirée de la bibliothèque (cinq agents d'analyse, Directeur mesuré, Narrateur scénique,
 Gardien des Intentions, mémoire activée). Chaque configuration a son projet, créé dans la base de `.env`
 avec les mêmes protections que le seed de démo, et chaque saisie passe par le vrai pipeline (`ChatService`).
 Le script mesure ensuite, depuis les traces, le coût, la durée, les échecs, les replis du Directeur, les
 développements et la part de l'historique. Il fait juger les deux récits en aveugle par deux passes en ordre
-inversé, et relève la friction d'après le code de l'UI, comparé à `origin/main`.
+inversé, et relève la friction d'après le code de l'UI de chaque configuration, `origin/main` pour la V1.
+La V2 change plusieurs facteurs à la fois : l'évaluation compare deux expériences, sans isoler un facteur.
 
 - Sans option, le fournisseur est simulé : aucun appel réseau, les projets sont supprimés à la fin (`--keep` pour les garder).
 - `--estimate` estime le coût réel du scénario complet sans aucun appel au fournisseur : le pipeline joué en
-  simulé fournit les tokens d'entrée, `llm_price` le tarif du modèle `LLM_MODEL`.
+  simulé fournit les tokens d'entrée, `llm_price` le tarif du modèle `LLM_MODEL`. Il demande une base migrée
+  avec un tarif pour ce modèle, et crée puis supprime quatre projets.
 - `--real` appelle le vrai fournisseur et consomme des crédits : à ne lancer qu'avec l'accord du mainteneur.
   Les projets sont gardés pour être relus dans l'application.
 
 Les résultats vont dans `eval-output/`, non versionné. `rapport.md` contient la prose et reste sur le poste ;
-`synthese.md` ne contient que des nombres et des verdicts, et peut être publiée sur un ticket.
+`synthese.md` ne contient que des nombres et des verdicts, et peut être publiée sur un ticket. Ils sont écrits
+avant le jugement puis complétés : un juge qui échoue encore après une relance laisse sa raison, pas un rapport perdu.
 
 ## Variables d'environnement
 

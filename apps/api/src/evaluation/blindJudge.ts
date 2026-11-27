@@ -46,16 +46,28 @@ export function swapped<T>({ presented, key }: Anonymized<T>): Anonymized<T> {
   return { presented: { A: presented.B, B: presented.A }, key: { A: key.B, B: key.A } };
 }
 
+/** Reads « a », « Version B », « Égalité »… as the letter or tie they mean; anything else stays invalid. */
+function normalizeWinner(value: unknown): unknown {
+  if (typeof value !== 'string') return value;
+  const plain = value.normalize('NFD').replace(/\p{Diacritic}/gu, '').trim().toLowerCase().replace(/^version\s+/, '');
+  if (plain === 'a' || plain === 'b') return plain.toUpperCase();
+  return ['egalite', 'egal', 'tie'].includes(plain) ? 'egalite' : value;
+}
+
+/**
+ * Tolerant on form (letter case, accents, extra keys, a missing reason or version), strict on substance:
+ * every criterion must name A, B or a tie. A paid run should not lose its verdict to a cosmetic slip.
+ */
 const criterionVerdictSchema = z.object({
-  winner: z.enum(['A', 'B', 'egalite']),
-  why: z.string().trim().min(1).max(1_000),
-}).strict();
+  winner: z.preprocess(normalizeWinner, z.enum(['A', 'B', 'egalite'])),
+  why: z.string().trim().default('').transform((why) => why.slice(0, 1_000)),
+});
 
 export const judgeVerdictSchema = z.object({
-  v: z.literal(1),
+  v: z.literal(1).optional(),
   criteria: z.object(Object.fromEntries(JUDGE_CRITERIA.map(({ key }) => [key, criterionVerdictSchema])) as
-    Record<CriterionKey, typeof criterionVerdictSchema>).strict(),
-}).strict();
+    Record<CriterionKey, typeof criterionVerdictSchema>),
+});
 
 export type JudgeVerdict = z.infer<typeof judgeVerdictSchema>;
 export type SideVerdict = Record<CriterionKey, { winner: Side | 'egalite'; why: string }>;
@@ -69,7 +81,7 @@ export function deanonymize(verdict: JudgeVerdict, key: Record<Letter, Side>): S
 
 export type CombinedWinner = Side | 'egalite' | 'incertain';
 
-/** A criterion is decided only when every pass agrees; otherwise the order swayed the judge. */
+/** A criterion is decided only when every pass agrees; otherwise position bias or sampling noise decided it. */
 export function combinePasses(passes: readonly SideVerdict[]): Record<CriterionKey, CombinedWinner> {
   return Object.fromEntries(JUDGE_CRITERIA.map(({ key }) => {
     const winners = new Set(passes.map((pass) => pass[key].winner));

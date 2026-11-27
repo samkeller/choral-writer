@@ -52,10 +52,12 @@ function analysisOutput(system: string): string | null {
   const agent = JSON.parse(name) as string;
   return JSON.stringify({
     v: 1, agent, summary: 'Analyse simulée.', items: [
-      { kind: 'observation', text: fillerText(30), importance: 'NORMAL' },
+      // About the typical low output of an analysis (250 tokens), which the Director and the Narrator then read.
+      { kind: 'observation', text: fillerText(80), importance: 'NORMAL' },
+      { kind: 'risque', text: fillerText(50), importance: 'LOW' },
       {
         kind: 'development', characters: ['Personnage simulé'], scope: /hors champ/i.test(agent) ? 'offscreen' : 'scene',
-        text: fillerText(20), importance: 'NORMAL',
+        text: fillerText(25), importance: 'NORMAL',
       },
     ],
   });
@@ -80,6 +82,9 @@ function guardianOutput(user: string, turn: number): string {
     }));
   return JSON.stringify({ v: 2, proposals, tagSuggestions: [] });
 }
+
+/** The judge's first answer misses its criteria, so every simulated run goes through the judge's retry. */
+const INVALID_JUDGE_OUTPUT = JSON.stringify({ v: 1, criteria: {} });
 
 /** Always prefers version A: swapping the order then shows the position bias the second pass detects. */
 function judgeOutput(): string {
@@ -114,6 +119,7 @@ async function* stream(content: string, promptTokens: number): AsyncGenerator<Ch
 /** A client whose Narrator writes about `proseWords` words per turn. */
 export function createSimulatedClient({ proseWords }: { proseWords: number }) {
   let guardianCalls = 0;
+  let judgeCalls = 0;
   return {
     chat: {
       completions: {
@@ -122,7 +128,7 @@ export function createSimulatedClient({ proseWords }: { proseWords: number }) {
           const promptTokens = tokens(params.messages.map(text).join('\n'));
           if (params.stream) return stream(fillerText(proseWords), promptTokens);
           const system = text(params.messages[0]);
-          const content = system.startsWith(JUDGE_ROLE) ? judgeOutput()
+          const content = system.startsWith(JUDGE_ROLE) ? (++judgeCalls === 1 ? INVALID_JUDGE_OUTPUT : judgeOutput())
             : system.includes('Tu diriges ce tour') ? directionOutput(system)
               : system.includes('Tiens la mémoire à jour') ? guardianOutput(text(params.messages[1]), ++guardianCalls)
                 : analysisOutput(system);

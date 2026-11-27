@@ -52,11 +52,20 @@ describe('blind judge verdicts', () => {
       .horsChamp).toBe('egalite');
   });
 
-  it('accepts only the four criteria with a known winner', () => {
-    expect(judgeVerdictSchema.safeParse(verdict('A')).success).toBe(true);
-    expect(judgeVerdictSchema.safeParse({ ...verdict('A'), criteria: { ...verdict('A').criteria, autre: { winner: 'A', why: 'x' } } }).success)
-      .toBe(false);
+  it('tolerates slips of form but not of substance', () => {
+    const loose = {
+      criteria: {
+        resistance: { winner: 'a', why: 'x', score: 3 }, horsChamp: { winner: 'Version B' },
+        nonLineaire: { winner: 'Égalité', why: 'y' }, continuite: { winner: ' b ', why: 'z' },
+      },
+      commentaire: 'en trop',
+    };
+    expect(judgeVerdictSchema.parse(loose).criteria).toEqual({
+      resistance: { winner: 'A', why: 'x' }, horsChamp: { winner: 'B', why: '' },
+      nonLineaire: { winner: 'egalite', why: 'y' }, continuite: { winner: 'B', why: 'z' },
+    });
     expect(judgeVerdictSchema.safeParse({ ...verdict('A'), criteria: { ...verdict('A').criteria, resistance: { winner: 'C', why: 'x' } } }).success)
       .toBe(false);
+    expect(judgeVerdictSchema.safeParse({ v: 1, criteria: {} }).success).toBe(false);
   });
 });

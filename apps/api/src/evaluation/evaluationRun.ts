@@ -1,5 +1,5 @@
 import type { createCallLLM } from '../llm/call-llm.js';
-import { toPublicError } from '../errors/errors.js';
+import { ApiError, toPublicError } from '../errors/errors.js';
 import type { AgentsService } from '../modules/agents/services/agentsService.js';
 import type { ChatService } from '../modules/chat/index.js';
 import type { MemoriesService } from '../modules/memories/services/memoriesService.js';
@@ -74,6 +74,13 @@ export async function playConfiguration(
   const branchId = project.defaultBranchId;
   if (!branchId) throw new Error('A new project has no main branch.');
   if (input.configuration.team) await configureTeam(services, project.id, branchId, input.configuration.team);
+  if (!input.configuration.memory) {
+    const view = await services.memories.get(project.id, branchId);
+    await services.memories.mutate(project.id, branchId, {
+      expectedHeadTurnId: view.headTurnId, expectedRevisionId: view.revisionId,
+      expectedCatalogRevisionId: view.catalogRevisionId, change: { op: 'settings', enabled: false },
+    });
+  }
   const team = (await services.agents.listForProject(project.id)).map((agent) => `${agent.name} v${agent.version}`);
 
   const turns: PlayedTurn[] = [];
@@ -106,14 +113,32 @@ export type JudgePass = {
 
 export type JudgeResult = { passes: JudgePass[]; combined: Record<CriterionKey, CombinedWinner> };
 
+/** Where the judgement stands: the measures are written before it, and stay whatever becomes of it. */
+export type JudgeOutcome =
+  | { status: 'en-attente' }
+  | { status: 'fait'; result: JudgeResult; costMicroUsd: number | null }
+  | { status: 'echec'; reason: string };
+
 export function judgedStory(played: PlayedConfiguration): JudgedStory {
   return played.turns.map((turn) => turn.prose);
 }
 
+/** Both stories, by configuration; the scenario cannot be judged or estimated without them. */
+export function playedPair(played: readonly PlayedConfiguration[]): Record<Side, PlayedConfiguration> {
+  const [v1, v2] = (['v1', 'v2'] as const).map((key) => played.find((item) => item.configuration.key === key));
+  if (!v1 || !v2) throw new Error('Both configurations must have been played.');
+  return { v1, v2 };
+}
+
+/** A pass reads both whole stories, about 66 000 tokens at most: more than the usual 120 s may be needed. */
+const JUDGE_TIMEOUT_MS = 300_000;
+const RETRIED_JUDGE_ERRORS = ['LLM_INVALID_RESPONSE', 'LLM_EMPTY_RESPONSE'];
+
 /**
- * Judges the two stories twice, in a random order then in the swapped one: a criterion the order
- * decides comes out « incertain ». Like attribution, the judge is a post-hoc analysis tool, hence its
- * stage; the caller's `callLLM` keeps its traces out of the database, so no project pays for it.
+ * Judges the two stories twice, in a random order then in the swapped one: a criterion on which the
+ * passes disagree comes out « incertain ». An invalid or empty verdict is asked again once. Like
+ * attribution, the judge is a post-hoc analysis tool, hence its stage; the caller's `callLLM` keeps its
+ * traces out of the database, so no project pays for it.
  */
 export async function judgeStories(
   callLLM: CallLLM, projectId: string, inputs: readonly string[], stories: Record<Side, JudgedStory>,
@@ -122,9 +147,13 @@ export async function judgeStories(
   const first = anonymize(stories, random);
   const passes: JudgePass[] = [];
   for (const order of [first, swapped(first)]) {
-    const result = await callLLM({
-      projectId, stage: 'attribution', schema: judgeVerdictSchema,
+    const request = {
+      projectId, stage: 'attribution' as const, schema: judgeVerdictSchema, timeoutMs: JUDGE_TIMEOUT_MS,
       messages: judgeMessages(inputs, order.presented),
+    };
+    const result = await callLLM(request).catch((error: unknown) => {
+      if (!(error instanceof ApiError) || !RETRIED_JUDGE_ERRORS.includes(error.code)) throw error;
+      return callLLM(request);
     });
     if (!result.parsed) throw new Error('Judge verdict was not validated.');
     passes.push({

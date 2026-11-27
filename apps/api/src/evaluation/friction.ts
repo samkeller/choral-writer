@@ -18,6 +18,7 @@ const CONFIGURATION = 'apps/web/src/pages/ProjectConfiguration.tsx';
 const TEAM_PIPELINE = 'apps/web/src/components/agents/AgentTeamPipeline.tsx';
 const TEAM_SETUP = 'apps/web/src/components/agents/ProjectAgentSetup.tsx';
 const MEMORY_PAGE = 'apps/web/src/pages/MemoriesPage.tsx';
+const MESSAGE_LIST = 'apps/web/src/components/chat/MessageList.tsx';
 
 const pickFromLibrary = (what: string, count: number): FrictionStep[] => Array.from({ length: count }, (_, index) => [
   { action: `Ouvrir « Ajouter depuis la bibliothèque » (${what} ${index + 1})`, evidence: { file: TEAM_PIPELINE, pattern: /Ajouter depuis la bibliothèque/ } },
@@ -43,22 +44,28 @@ export const FIRST_TURN_PATH: FrictionPath = {
   ],
 };
 
-/** From a new project, open on its configuration, to the V2 team of the evaluation with memory routing. */
+/**
+ * What the evaluated V2 team adds, from a new project that opens on its configuration. The scenario pins
+ * the analysis agents' memory reads by hand; in the app the shortest way there is the memory proposal.
+ */
+const V2_TEAM_STEPS: readonly FrictionStep[] = [
+  { action: 'Ouvrir la section « Agents »', evidence: { file: CONFIGURATION, pattern: /label: 'Agents'/ } },
+  ...pickFromLibrary('agent d’analyse', 5),
+  { action: 'Ouvrir « Choisir dans la bibliothèque » (Directeur)', evidence: { file: TEAM_PIPELINE, pattern: /Choisir dans la bibliothèque/ } },
+  { action: 'Choisir le Directeur', evidence: { file: TEAM_PIPELINE, pattern: /<Select aria-label=\{label\}/ } },
+  ...replaceFromLibrary('Narrateur'),
+  ...replaceFromLibrary('Gardien'),
+  { action: 'Cliquer « Enregistrer l’équipe »', evidence: { file: TEAM_SETUP, pattern: /Enregistrer l’équipe/ } },
+  { action: 'Ouvrir la section « Mémoire »', evidence: { file: CONFIGURATION, pattern: /label: 'Mémoire'/ } },
+  { action: 'Cliquer « Proposer la configuration » (un appel LLM)', evidence: { file: MEMORY_PAGE, pattern: /label: 'Proposer la configuration'/ } },
+  { action: 'Cliquer « Appliquer la proposition »', evidence: { file: MEMORY_PAGE, pattern: />Appliquer la proposition</ } },
+];
+
+/** Creating a project, building the evaluated V2 team, then playing a first turn. */
 export const V2_TEAM_PATH: FrictionPath = {
   key: 'equipe-v2',
-  label: 'Depuis un nouveau projet, obtenir l’équipe V2 évaluée (en plus du premier parcours)',
-  steps: [
-    { action: 'Ouvrir la section « Agents »', evidence: { file: CONFIGURATION, pattern: /label: 'Agents'/ } },
-    ...pickFromLibrary('agent d’analyse', 5),
-    { action: 'Ouvrir « Choisir dans la bibliothèque » (Directeur)', evidence: { file: TEAM_PIPELINE, pattern: /Choisir dans la bibliothèque/ } },
-    { action: 'Choisir le Directeur', evidence: { file: TEAM_PIPELINE, pattern: /<Select aria-label=\{label\}/ } },
-    ...replaceFromLibrary('Narrateur'),
-    ...replaceFromLibrary('Gardien'),
-    { action: 'Cliquer « Enregistrer l’équipe »', evidence: { file: TEAM_SETUP, pattern: /Enregistrer l’équipe/ } },
-    { action: 'Ouvrir la section « Mémoire »', evidence: { file: CONFIGURATION, pattern: /label: 'Mémoire'/ } },
-    { action: 'Cliquer « Proposer la configuration » (un appel LLM)', evidence: { file: MEMORY_PAGE, pattern: /label: 'Proposer la configuration'/ } },
-    { action: 'Cliquer « Appliquer la proposition »', evidence: { file: MEMORY_PAGE, pattern: />Appliquer la proposition</ } },
-  ],
+  label: 'Créer un projet avec l’équipe V2 évaluée et jouer un premier tour',
+  steps: [...FIRST_TURN_PATH.steps.slice(0, 3), ...V2_TEAM_STEPS, ...FIRST_TURN_PATH.steps.slice(3)],
 };
 
 export const FRICTION_CHECKS: readonly FrictionCheck[] = [
@@ -74,6 +81,14 @@ export const FRICTION_CHECKS: readonly FrictionCheck[] = [
     key: 'memoire-active',
     label: 'Mémoire active dès la création, avec les tags de départ',
     evidence: [{ file: 'apps/api/src/modules/projects/services/projectServices.ts', pattern: /saveSettings\(\{ tags: startingTags\(/ }],
+  },
+  {
+    key: 'lecture',
+    label: 'Lecture sans le mode Debug : la réponse s’affiche dans le fil, pendant le flux puis une fois enregistrée',
+    evidence: [
+      { file: MESSAGE_LIST, pattern: /<MarkdownContent content=\{partial\}/ },
+      { file: MESSAGE_LIST, pattern: /<MarkdownContent content=\{message\.content\}/ },
+    ],
   },
   {
     key: 'debug-a-la-demande',
@@ -111,17 +126,26 @@ export function checkReport(check: FrictionCheck, read: SourceReader): CheckRepo
   };
 }
 
+/**
+ * Each configuration is measured on the path that leads to it, read in its own code: V1 in `main`, a new
+ * project and the evaluated V2 team in this branch. The paths list the actions a configuration needs; a
+ * step added to the UI is only caught when its evidence changes, so the paths follow the code by review.
+ */
 export type FrictionReport = {
-  firstTurn: { v2: PathReport; v1: PathReport };
-  v2Team: PathReport;
+  /** The `main` commit V1 was read from, or null when it could not be resolved. */
+  v1Reference: string | null;
+  paths: { v1: PathReport; newProject: PathReport; v2: PathReport };
   checks: { v2: CheckReport[]; v1: CheckReport[] };
 };
 
-/** `readCurrent` reads this branch, `readV1` the V1 reference (`main`), so both are measured the same way. */
-export function frictionReport(readCurrent: SourceReader, readV1: SourceReader): FrictionReport {
+export function frictionReport(readCurrent: SourceReader, readV1: SourceReader, v1Reference: string | null): FrictionReport {
   return {
-    firstTurn: { v2: pathReport(FIRST_TURN_PATH, readCurrent), v1: pathReport(FIRST_TURN_PATH, readV1) },
-    v2Team: pathReport(V2_TEAM_PATH, readCurrent),
+    v1Reference,
+    paths: {
+      v1: pathReport(FIRST_TURN_PATH, readV1),
+      newProject: pathReport(FIRST_TURN_PATH, readCurrent),
+      v2: pathReport(V2_TEAM_PATH, readCurrent),
+    },
     checks: {
       v2: FRICTION_CHECKS.map((check) => checkReport(check, readCurrent)),
       v1: FRICTION_CHECKS.map((check) => checkReport(check, readV1)),

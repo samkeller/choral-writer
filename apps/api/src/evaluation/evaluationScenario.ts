@@ -49,11 +49,10 @@ export type ConfiguredAgent = { agentId: string; versionId: string; reads?: read
 export type EvaluationConfiguration = {
   key: 'v1' | 'v2';
   label: string;
-  /**
-   * L'équipe à épingler, ou null pour garder celle d'un nouveau projet sans rien configurer :
-   * c'est aussi ce qui vérifie qu'un premier tour ne demande aucune configuration.
-   */
+  /** L'équipe à épingler, ou null pour garder celle d'un nouveau projet (Narrateur et Gardien par défaut). */
   team: readonly ConfiguredAgent[] | null;
+  /** Sans mémoire, le Gardien ne tourne pas : c'est le cas d'un nouveau projet sur `main`. */
+  memory: boolean;
 };
 
 function libraryAgent(name: string, reads?: readonly string[]): ConfiguredAgent {
@@ -67,12 +66,14 @@ function libraryAgent(name: string, reads?: readonly string[]): ConfiguredAgent 
 export const EVALUATION_CONFIGURATIONS: readonly EvaluationConfiguration[] = [
   {
     key: 'v1',
-    label: 'Type V1 : Narrateur et Gardien, sans Directeur ni analyse',
+    label: 'Type V1 : un nouveau projet comme sur main, Narrateur et Gardien par défaut, mémoire désactivée',
     team: null,
+    memory: false,
   },
   {
     key: 'v2',
-    label: 'V2 : agents d’analyse de la bibliothèque, Directeur, Narrateur scénique, Gardien des Intentions',
+    label: 'V2 : agents d’analyse de la bibliothèque, Directeur, Narrateur scénique, Gardien des Intentions, mémoire activée',
+    memory: true,
     // Sans tags choisis, un agent d'analyse ne lit rien : la répartition est fixée ici, plutôt que proposée par un LLM, pour rester reproductible.
     team: [
       libraryAgent('Continuité', ['Faits', 'Monde']),

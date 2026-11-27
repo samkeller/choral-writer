@@ -1,4 +1,7 @@
+import { estimateTokens } from '../llm/contextComposition.js';
 import type { PriceRate } from '../llm/usage/pricingResolver.js';
+import { judgeMessages } from './blindJudge.js';
+import { judgedStory, playedPair, type PlayedConfiguration } from './evaluationRun.js';
 
 /**
  * Estimation du coût réel du scénario, sans aucun appel au fournisseur. Les tokens d'entrée viennent des
@@ -9,6 +12,12 @@ import type { PriceRate } from '../llm/usage/pricingResolver.js';
 export type EstimatedStage = 'analysis' | 'direction' | 'narrator' | 'guardian' | 'judge';
 export type EstimateBound = 'low' | 'high';
 export type EstimatedCall = { configuration: string; stage: EstimatedStage; inputTokens: number; outputTokens: number };
+
+const PIPELINE_STAGES = ['analysis', 'direction', 'narrator', 'guardian'] as const;
+
+function isPipelineStage(stage: string): stage is (typeof PIPELINE_STAGES)[number] {
+  return (PIPELINE_STAGES as readonly string[]).includes(stage);
+}
 
 /** Typical output of a structured call, in tokens: an envelope, a direction, memory proposals, a verdict. */
 export const TYPICAL_OUTPUT_TOKENS: Record<Exclude<EstimatedStage, 'narrator'>, Record<EstimateBound, number>> = {
@@ -73,4 +82,20 @@ export function estimateCost(
       return [configuration, { low: estimate('low', own), high: estimate('high', own) }];
     })),
   };
+}
+
+/** The calls of a simulated play as a bound prices them, the judge's two passes included. */
+export function estimatedCalls(played: readonly PlayedConfiguration[], inputs: readonly string[], bound: EstimateBound): EstimatedCall[] {
+  const calls = played.flatMap(({ configuration, turns }) => turns.flatMap((turn) => turn.calls.map((call): EstimatedCall => {
+    if (!isPipelineStage(call.stage)) throw new Error(`Unexpected stage "${call.stage}" in the estimate.`);
+    return {
+      configuration: configuration.key, stage: call.stage, inputTokens: call.inputTokens ?? 0,
+      outputTokens: outputTokensFor(call.stage, call.outputTokens ?? 0, bound),
+    };
+  })));
+  const { v1, v2 } = playedPair(played);
+  const judgeInput = judgeMessages(inputs, { A: judgedStory(v1), B: judgedStory(v2) })
+    .reduce((sum, message) => sum + estimateTokens(String(message.content)), 0);
+  const judgeCall: EstimatedCall = { configuration: 'juge', stage: 'judge', inputTokens: judgeInput, outputTokens: outputTokensFor('judge', 0, bound) };
+  return [...calls, judgeCall, judgeCall];
 }

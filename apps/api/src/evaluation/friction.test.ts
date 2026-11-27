@@ -21,8 +21,9 @@ describe('friction', () => {
   it('finds the code behind every counted action of this branch', () => {
     // A failure here means the UI path changed: update the path, and the count it reports, with it.
     expect(pathReport(FIRST_TURN_PATH, readRepository)).toMatchObject({ actions: 6, unconfirmed: [] });
-    expect(pathReport(V2_TEAM_PATH, readRepository)).toMatchObject({ actions: 21, unconfirmed: [] });
-    expect(FRICTION_CHECKS.map((check) => checkReport(check, readRepository).holds)).toEqual([true, true, true]);
+    // The evaluated V2 team adds 21 actions to the 6 of a first turn.
+    expect(pathReport(V2_TEAM_PATH, readRepository)).toMatchObject({ actions: 27, unconfirmed: [] });
+    expect(FRICTION_CHECKS.map((check) => checkReport(check, readRepository).holds)).toEqual([true, true, true, true]);
   });
 
   it('flags the actions whose code is gone instead of counting them silently', () => {
@@ -34,6 +35,8 @@ describe('friction', () => {
   it('reports an unreadable reference as unknown, not as a failed check', () => {
     const unreadable: SourceReader = () => null;
     expect(checkReport(FRICTION_CHECKS[0]!, unreadable).holds).toBeNull();
-    expect(frictionReport(readRepository, unreadable).firstTurn.v1.unconfirmed).toHaveLength(6);
+    const report = frictionReport(readRepository, unreadable, null);
+    expect(report.paths.v1.unconfirmed).toHaveLength(6);
+    expect(report.paths.newProject.unconfirmed).toEqual([]);
   });
 });

@@ -8,9 +8,8 @@ import { db, pool } from '../db/client.js';
 import { localDatabaseRefusal } from '../db/localDatabaseGuard.js';
 import { insertLlmCall } from '../db/repositories/llmCallRepository.js';
 import { createCallLLM } from '../llm/call-llm.js';
-import { estimateTokens } from '../llm/contextComposition.js';
-import { createProviderStrategy } from '../llm/providers/index.js';
-import { selectRate } from '../llm/usage/pricingResolver.js';
+import { createProviderStrategy, type ProviderStrategy } from '../llm/providers/index.js';
+import { resolveCost, selectRate } from '../llm/usage/pricingResolver.js';
 import { toPriceRate, UsageRepository } from '../llm/usage/usageRepository.js';
 import { createUsageService } from '../llm/usage/usageService.js';
 import { AgentRepository } from '../modules/agents/repository/agentsRepository.js';
@@ -19,18 +18,15 @@ import { createChatBranchService, createChatService } from '../modules/chat/inde
 import { MemoriesService } from '../modules/memories/services/memoriesService.js';
 import { ProjectsService } from '../modules/projects/services/projectServices.js';
 import { createTraceService } from '../modules/traces/index.js';
-import { judgeMessages } from './blindJudge.js';
+import { estimateCost, estimatedCalls, rateBounds, type EstimateBound, type EstimatedCall } from './costEstimate.js';
+import { finishEvaluation } from './evaluationOutput.js';
+import { renderEstimate, type EvaluationMode } from './evaluationReport.js';
 import {
-  estimateCost, outputTokensFor, rateBounds, type CostEstimate, type EstimateBound, type EstimatedCall, type EstimatedStage,
-} from './costEstimate.js';
-import { renderFullReport, renderPublicSynthesis, type EvaluationResult } from './evaluationReport.js';
-import {
-  judgedStory, judgeStories, playConfiguration, type EvaluationServices, type PlayedConfiguration,
+  judgedStory, judgeStories, playConfiguration, playedPair, type EvaluationServices, type JudgeResult, type PlayedConfiguration,
 } from './evaluationRun.js';
 import { EVALUATION_CONFIGURATIONS, SCENARIO_INPUTS, SCENARIO_NAME, SCENARIO_SYSTEM_PROMPT } from './evaluationScenario.js';
 import { frictionReport, type SourceReader } from './friction.js';
 import { createSimulatedClient, SIMULATED_MODEL, simulatedProvider } from './simulatedLlm.js';
-import { aggregateMeasures } from './turnMeasures.js';
 
 /**
  * `pnpm eval:v2` : évaluation de bout en bout de la V2 (#43).
@@ -40,7 +36,7 @@ import { aggregateMeasures } from './turnMeasures.js';
  * - `--real` appelle le vrai fournisseur LLM de `.env` : c'est payant, à ne lancer qu'avec l'accord du mainteneur.
  *
  * Les projets d'évaluation sont créés dans la base locale de `.env` (`--allow-remote` pour une autre),
- * gardés après un jeu réel et supprimés après un jeu simulé, sauf avec `--keep`.
+ * gardés après un jeu réel et supprimés après un jeu simulé, même en échec, sauf avec `--keep`.
  */
 
 const REPO_ROOT = fileURLToPath(new URL('../../../../', import.meta.url));
@@ -49,20 +45,20 @@ const OUTPUT_DIR = join(REPO_ROOT, 'eval-output');
 const PROSE_WORDS: Record<EstimateBound | 'typical', number> = { low: 700, high: 2_400, typical: 1_200 };
 const INPUTS = SCENARIO_INPUTS.map((input) => input.content);
 
-type Mode = 'simulé' | 'réel';
 type CallLLM = ReturnType<typeof createCallLLM>;
+type Client = Parameters<typeof createCallLLM>[0]['client'];
 
-function evaluationLlm(config: AppConfig, mode: Mode, client: Parameters<typeof createCallLLM>[0]['client']) {
+function evaluationLlm(config: AppConfig, mode: EvaluationMode, client: Client) {
   const real = mode === 'réel';
   const model = real ? config.llmModel : SIMULATED_MODEL;
-  const provider = real
+  const provider: ProviderStrategy = real
     ? createProviderStrategy(configuredProvider(config), { apiKey: config.llmApiKey, baseUrl: config.llmBaseUrl })
     : simulatedProvider;
   const apiKey = real ? config.llmApiKey : undefined;
   return {
-    model,
+    model, provider,
     pipeline: createCallLLM({ client, traces: { insert: insertLlmCall }, model, provider, apiKey, usage: createUsageService(db) }),
-    // The judge's calls belong to no project: their traces stay in memory and their cost is reported by the script.
+    // The judge's calls belong to no project: their traces stay in memory and the script prices them.
     judge: createCallLLM({ client, traces: { insert: async () => {} }, model, provider, apiKey }),
   };
 }
@@ -79,20 +75,32 @@ function evaluationServices(callLLM: CallLLM): EvaluationServices {
   };
 }
 
-async function playScenario(services: EvaluationServices, runLabel: string): Promise<PlayedConfiguration[]> {
+/**
+ * Plays every configuration and hands the played ones to `work`. Unless `keep`, the projects are removed
+ * afterwards, also when playing or `work` failed, so that no simulated project is left behind.
+ */
+async function withPlayedScenario<T>(
+  services: EvaluationServices, runLabel: string, keep: boolean, work: (played: PlayedConfiguration[]) => Promise<T>,
+): Promise<T> {
   const played: PlayedConfiguration[] = [];
-  for (const configuration of EVALUATION_CONFIGURATIONS) {
-    const key = configuration.key.toUpperCase();
-    played.push(await playConfiguration(services, {
-      configuration, projectName: `Évaluation V2 · ${key} · ${runLabel}`, systemPrompt: SCENARIO_SYSTEM_PROMPT, inputs: SCENARIO_INPUTS,
-    }, ({ measure }) => console.log(`${key} tour ${measure.index}/${SCENARIO_INPUTS.length} : ${measure.status === 'completed' ? 'ok' : 'échec'}, `
-      + `${(measure.costMicroUsd / 1_000_000).toFixed(4)} $, ${(measure.durationMs / 1_000).toFixed(1)} s, ${measure.calls} appels`)));
+  try {
+    for (const configuration of EVALUATION_CONFIGURATIONS) {
+      const key = configuration.key.toUpperCase();
+      played.push(await playConfiguration(services, {
+        configuration, projectName: `Évaluation V2 · ${key} · ${runLabel}`, systemPrompt: SCENARIO_SYSTEM_PROMPT, inputs: SCENARIO_INPUTS,
+      }, ({ measure }) => console.log(`${key} tour ${measure.index}/${SCENARIO_INPUTS.length} : ${measure.status === 'completed' ? 'ok' : 'échec'}, `
+        + `${(measure.costMicroUsd / 1_000_000).toFixed(4)} $, ${(measure.durationMs / 1_000).toFixed(1)} s, ${measure.calls} appels`)));
+    }
+    return await work(played);
+  } finally {
+    if (keep) console.log(played.map((item) => `Projet ${item.configuration.key.toUpperCase()} : /projects/${item.projectId}`).join('\n'));
+    else {
+      // Removes what the database holds even when playing stopped half-way.
+      const ids = (await services.projects.list()).filter((project) => project.name.startsWith('Évaluation V2 · ') && project.name.endsWith(`· ${runLabel}`)).map((project) => project.id);
+      for (const id of ids) await services.projects.remove(id);
+      console.log(`${ids.length} projets d’évaluation supprimés (--keep pour les garder).`);
+    }
   }
-  return played;
-}
-
-async function removeProjects(services: EvaluationServices, played: readonly PlayedConfiguration[]): Promise<void> {
-  for (const { projectId } of played) await services.projects.remove(projectId);
 }
 
 const readCurrent: SourceReader = (file) => {
@@ -103,117 +111,79 @@ const readCurrent: SourceReader = (file) => {
   }
 };
 
-/** V1 is `main`: read through git so both versions are measured by the same evidence. */
-const readV1: SourceReader = (file) => {
+function git(...args: string[]): string {
+  return execFileSync('git', args, { cwd: REPO_ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+}
+
+/** V1 is `main`, fetched first so that both versions are measured by the same evidence on an up-to-date reference. */
+function v1Reader(): { read: SourceReader; reference: string | null } {
   try {
-    return execFileSync('git', ['show', `origin/main:${file}`], { cwd: REPO_ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    git('fetch', '--quiet', 'origin', 'main');
   } catch {
-    return null;
+    console.warn('git fetch origin main a échoué : la friction V1 est lue sur la copie locale de origin/main.');
   }
-};
+  let reference: string | null = null;
+  try {
+    reference = git('rev-parse', '--short', 'origin/main').trim();
+  } catch {
+    console.warn('origin/main est introuvable : la friction V1 sera « illisible ».');
+  }
+  const read: SourceReader = (file) => {
+    try {
+      return git('show', `origin/main:${file}`);
+    } catch {
+      return null;
+    }
+  };
+  return { read, reference };
+}
 
 function runStamp(at: Date): string {
   return at.toISOString().slice(0, 19).replace(/[:T]/g, '-');
 }
 
-async function evaluate(config: AppConfig, mode: Mode, keep: boolean): Promise<void> {
-  const runAt = new Date();
-  const client = mode === 'réel'
-    ? (await import('../llm/client.js')).openai
-    : createSimulatedClient({ proseWords: PROSE_WORDS.typical });
-  const llm = evaluationLlm(config, mode, client);
-  const services = evaluationServices(llm.pipeline);
-  console.log(`Évaluation ${mode} du scénario « ${SCENARIO_NAME} » (${SCENARIO_INPUTS.length} tours), modèle ${llm.model}.`);
-  const played = await playScenario(services, runStamp(runAt));
-  const [v1, v2] = ['v1', 'v2'].map((key) => played.find((item) => item.configuration.key === key));
-  if (!v1 || !v2) throw new Error('Both configurations must have been played.');
-  console.log('Jugement en aveugle (deux passes)…');
-  const judge = await judgeStories(llm.judge, v2.projectId, INPUTS, { v1: judgedStory(v1), v2: judgedStory(v2) });
-  const result: EvaluationResult = { mode, model: llm.model, runAt, configurations: played, judge, friction: frictionReport(readCurrent, readV1) };
-
-  const directory = join(OUTPUT_DIR, `${mode === 'réel' ? 'reel' : 'simule'}-${runStamp(runAt)}`);
-  mkdirSync(directory, { recursive: true });
-  writeFileSync(join(directory, 'rapport.md'), renderFullReport(result, INPUTS));
-  writeFileSync(join(directory, 'synthese.md'), renderPublicSynthesis(result));
-  writeFileSync(join(directory, 'mesures.json'), `${JSON.stringify({
-    mode, model: llm.model, runAt,
-    configurations: played.map(({ configuration, team, turns }) => ({
-      key: configuration.key, team, aggregate: aggregateMeasures(turns.map((turn) => turn.measure)), turns: turns.map((turn) => turn.measure),
-    })),
-    judge: { combined: judge.combined, passes: judge.passes.map(({ key, inputTokens, outputTokens }) => ({ key, inputTokens, outputTokens })) },
-    friction: result.friction,
-  }, null, 2)}\n`);
-  console.log(`Rapport local (avec la prose) : ${join(directory, 'rapport.md')}`);
-  console.log(`Synthèse publiable (sans prose) : ${join(directory, 'synthese.md')}`);
-
-  if (mode === 'simulé' && !keep) {
-    await removeProjects(services, played);
-    console.log('Projets simulés supprimés (--keep pour les garder).');
-  } else {
-    console.log(played.map((item) => `Projet ${item.configuration.key.toUpperCase()} : /projects/${item.projectId}`).join('\n'));
-  }
-}
-
-/** Calls of a simulated play as the estimate prices them, the judge's two passes included. */
-function estimatedCalls(played: readonly PlayedConfiguration[], bound: EstimateBound): EstimatedCall[] {
-  const calls = played.flatMap(({ configuration, turns }) => turns.flatMap((turn) => turn.calls.map((call): EstimatedCall => {
-    if (!['analysis', 'direction', 'narrator', 'guardian'].includes(call.stage)) {
-      throw new Error(`Unexpected stage "${call.stage}" in the estimate.`);
-    }
-    const stage = call.stage as EstimatedStage;
-    return {
-      configuration: configuration.key, stage, inputTokens: call.inputTokens ?? 0,
-      outputTokens: outputTokensFor(stage, call.outputTokens ?? 0, bound),
-    };
-  })));
-  const [v1, v2] = ['v1', 'v2'].map((key) => played.find((item) => item.configuration.key === key));
-  if (!v1 || !v2) throw new Error('Both configurations must have been played.');
-  const judgeInput = judgeMessages(INPUTS, { A: judgedStory(v1), B: judgedStory(v2) })
-    .reduce((sum, message) => sum + estimateTokens(String(message.content)), 0);
-  const judgeCall: EstimatedCall = { configuration: 'juge', stage: 'judge', inputTokens: judgeInput, outputTokens: outputTokensFor('judge', 0, bound) };
-  return [...calls, judgeCall, judgeCall];
-}
-
+/** Current rate of each price window of the model, as `llm_price` publishes it. */
 async function currentRates(provider: string, model: string, at: Date) {
   const rows = await new UsageRepository(db).ratesFor(provider, model);
-  const windows = [...new Set(rows.map((row) => row.priceWindow))];
-  return windows.flatMap((window) => {
+  return [...new Set(rows.map((row) => row.priceWindow))].flatMap((window) => {
     const rate = selectRate(rows.filter((row) => row.priceWindow === window), at, toPriceRate);
     return rate ? [{ window, rate }] : [];
   });
 }
 
-function renderEstimate(
-  estimate: CostEstimate, model: string, rates: { window: string; rate: { inputPerMillion: number; outputPerMillion: number } }[],
-): string {
-  const turns = SCENARIO_INPUTS.length;
-  const range = (low: number, high: number, format: (value: number) => string) => `${format(low)} à ${format(high)}`;
-  const count = (value: number) => Math.round(value).toLocaleString('fr-FR');
-  const row = (label: string, bounds: CostEstimate['total'], perTurn: boolean) => [
-    label,
-    `${range(bounds.low.calls, bounds.high.calls, count)}${perTurn
-      ? ` (${range(bounds.low.calls / turns, bounds.high.calls / turns, (value) => value.toFixed(1))} par tour)` : ''}`,
-    range(bounds.low.inputTokens, bounds.high.inputTokens, count),
-    range(bounds.low.outputTokens, bounds.high.outputTokens, count),
-    range(bounds.low.usd, bounds.high.usd, (value) => `${value.toFixed(4)} $`),
-  ];
-  const table = [
-    ['Poste', 'Appels', 'Tokens d’entrée', 'Tokens de sortie', 'Coût'],
-    ['---', '---', '---', '---', '---'],
-    ...Object.entries(estimate.byConfiguration).map(([key, bounds]) =>
-      row(key === 'juge' ? 'Juge (2 passes)' : key.toUpperCase(), bounds, key !== 'juge')),
-    row('**Total**', estimate.total, false),
-  ].map((cells) => `| ${cells.join(' | ')} |`).join('\n');
-  return [
-    '# Estimation du coût réel de l’évaluation V2',
-    `Modèle visé (\`LLM_MODEL\`) : ${model}. Tarifs \`llm_price\` en $ par million de tokens, entrée / sortie : ${
-      rates.map(({ window, rate }) => `${window} ${rate.inputPerMillion} / ${rate.outputPerMillion}`).join(' ; ')}.`,
-    `Scénario : ${turns} tours par configuration, puis deux passes du juge.`,
-    table,
-    'Basse : prose de 700 mots par tour, tarif le moins cher, aucune relance. Haute : prose de 2 400 mots, tarif le plus cher, '
-    + '25 % de relances des appels structurés. Entrées mesurées sur les prompts réels du pipeline joué en simulé ; '
-    + 'sorties structurées de taille typique ; remise du cache ignorée.',
-  ].join('\n\n') + '\n';
+/** The judge's cost at the rate of the current window, as the usage ledger would price it; null when unpriced. */
+async function judgeCostMicroUsd(provider: ProviderStrategy, model: string, judge: JudgeResult): Promise<number | null> {
+  const at = new Date();
+  const window = provider.priceWindow(at);
+  const rate = (await currentRates(provider.name, model, at)).find((item) => item.window === window || item.window === 'all')?.rate ?? null;
+  const costs = judge.passes.map((pass) => resolveCost({
+    inputTokens: pass.inputTokens, outputTokens: pass.outputTokens, cachedInputTokens: null, providerCostUsd: null, rate,
+  }).costMicroUsd);
+  return costs.every((cost): cost is number => cost !== null) ? costs.reduce((sum, cost) => sum + cost, 0) : null;
+}
+
+async function evaluate(config: AppConfig, mode: EvaluationMode, keep: boolean): Promise<void> {
+  const runAt = new Date();
+  const client: Client = mode === 'réel'
+    ? (await import('../llm/client.js')).openai
+    : createSimulatedClient({ proseWords: PROSE_WORDS.typical });
+  const llm = evaluationLlm(config, mode, client);
+  const services = evaluationServices(llm.pipeline);
+  const v1 = v1Reader();
+  console.log(`Évaluation ${mode} du scénario « ${SCENARIO_NAME} » (${SCENARIO_INPUTS.length} tours), modèle ${llm.model}.`);
+  await withPlayedScenario(services, runStamp(runAt), keep || mode === 'réel', async (played) => {
+    const pair = playedPair(played);
+    const directory = join(OUTPUT_DIR, `${mode === 'réel' ? 'reel' : 'simule'}-${runStamp(runAt)}`);
+    console.log('Mesures écrites ; jugement en aveugle (deux passes)…');
+    const result = await finishEvaluation(directory, {
+      mode, model: llm.model, runAt, configurations: played, friction: frictionReport(readCurrent, v1.read, v1.reference),
+    }, INPUTS,
+    () => judgeStories(llm.judge, pair.v2.projectId, INPUTS, { v1: judgedStory(pair.v1), v2: judgedStory(pair.v2) }),
+    (judge) => judgeCostMicroUsd(llm.provider, llm.model, judge));
+    console.log(`Jugement : ${result.judge.status}.`);
+    console.log(`Rapport local (avec la prose) : ${join(directory, 'rapport.md')}`);
+    console.log(`Synthèse publiable (sans prose) : ${join(directory, 'synthese.md')}`);
+  });
 }
 
 async function estimate(config: AppConfig): Promise<void> {
@@ -221,15 +191,14 @@ async function estimate(config: AppConfig): Promise<void> {
   const rates = await currentRates(provider, config.llmModel, new Date());
   const bounds = rateBounds(rates.map(({ rate }) => rate));
   if (!bounds) throw new Error(`No price in llm_price for ${provider} / ${config.llmModel}: the estimate cannot be priced.`);
-  const calls: Partial<Record<EstimateBound, EstimatedCall[]>> = {};
+  const calls: Record<EstimateBound, EstimatedCall[]> = { low: [], high: [] };
   for (const bound of ['low', 'high'] as const) {
     console.log(`Jeu simulé, prose de ${PROSE_WORDS[bound]} mots…`);
     const services = evaluationServices(evaluationLlm(config, 'simulé', createSimulatedClient({ proseWords: PROSE_WORDS[bound] })).pipeline);
-    const played = await playScenario(services, `estimation ${bound}`);
-    calls[bound] = estimatedCalls(played, bound);
-    await removeProjects(services, played);
+    calls[bound] = await withPlayedScenario(services, `estimation ${bound} ${runStamp(new Date())}`, false,
+      async (played) => estimatedCalls(played, INPUTS, bound));
   }
-  const markdown = renderEstimate(estimateCost({ low: calls.low ?? [], high: calls.high ?? [] }, bounds), config.llmModel, rates);
+  const markdown = renderEstimate(estimateCost(calls, bounds), config.llmModel, rates, SCENARIO_INPUTS.length);
   mkdirSync(OUTPUT_DIR, { recursive: true });
   const file = join(OUTPUT_DIR, `estimation-${runStamp(new Date())}.md`);
   writeFileSync(file, markdown);

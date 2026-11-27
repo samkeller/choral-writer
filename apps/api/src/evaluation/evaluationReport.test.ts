@@ -23,7 +23,7 @@ const played: PlayedConfiguration[] = EVALUATION_CONFIGURATIONS.map((configurati
 
 const path = { key: 'p', label: 'Parcours', actions: 6, unconfirmed: [] };
 const friction: FrictionReport = {
-  firstTurn: { v1: path, v2: path }, v2Team: { ...path, actions: 21 },
+  v1Reference: 'abc1234', paths: { v1: path, newProject: path, v2: { ...path, actions: 27 } },
   checks: { v1: [{ key: 'c', label: 'Propriété', holds: false }], v2: [{ key: 'c', label: 'Propriété', holds: true }] },
 };
 
@@ -38,8 +38,11 @@ const pass = (A: 'v1' | 'v2') => {
 const result: EvaluationResult = {
   mode: 'simulé', model: 'simulé', runAt: new Date('2026-11-27T10:00:00Z'), configurations: played, friction,
   judge: {
-    passes: [pass('v1'), pass('v2')],
-    combined: { resistance: 'v2', horsChamp: 'v2', nonLineaire: 'incertain', continuite: 'egalite' },
+    status: 'fait', costMicroUsd: 2_500,
+    result: {
+      passes: [pass('v1'), pass('v2')],
+      combined: { resistance: 'v2', horsChamp: 'v2', nonLineaire: 'incertain', continuite: 'egalite' },
+    },
   },
 };
 
@@ -47,9 +50,19 @@ describe('evaluation report', () => {
   it('publishes numbers and verdicts, never prose, inputs, reasons nor project links', () => {
     const synthesis = renderPublicSynthesis(result);
     expect(synthesis).toContain('0.0015 $');
-    expect(synthesis).toContain('incertain (l’ordre a décidé)');
-    expect(synthesis).toContain('21 actions');
+    expect(synthesis).toContain('incertain (passes en désaccord)');
+    expect(synthesis).toContain('27 actions');
+    expect(synthesis).toContain('Facteurs confondus');
+    // Two configurations at 0.0015 $ plus the judge at 0.0025 $.
+    expect(synthesis).toContain('juge compris : 0.0055 $ ; juge seul : 0.0025 $');
     for (const secret of [PROSE, INPUT, REASON, '/projects/']) expect(synthesis).not.toContain(secret);
+  });
+
+  it('says why the judgement is missing instead of hiding the measures', () => {
+    const synthesis = renderPublicSynthesis({ ...result, judge: { status: 'echec', reason: 'LLM_INVALID_RESPONSE' } });
+    expect(synthesis).toContain('Échec après une relance (LLM_INVALID_RESPONSE)');
+    expect(synthesis).toContain('0.0015 $');
+    expect(synthesis).toContain('(incomplet');
   });
 
   it('keeps prose, inputs and reasons in the local report', () => {
