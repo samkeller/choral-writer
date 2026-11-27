@@ -83,4 +83,17 @@ describe('Guardian JSON task', () => {
     expect(system).toContain('même quand la prose ne les raconte pas');
     expect(system).toContain('"personnage/<nom>", sous le tag « Intentions »');
   });
+
+  it('records the composition of its sources, and counts the retry reminder as a fixed rule', async () => {
+    const { service, input, insert } = setup(['not json', '{"v":2,"proposals":[],"tagSuggestions":[]}']);
+    await service.generate({ ...input, developments: [{ agent: 'Monde', item: {
+      kind: 'development', characters: ['Mara'], scope: 'scene', text: 'La lampe s’éteint.', importance: 'HIGH',
+    } }] });
+
+    const [first, retry] = insert.mock.calls.map(([trace]) => trace.composition ?? []);
+    expect(first!.map((entry) => entry.part))
+      .toEqual(['instructions', 'rules', 'systemPrompt', 'memory', 'prose', 'contributions']);
+    const rules = (composition: typeof first) => composition!.find((entry) => entry.part === 'rules')!.estimatedTokens;
+    expect(rules(retry)).toBeGreaterThan(rules(first));
+  });
 });

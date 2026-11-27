@@ -26,11 +26,11 @@ function summary(turnId: string, microUsd: number, narratorMs: number): TurnTrac
 
 const metrics: TurnMetrics[] = [
   {
-    turnId: firstTurnId, durationMs: 1000, cost: { microUsd: 1000, complete: true }, narratorInputTokens: 800, configurationChanges: null,
+    turnId: firstTurnId, durationMs: 1000, cost: { microUsd: 1000, complete: true }, narratorInputTokens: 800, narratorComposition: null, configurationChanges: null,
     direction: { status: 'success', tension: 'monter', nudges: ['saillance'] },
   },
   {
-    turnId: secondTurnId, durationMs: 4000, cost: { microUsd: 3000, complete: true }, narratorInputTokens: 2000,
+    turnId: secondTurnId, durationMs: 4000, cost: { microUsd: 3000, complete: true }, narratorInputTokens: 2000, narratorComposition: null,
     configurationChanges: [{ kind: 'agentChanged', name: 'Rythme', fromVersion: 1, toVersion: 2 }],
     direction: { status: 'success', tension: 'monter', nudges: ['complication'] },
   },
@@ -65,7 +65,7 @@ const summaries = new Map([
     calls: [{
       id: silentAgentCallId, turnId: secondTurnId, stage: 'analysis', ...silentAgent, agentName: 'Rythme', agentVersion: 2,
       model: 'test-model', status: 'success' as const, inputTokens: 500, outputTokens: 20, durationMs: 300,
-      createdAt: '2025-01-01T00:00:00.000Z', error: null, costMicroUsd: 1, costBasis: 'priced' as const,
+      createdAt: '2025-01-01T00:00:00.000Z', error: null, costMicroUsd: 1, costBasis: 'priced' as const, composition: null,
     }],
   }],
 ]);

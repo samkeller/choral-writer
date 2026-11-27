@@ -28,6 +28,7 @@ function trace(): TraceDetailRecord {
     createdAt: new Date(),
     costMicroUsd: null,
     costBasis: null,
+    composition: null,
   };
 }
 
@@ -99,7 +100,7 @@ describe('TraceService', () => {
     const lastTurnId = '019ad30c-19b0-7000-8000-000000000214';
     const narrator: MetricCallRecord = {
       id: callId, turnId: lastTurnId, agentId: null, agentVersionId: null, stage: 'narrator',
-      inputTokens: 900, durationMs: 20, createdAt: new Date(), costMicroUsd: 120,
+      inputTokens: 900, durationMs: 20, createdAt: new Date(), costMicroUsd: 120, composition: null,
     };
     const repository = repositoryMock({
       findBranchHead: vi.fn(async () => lastTurnId),

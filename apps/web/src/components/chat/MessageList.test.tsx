@@ -109,7 +109,7 @@ describe('turn lines', () => {
   const failedTurnId = '019ad30c-19b0-7000-8000-000000000702';
   const retryInput: Message = { ...userMessage, id: 'user-2', content: 'Retry this.' };
   const metrics: TurnMetrics = {
-    turnId: firstTurnId, durationMs: 12_400, cost: { microUsd: 4200, complete: true }, narratorInputTokens: 900,
+    turnId: firstTurnId, durationMs: 12_400, cost: { microUsd: 4200, complete: true }, narratorInputTokens: 900, narratorComposition: null,
     configurationChanges: [{ kind: 'systemPromptChanged' }], direction: null,
   };
 

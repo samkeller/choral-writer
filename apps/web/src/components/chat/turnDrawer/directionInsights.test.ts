@@ -7,7 +7,7 @@ import { describeEstimatedLevel } from './directionPresentation';
 function turn(direction: TurnDirectionMetrics | null): TurnMetrics {
   return {
     turnId: '019ad30c-19b0-7000-8000-000000000801', durationMs: 1000, cost: { microUsd: 100, complete: true },
-    narratorInputTokens: 1000, configurationChanges: null, direction,
+    narratorInputTokens: 1000, narratorComposition: null, configurationChanges: null, direction,
   };
 }
 

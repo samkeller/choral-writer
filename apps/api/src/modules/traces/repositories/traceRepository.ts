@@ -37,7 +37,13 @@ function summaryColumns() {
     createdAt: llmCall.createdAt,
     costMicroUsd: llmUsage.costMicroUsd,
     costBasis: llmUsage.costBasis,
+    composition: recordedComposition(),
   };
+}
+
+/** Read without the prompts it measures; untrusted until validated, since older calls lack it. */
+function recordedComposition() {
+  return sql<unknown>`${llmCall.request} -> 'composition'`;
 }
 
 export class TraceRepository {
@@ -99,6 +105,7 @@ export class TraceRepository {
       durationMs: llmCall.durationMs,
       createdAt: llmCall.createdAt,
       costMicroUsd: llmUsage.costMicroUsd,
+      composition: recordedComposition(),
     })
       .from(llmCall)
       .leftJoin(llmUsage, eq(llmUsage.callId, llmCall.id))

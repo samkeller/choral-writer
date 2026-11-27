@@ -176,10 +176,14 @@ export class ChatDirectorService {
       agentVersionId: input.agent.versionId,
       stage: 'direction',
       memory: { tags: [], entries: [] },
-      messages: conversationMessages(
-        [input.systemPrompt, input.agent.instructions, directorContract(forbidden),
-          formatIdentifiedWhiteboard(whiteboard), formatRecentDirections(input.recentDirections),
-        ].filter(Boolean).join('\n\n'),
+      ...conversationMessages(
+        [
+          { part: 'systemPrompt', text: input.systemPrompt },
+          { part: 'instructions', text: input.agent.instructions },
+          { part: 'rules', text: directorContract(forbidden) },
+          { part: 'contributions', text: formatIdentifiedWhiteboard(whiteboard) },
+          { part: 'direction', text: formatRecentDirections(input.recentDirections) },
+        ],
         input.history,
         input.userMessage,
       ),

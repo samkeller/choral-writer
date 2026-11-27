@@ -8,7 +8,9 @@ import type {
 import { v7 as uuidv7 } from 'uuid';
 import { z } from 'zod';
 import { APIError } from 'openai/error';
-import { isPlausibleTokens, type LlmStage, type MemoryContext, type PriceWindow } from '@choral-writer/shared';
+import {
+  isPlausibleTokens, type ContextComposition, type LlmStage, type MemoryContext, type PriceWindow,
+} from '@choral-writer/shared';
 
 import { ApiError } from '../errors/errors.js';
 import { normalizeLlmError } from '../errors/llmErrors.js';
@@ -27,6 +29,8 @@ export interface CallLLMInput<T = unknown> {
   stage: LlmStage;
   messages: ChatCompletionMessageParam[];
   memory?: MemoryContext;
+  /** Taille estimée de chaque partie de `messages`, enregistrée avec la trace. */
+  composition?: ContextComposition;
   /**
    * L'entrée est volontairement `any` : la validation s'applique au résultat de
    * `JSON.parse`, et un schéma avec valeur par défaut a une entrée plus large que sa
@@ -48,6 +52,7 @@ export interface LlmCallTrace {
   model: string;
   messages: ChatCompletionMessageParam[];
   memory?: MemoryContext;
+  composition?: ContextComposition;
   response: string | null;
   inputTokens: number | null;
   outputTokens: number | null;
@@ -274,6 +279,7 @@ export function createCallLLM({
           model,
           messages: input.messages,
           memory: input.memory,
+          composition: input.composition,
           response: content,
           inputTokens,
           outputTokens,
@@ -307,6 +313,7 @@ export function createCallLLM({
       model,
       messages: input.messages,
       memory: input.memory,
+      composition: input.composition,
       response: content,
       inputTokens,
       outputTokens,

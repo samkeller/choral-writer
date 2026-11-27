@@ -1,8 +1,17 @@
 import { describe, expect, it } from 'vitest';
 
-import { formatWhiteboard, narratorSystemPrompt } from './narratorPrompt.js';
+import type { AnalysisEnvelope, TurnDirection } from '@choral-writer/shared';
+
+import { joinSections, measureComposition } from '../../../llm/contextComposition.js';
+import { formatWhiteboard, narratorSystemSections } from './narratorPrompt.js';
 
 const emptyMemory = { tags: [], entries: [] };
+
+function narratorSystemPrompt(
+  systemPrompt: string, whiteboard: readonly AnalysisEnvelope[], direction: TurnDirection | null,
+): string {
+  return joinSections(narratorSystemSections(systemPrompt, '', whiteboard, emptyMemory, direction));
+}
 
 describe('narratorSystemPrompt', () => {
   it('renders the whiteboard as readable text rather than raw JSON', () => {
@@ -16,7 +25,7 @@ describe('narratorSystemPrompt', () => {
   });
 
   it('omits an empty whiteboard and asks for prose only, never ending on a question to the protagonist', () => {
-    const prompt = narratorSystemPrompt('Contexte du projet.', [], emptyMemory, null);
+    const prompt = narratorSystemPrompt('Contexte du projet.', [], null);
 
     expect(prompt.startsWith('Contexte du projet.\n\n')).toBe(true);
     expect(prompt).not.toContain('ANALYSES DES AGENTS');
@@ -29,7 +38,7 @@ describe('narratorSystemPrompt', () => {
     const dropped = { kind: 'idée', text: 'Un courant d’air.', importance: 'LOW' } as const;
     const whiteboard = [{ v: 1 as const, agent: 'Chaos', summary: 'Résumé.', items: [kept, dropped] }];
 
-    const prompt = narratorSystemPrompt('Contexte.', whiteboard, emptyMemory, {
+    const prompt = narratorSystemPrompt('Contexte.', whiteboard, {
       tension: 'basculer',
       nudges: [{ type: 'complication', target: 'La tentative d’ouvrir la porte.', basis: null }],
       retained: [{ agent: 'Chaos', item: kept, why: 'Concret.' }],
@@ -58,7 +67,7 @@ describe('narratorSystemPrompt with developments', () => {
   const whiteboard = [{ v: 1 as const, agent: 'Monde', summary: 'Le soir tombe.', items: [scene, offscreen] }];
 
   it('gives the Narrator the scene developments and their rule, never the off-screen ones', () => {
-    const prompt = narratorSystemPrompt('Contexte.', whiteboard, emptyMemory, null);
+    const prompt = narratorSystemPrompt('Contexte.', whiteboard, null);
 
     expect(prompt).toContain('- développement dans la scène (personnages : Mara ; importance haute) : La lampe s’éteint.');
     expect(prompt).toContain('DÉVELOPPEMENTS DANS LA SCÈNE');
@@ -67,7 +76,7 @@ describe('narratorSystemPrompt with developments', () => {
   });
 
   it('drops an off-screen development the Director retained', () => {
-    const prompt = narratorSystemPrompt('Contexte.', whiteboard, emptyMemory, {
+    const prompt = narratorSystemPrompt('Contexte.', whiteboard, {
       tension: 'tenir', nudges: [],
       retained: [{ agent: 'Monde', item: offscreen, why: 'Utile plus tard.' }],
       dismissed: [{ agent: 'Monde', item: scene, why: 'Trop tôt.' }],
@@ -77,5 +86,19 @@ describe('narratorSystemPrompt with developments', () => {
     expect(prompt).not.toContain('La lampe s’éteint.');
     expect(prompt).not.toContain('DÉVELOPPEMENTS DANS LA SCÈNE');
     expect(prompt).toContain('Aucune contribution des agents n’est retenue à ce tour.');
+  });
+});
+
+describe('narratorSystemSections', () => {
+  it('tags each part of the Narrator system message, direction and retained contributions apart', () => {
+    const kept = { kind: 'observation', text: 'Un fil est visible.', importance: 'HIGH' } as const;
+    const sections = narratorSystemSections('Contexte.', 'Ton sobre.', [], emptyMemory, {
+      tension: 'monter', nudges: [], retained: [{ agent: 'Chaos', item: kept, why: 'Concret.' }], dismissed: [],
+    });
+
+    expect(measureComposition(sections).map((entry) => entry.part))
+      .toEqual(['systemPrompt', 'instructions', 'rules', 'direction', 'contributions']);
+    expect(sections.find((section) => section.part === 'contributions')?.text).toContain('Un fil est visible.');
+    expect(sections.find((section) => section.part === 'direction')?.text).toContain('Tension visée');
   });
 });
