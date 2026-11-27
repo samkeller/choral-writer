@@ -8,7 +8,7 @@ import type { DirectionTrace, TurnMetrics, TurnTraceSummary } from '@choral-writ
 import { phasePresentation } from '../../phases/phasePresentation';
 import { formatCost, formatDelta, formatSeconds, formatTokens, formatUsd } from '../turnFormat';
 import { AnalysisFunnelBlock } from './AnalysisFunnelBlock';
-import { analysisCards, analysisFunnel } from './analysisInsights';
+import { analysisCards, analysisFunnel, transmissionOf } from './analysisInsights';
 import { AttributionBlock } from './AttributionBlock';
 import { DrawerBlock } from './DrawerBlock';
 import { configurationChangeLabel } from './TurnConfigurationPanel';
@@ -17,7 +17,7 @@ import { TENSION_ESTIMATE_HINT, nudgeDescriptions, tensionMoveLabels } from './d
 import { TurnTimeline } from './TurnTimeline';
 import type { TurnDrawerTab } from './turnDrawerTabs';
 import { type AttentionPoint, attentionPoints, averageCompleteCost } from './turnInsights';
-import type { TurnAttributionHandle } from './useTurnAttribution';
+import { type TurnAttributionHandle, proseReading } from './useTurnAttribution';
 
 /** « Synthèse » : the essentials of a turn, each leading to the tab that details it. */
 export function TurnOverview({ summary, attribution, metrics, index, tensionLevels, onOpenTab, onOpenCall }: {
@@ -36,8 +36,7 @@ export function TurnOverview({ summary, attribution, metrics, index, tensionLeve
   const narratorTokens = turn?.narratorInputTokens ?? null;
   const previousTokens = previous?.narratorInputTokens ?? null;
   const points = attentionPoints(summary, metrics ?? [], index);
-  const attributionState = attribution.state;
-  const reading = attributionState.status === 'ready' ? attributionState.response.attribution : null;
+  const { reading, status: readingStatus } = proseReading(attribution.state);
   const funnel = analysisFunnel(analysisCards(summary, reading), reading !== null);
 
   return (
@@ -61,8 +60,8 @@ export function TurnOverview({ summary, attribution, metrics, index, tensionLeve
       <AttributionBlock attribution={attribution} />
 
       {summary.analysis.length > 0 && (
-        <AnalysisFunnelBlock funnel={funnel} directed={Boolean(summary.direction?.direction)}
-          attribution={attributionState.status} onOpen={() => onOpenTab('analysis')} />
+        <AnalysisFunnelBlock funnel={funnel} transmission={transmissionOf(summary)} reading={readingStatus}
+          onOpen={() => onOpenTab('analysis')} />
       )}
 
       <DrawerBlock title="Points d’attention">

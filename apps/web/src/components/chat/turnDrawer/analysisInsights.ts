@@ -1,7 +1,7 @@
 import type {
   AnalysisTrace, AttributedItem, AttributionVerdict, TurnAttribution, TurnTraceSummary,
 } from '@choral-writer/shared';
-import { isToldInScene } from '@choral-writer/shared';
+import { contributionsLetThrough, contributionsToldToNarrator } from '@choral-writer/shared';
 
 import { lastAnalysisCallId } from './turnInsights';
 
@@ -11,7 +11,7 @@ type Item = AttributedItem['item'];
 export type ProseReading = { verdict: AttributionVerdict; note: string };
 
 /**
- * What became of an analysis item. `why` is the Director's reason, null when no Director sorted the item.
+ * What became of an analysis item. `why` is the Director's reason, null when no direction sorted the item.
  * `reading` is null while the attribution is unavailable.
  */
 export type ItemFate =
@@ -28,29 +28,48 @@ export interface AnalysisCard {
 
 export type AnalysisFilter = 'all' | 'transmitted' | 'dismissed';
 
+/** How the whiteboard reached the Narrator: sorted by the Director, as it was after a failed direction, or without one. */
+export type Transmission = 'directed' | 'directionFailed' | 'undirected';
+
+export function transmissionOf(summary: Pick<TurnTraceSummary, 'direction'>): Transmission {
+  if (!summary.direction) return 'undirected';
+  return summary.direction.direction ? 'directed' : 'directionFailed';
+}
+
+/** Directed items are copies of the whiteboard's: they are recognised by agent, kind and text. */
 const sameItem = (agent: string, item: Item) => (candidate: AttributedItem) =>
   candidate.agent === agent && candidate.item.kind === item.kind && candidate.item.text === item.text;
 
-/** Every analysis agent with the fate of each item it produced, from the Director's sorting to the prose. */
+/**
+ * Every analysis agent with the fate of each item it produced, from the direction to the prose. What was let
+ * through and what the Narrator read follow the pipeline's own rule (`contributionsLetThrough`,
+ * `contributionsToldToNarrator`).
+ */
 export function analysisCards(summary: TurnTraceSummary, attribution: TurnAttribution | null): AnalysisCard[] {
   const direction = summary.direction?.direction ?? null;
+  const whiteboard = summary.analysis.flatMap((agent) => agent.envelope ?? []);
+  const letThrough = contributionsLetThrough(whiteboard, direction);
+  const told = contributionsToldToNarrator(whiteboard, direction);
+
   return summary.analysis.map((agent) => ({
     agent,
     callId: lastAnalysisCallId(summary, agent),
     items: (agent.envelope?.items ?? []).map((item) => {
-      const author = agent.envelope?.agent ?? agent.name;
-      const matches = sameItem(author, item);
-      const fate = (why: string | null): ItemFate => {
-        if (!isToldInScene(item)) return { kind: 'offscreen', why };
-        const reading = attribution?.contributions.find(matches);
-        return { kind: 'told', why, reading: reading ? { verdict: reading.verdict, note: reading.note } : null };
-      };
-      if (!direction) return { item, fate: fate(null) };
-      const retained = direction.retained.find(matches);
-      if (retained) return { item, fate: fate(retained.why) };
-      return { item, fate: { kind: 'dismissed', why: direction.dismissed.find(matches)?.why ?? null } };
+      const matches = sameItem(agent.envelope?.agent ?? agent.name, item);
+      const why = (selections: readonly (AttributedItem & { why: string })[] | undefined) =>
+        selections?.find(matches)?.why ?? null;
+      const fate: ItemFate = told.some(matches)
+        ? { kind: 'told', why: why(direction?.retained), reading: readingOf(attribution?.contributions.find(matches)) }
+        : letThrough.some(matches)
+          ? { kind: 'offscreen', why: why(direction?.retained) }
+          : { kind: 'dismissed', why: why(direction?.dismissed) };
+      return { item, fate };
     }),
   }));
+}
+
+function readingOf(contribution: TurnAttribution['contributions'][number] | undefined): ProseReading | null {
+  return contribution ? { verdict: contribution.verdict, note: contribution.note } : null;
 }
 
 export function isTransmitted(fate: ItemFate): boolean {

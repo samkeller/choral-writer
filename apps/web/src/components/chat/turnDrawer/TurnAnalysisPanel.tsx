@@ -9,7 +9,7 @@ import {
   type AnalysisCard, type AnalysisFilter, type ItemFate, analysisCards, isTransmitted, matchesFilter,
 } from './analysisInsights';
 import { verdictPresentation } from './attributionPresentation';
-import type { AttributionState } from './useTurnAttribution';
+import { type AttributionState, type ReadingStatus, proseReading } from './useTurnAttribution';
 
 const filters: { value: AnalysisFilter; label: string }[] = [
   { value: 'all', label: 'Tous' },
@@ -27,7 +27,8 @@ export function TurnAnalysisPanel({ summary, attribution, onOpenCall }: {
   if (summary.analysis.length === 0) {
     return <Text c="dimmed">Aucun agent d’analyse pour ce tour : le Narrateur n’a reçu aucune contribution.</Text>;
   }
-  const cards = analysisCards(summary, attribution.status === 'ready' ? attribution.response.attribution : null);
+  const { reading, status } = proseReading(attribution);
+  const cards = analysisCards(summary, reading);
 
   return (
     <Stack gap="sm">
@@ -35,16 +36,16 @@ export function TurnAnalysisPanel({ summary, attribution, onOpenCall }: {
         onChange={(value) => setFilter(filters.find((option) => option.value === value)?.value ?? 'all')} />
       {cards.map((card, position) => (
         <AgentCard key={card.agent.agentVersionId ?? `${card.agent.name}-${position}`} card={card} filter={filter}
-          attribution={attribution.status} onOpenCall={onOpenCall} />
+          reading={status} onOpenCall={onOpenCall} />
       ))}
     </Stack>
   );
 }
 
-function AgentCard({ card, filter, attribution, onOpenCall }: {
+function AgentCard({ card, filter, reading, onOpenCall }: {
   card: AnalysisCard;
   filter: AnalysisFilter;
-  attribution: AttributionState['status'];
+  reading: ReadingStatus;
   onOpenCall: (callId: string) => void;
 }) {
   const { agent, callId } = card;
@@ -75,7 +76,7 @@ function AgentCard({ card, filter, attribution, onOpenCall }: {
                     <Badge size="xs" variant="light" color="gray" tt="none">{item.kind}</Badge>
                     <DevelopmentScopeBadge item={item} />
                     <Text size="sm" style={{ flex: 1 }}>{item.text}</Text>
-                    <FateBadge fate={fate} attribution={attribution} />
+                    <FateBadge fate={fate} reading={reading} />
                   </Group>
                   <FateDetail fate={fate} />
                 </Stack>
@@ -86,7 +87,7 @@ function AgentCard({ card, filter, attribution, onOpenCall }: {
   );
 }
 
-function FateBadge({ fate, attribution }: { fate: ItemFate; attribution: AttributionState['status'] }) {
+function FateBadge({ fate, reading }: { fate: ItemFate; reading: ReadingStatus }) {
   switch (fate.kind) {
     case 'dismissed':
       return <Badge size="xs" variant="outline" color="gray" tt="none">écarté</Badge>;
@@ -96,7 +97,7 @@ function FateBadge({ fate, attribution }: { fate: ItemFate; attribution: Attribu
       if (!fate.reading) {
         return (
           <Text size="xs" c="dimmed" style={{ whiteSpace: 'nowrap' }}>
-            transmis · {attribution === 'loading' || attribution === 'waiting' ? 'lecture en cours' : 'lecture indisponible'}
+            transmis · {reading === 'pending' ? 'lecture en cours' : 'lecture indisponible'}
           </Text>
         );
       }

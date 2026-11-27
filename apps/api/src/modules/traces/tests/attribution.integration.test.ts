@@ -136,7 +136,8 @@ describe.skipIf(!process.env.DATABASE_URL)('turn attribution with PostgreSQL', (
     const first = await attribute(projectId, turnId);
     expect(first.statusCode, first.body).toBe(200);
     const computed = turnAttributionResponseSchema.parse(first.json());
-    expect(computed.attribution.contributions).toMatchObject([
+    expect(computed.failure).toBeNull();
+    expect(computed.attribution?.contributions).toMatchObject([
       { agent: 'Chaos', item: { text: 'Un fil est visible.' }, verdict: 'retenu' },
     ]);
     expect(computed.cost.calls).toBe(1);
@@ -147,7 +148,7 @@ describe.skipIf(!process.env.DATABASE_URL)('turn attribution with PostgreSQL', (
     expect(create.mock.calls.length).toBe(calls);
     const [turn] = await database.select({ attribution: schema.chatTurns.attribution }).from(schema.chatTurns)
       .where(eq(schema.chatTurns.id, turnId));
-    expect(turn?.attribution).toEqual(computed.attribution);
+    expect(turn?.attribution).toEqual({ attribution: computed.attribution, failure: null });
 
     const usage = await database.select().from(schema.llmUsage)
       .where(and(eq(schema.llmUsage.turnId, turnId), eq(schema.llmUsage.stage, 'attribution')));
@@ -164,25 +165,31 @@ describe.skipIf(!process.env.DATABASE_URL)('turn attribution with PostgreSQL', (
     expect(metrics[0]?.durationMs).toBe(before.durationMs);
     // The raw call stays reachable from its turn.
     expect((await app.inject({
-      method: 'GET', url: `/api/projects/${projectId}/turns/${turnId}/traces/${computed.attribution.callId}`, headers: { cookie },
+      method: 'GET', url: `/api/projects/${projectId}/turns/${turnId}/traces/${computed.attribution?.callId}`, headers: { cookie },
     })).statusCode).toBe(200);
   });
 
-  it('reports a failed attribution, keeps the previous one and recomputes only on request', async () => {
+  it('caches a failed regeneration with its cost, keeps the previous reading, and recomputes only on request', async () => {
     const { projectId, turnId } = await completedTurn();
     attributionContent = JSON.stringify({ whatHappened: 'Première lecture.', contributions: [{ id: 1, verdict: 'partiel', note: '' }] });
     const first = turnAttributionResponseSchema.parse((await attribute(projectId, turnId)).json());
 
     attributionContent = 'pas du JSON';
-    const failed = await attribute(projectId, turnId, { regenerate: true });
-    expect(failed.statusCode).toBe(502);
-    expect(failed.json()).toMatchObject({ error: { code: 'LLM_INVALID_RESPONSE' } });
-    expect(turnAttributionResponseSchema.parse((await attribute(projectId, turnId)).json()).attribution).toEqual(first.attribution);
+    const failed = turnAttributionResponseSchema.parse((await attribute(projectId, turnId, { regenerate: true })).json());
+    expect(failed.failure).toMatchObject({ code: 'LLM_INVALID_RESPONSE' });
+    expect(failed.attribution).toEqual(first.attribution);
+    // One automatic retry: both attempts are billed and shown.
+    expect(failed.cost.calls).toBe(3);
+
+    const calls = create.mock.calls.length;
+    expect(turnAttributionResponseSchema.parse((await attribute(projectId, turnId)).json())).toEqual(failed);
+    expect(create.mock.calls.length).toBe(calls);
 
     attributionContent = JSON.stringify({ whatHappened: 'Seconde lecture.', contributions: [{ id: 1, verdict: 'absent', note: '' }] });
     const regenerated = turnAttributionResponseSchema.parse((await attribute(projectId, turnId, { regenerate: true })).json());
-    expect(regenerated.attribution.whatHappened).toBe('Seconde lecture.');
-    expect(regenerated.cost.calls).toBe(3);
+    expect(regenerated.attribution?.whatHappened).toBe('Seconde lecture.');
+    expect(regenerated.failure).toBeNull();
+    expect(regenerated.cost.calls).toBe(4);
   });
 
   it('does not reveal a turn of another project', async () => {

@@ -42,8 +42,8 @@ export function TurnDrawer({
   /** The call « Appels bruts » opens on, when a summary link points to one. */
   const [focusedCallId, setFocusedCallId] = useState<string | null>(null);
   const summary = useTurnTraceSummary(projectId, turnId);
-  /** Requested at the turn's first opening, shared by the Synthèse and the Analyse tab. */
-  const attribution = useTurnAttribution(projectId, turnId, summary.summary);
+  /** Read when a tab that shows it opens on the turn, shared by the Synthèse and the Analyse tab. */
+  const attribution = useTurnAttribution(projectId, turnId, summary.summary, tab === 'overview' || tab === 'analysis');
   const index = turnIds.indexOf(turnId);
   const storyMetrics = storyMetricsOf(turnIds, metricsByTurn);
   const tensionLevels = storyMetrics ? estimateTensionLevels(storyMetrics)[index] ?? null : null;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ChatCompletion } from 'openai/resources/chat/completions';
-import type { TurnAttribution, TurnDirection, TurnTraceSummary } from '@choral-writer/shared';
+import type { TurnAttributionRecord, TurnDirection, TurnTraceSummary } from '@choral-writer/shared';
 
 import { createTestCallLLM } from '../../../tests/support/callLLM.js';
 import { AttributionService } from './attributionService.js';
@@ -50,6 +50,9 @@ const oneVerdict = JSON.stringify({
   contributions: [{ id: 1, verdict: 'retenu', note: 'premier paragraphe' }],
 });
 
+/** Valid JSON, but a verdict short: the model may fix it on a second try. */
+const invalid = JSON.stringify({ whatHappened: 'Incomplet.', contributions: [] });
+
 function setup(responses: string[], turn = summary(direction)) {
   const prompts: string[] = [];
   const { callLLM, traces } = createTestCallLLM({
@@ -60,10 +63,10 @@ function setup(responses: string[], turn = summary(direction)) {
       return completion(next);
     },
   });
-  let stored: TurnAttribution | null = null;
+  let stored: TurnAttributionRecord | null = null;
   const repository = {
     find: async () => stored,
-    save: async (_projectId: string, _turnId: string, attribution: TurnAttribution) => { stored = attribution; },
+    save: async (_projectId: string, _turnId: string, record: TurnAttributionRecord) => { stored = record; },
     listCallCosts: async () => traces.map(() => ({ costMicroUsd: 10 })),
   };
   const service = new AttributionService(callLLM, repository, async () => turn);
@@ -76,6 +79,7 @@ describe('AttributionService', () => {
 
     const response = await service.forTurn('project', 'turn', { regenerate: false });
 
+    expect(response.failure).toBeNull();
     expect(response.attribution).toMatchObject({
       whatHappened: 'Le protagoniste remarque le fil.',
       contributions: [{ agent: 'Chaos', item: scene, verdict: 'retenu', note: 'premier paragraphe' }],
@@ -89,17 +93,17 @@ describe('AttributionService', () => {
     expect(prompts[0]).not.toContain(offscreen.text);
   });
 
-  it('reads the whole whiteboard, off-screen aside, when the turn ran without a direction', async () => {
-    const twoVerdicts = JSON.stringify({
+  it('reads the whole whiteboard, off-screen aside, without a direction, and tolerates loose identifiers and notes', async () => {
+    const loose = JSON.stringify({
       whatHappened: 'Rien de notable.',
-      contributions: [{ id: 2, verdict: 'absent', note: '' }, { id: 1, verdict: 'partiel', note: 'évoqué' }],
+      contributions: [{ id: '2', verdict: 'absent' }, { id: 1, verdict: 'partiel', note: 'évoqué' }],
     });
-    const { service } = setup([twoVerdicts], summary(null));
+    const { service } = setup([loose], summary(null));
 
     const { attribution } = await service.forTurn('project', 'turn', { regenerate: false });
 
-    expect(attribution.contributions.map(({ item, verdict }) => [item.text, verdict])).toEqual([
-      [scene.text, 'partiel'], [idea.text, 'absent'],
+    expect(attribution?.contributions.map(({ item, verdict, note }) => [item.text, verdict, note])).toEqual([
+      [scene.text, 'partiel', 'évoqué'], [idea.text, 'absent', ''],
     ]);
   });
 
@@ -115,7 +119,7 @@ describe('AttributionService', () => {
     expect(traces).toHaveLength(1);
 
     const again = await service.forTurn('project', 'turn', { regenerate: true });
-    expect(again.attribution.whatHappened).toBe('Une autre lecture.');
+    expect(again.attribution?.whatHappened).toBe('Une autre lecture.');
     expect(again.cost.calls).toBe(2);
   });
 
@@ -131,18 +135,60 @@ describe('AttributionService', () => {
     expect(traces).toHaveLength(1);
   });
 
-  it('fails openly on an invalid output, caches nothing, and can be retried', async () => {
-    const missingVerdict = JSON.stringify({ whatHappened: 'Incomplet.', contributions: [] });
-    const { service, traces, stored } = setup([missingVerdict, oneVerdict]);
+  it('does not pay again when another request cached the attribution after this one read the cache', async () => {
+    const { callLLM, traces } = createTestCallLLM({ create: async () => { throw new Error('Unexpected call.'); } });
+    const record: TurnAttributionRecord = {
+      attribution: {
+        whatHappened: 'Déjà lu.', contributions: [], callId: '019ad30c-19b0-7000-8000-000000000901',
+        createdAt: '2025-01-01T00:00:00.000Z',
+      },
+      failure: null,
+    };
+    const reads: (TurnAttributionRecord | null)[] = [null, record];
+    const service = new AttributionService(callLLM, {
+      find: async () => (reads.length ? reads.shift()! : record), save: async () => {}, listCallCosts: async () => [],
+    }, async () => summary(direction));
 
-    await expect(service.forTurn('project', 'turn', { regenerate: false }))
-      .rejects.toMatchObject({ code: 'LLM_INVALID_RESPONSE' });
-    expect(stored()).toBeNull();
-    expect(traces).toMatchObject([{ stage: 'attribution', status: 'error' }]);
+    expect((await service.forTurn('project', 'turn', { regenerate: false })).attribution).toEqual(record.attribution);
+    expect(traces).toHaveLength(0);
+  });
 
-    const retried = await service.forTurn('project', 'turn', { regenerate: false });
-    expect(retried.attribution.contributions[0]?.verdict).toBe('retenu');
-    expect(retried.cost.calls).toBe(2);
+  it('retries an invalid output once before reporting it', async () => {
+    const { service, traces } = setup([invalid, oneVerdict]);
+
+    const response = await service.forTurn('project', 'turn', { regenerate: false });
+
+    expect(response.attribution?.contributions[0]?.verdict).toBe('retenu');
+    expect(traces.map((trace) => trace.status)).toEqual(['error', 'success']);
+    expect(response.cost.calls).toBe(2);
+  });
+
+  it('caches a failure with its cost, shows it again without paying, and recomputes only on request', async () => {
+    const { service, traces, stored } = setup([invalid, invalid, oneVerdict]);
+
+    const failed = await service.forTurn('project', 'turn', { regenerate: false });
+    expect(failed.attribution).toBeNull();
+    expect(failed.failure).toMatchObject({ code: 'LLM_INVALID_RESPONSE' });
+    expect(failed.cost).toEqual({ microUsd: 20, complete: true, calls: 2 });
+    expect(stored()?.failure).toEqual(failed.failure);
+
+    const reopened = await service.forTurn('project', 'turn', { regenerate: false });
+    expect(reopened.failure).toEqual(failed.failure);
+    expect(traces).toHaveLength(2);
+
+    const retried = await service.forTurn('project', 'turn', { regenerate: true });
+    expect(retried.failure).toBeNull();
+    expect(retried.attribution?.contributions[0]?.verdict).toBe('retenu');
+  });
+
+  it('keeps the previous attribution when a regeneration fails', async () => {
+    const { service } = setup([oneVerdict, invalid, invalid]);
+
+    const first = await service.forTurn('project', 'turn', { regenerate: false });
+    const failed = await service.forTurn('project', 'turn', { regenerate: true });
+
+    expect(failed.attribution).toEqual(first.attribution);
+    expect(failed.failure).toMatchObject({ code: 'LLM_INVALID_RESPONSE' });
   });
 
   it('refuses a turn without prose, without calling the model', async () => {

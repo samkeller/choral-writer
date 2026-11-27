@@ -29,16 +29,22 @@ export function attributionMessages(prose: string, contributions: readonly Attri
   ];
 }
 
-/** Every contribution, numbered from 1, gets exactly one verdict. */
+/**
+ * Every contribution, numbered from 1, gets exactly one verdict. Tolerant on form, since each retry is paid:
+ * an identifier may come as a numeric string, and the note may be left out.
+ */
 export function attributionOutputSchema(count: number) {
   return z.object({
     whatHappened: z.string().trim().min(1),
     contributions: z.array(z.object({
-      id: z.number().int().min(1).max(count),
+      id: z.union([z.number(), z.string().trim().regex(/^\d+$/).transform(Number)])
+        .pipe(z.number().int().min(1).max(count)),
       verdict: attributionVerdictSchema,
-      note: z.string().trim(),
+      note: z.string().trim().nullish().transform((note) => note ?? ''),
     })).length(count),
   }).refine((output) => new Set(output.contributions.map((contribution) => contribution.id)).size === count, {
     message: 'Chaque contribution doit recevoir un seul verdict.',
   });
 }
+
+export type AttributionOutput = z.output<ReturnType<typeof attributionOutputSchema>>;

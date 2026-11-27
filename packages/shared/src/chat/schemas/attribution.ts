@@ -17,7 +17,7 @@ export const turnAttributionSchema = z.object({
   /** Every contribution transmitted to the Narrator, in the order he read them. */
   contributions: z.array(attributedItemSchema.extend({
     verdict: attributionVerdictSchema,
-    /** Where or how the prose shows it, in a few words. */
+    /** Where or how the prose shows it, in a few words; empty when the model gave none. */
     note: z.string(),
   })),
   /** The call that produced this attribution. */
@@ -26,14 +26,31 @@ export const turnAttributionSchema = z.object({
 });
 export type TurnAttribution = z.infer<typeof turnAttributionSchema>;
 
+/** The last attribution that failed, kept so that reopening the turn shows it instead of paying again. */
+export const attributionFailureSchema = z.object({
+  code: z.string(),
+  message: z.string(),
+  failedAt: z.string().datetime(),
+});
+export type AttributionFailure = z.infer<typeof attributionFailureSchema>;
+
+/**
+ * What is cached on a turn: the last attribution that succeeded, and the last failure when it came after it.
+ * A failed regeneration keeps the previous attribution; a success clears the failure.
+ */
+export const turnAttributionRecordSchema = z.object({
+  attribution: turnAttributionSchema.nullable(),
+  failure: attributionFailureSchema.nullable(),
+});
+export type TurnAttributionRecord = z.infer<typeof turnAttributionRecordSchema>;
+
 export const turnAttributionRequestSchema = z.object({
-  /** Recompute even when an attribution is cached; never done automatically. */
+  /** Recompute even when an attribution or a failure is cached; only ever sent on an explicit click. */
   regenerate: z.boolean().default(false),
 });
 export type TurnAttributionRequest = z.input<typeof turnAttributionRequestSchema>;
 
-export const turnAttributionResponseSchema = z.object({
-  attribution: turnAttributionSchema,
+export const turnAttributionResponseSchema = turnAttributionRecordSchema.extend({
   /** Every attribution call of the turn, failures and regenerations included; never part of the turn's own cost. */
   cost: turnCostSchema.extend({ calls: z.number().int().nonnegative() }),
 });

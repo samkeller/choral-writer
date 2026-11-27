@@ -83,18 +83,25 @@ export function isToldInScene(item: AttributedItem['item']): boolean {
   return !isDevelopment(item) || item.scope === 'scene';
 }
 
+type Whiteboard = readonly { agent: string; items: readonly AttributedItem['item'][] }[];
+
 /**
- * The contributions the Narrator received, in the order he read them: those the Director retained, or the
- * whole whiteboard without a direction (none configured, or a failed one), never an off-screen development.
+ * The contributions the direction lets through, in whiteboard order: those the Director retained, or the
+ * whole whiteboard without a direction (none configured, or a failed one). Whiteboard items are returned
+ * as they are, so a caller can recognise them by identity.
  */
-export function contributionsToldToNarrator(
-  whiteboard: readonly { agent: string; items: readonly AttributedItem['item'][] }[],
-  direction: TurnDirection | null,
-): AttributedItem[] {
-  const transmitted = direction
+export function contributionsLetThrough(whiteboard: Whiteboard, direction: TurnDirection | null): AttributedItem[] {
+  return direction
     ? direction.retained.map(({ agent, item }) => ({ agent, item }))
     : whiteboard.flatMap((envelope) => envelope.items.map((item) => ({ agent: envelope.agent, item })));
-  return transmitted.filter(({ item }) => isToldInScene(item));
+}
+
+/**
+ * The contributions the Narrator received, in the order he read them: those the direction lets through,
+ * never an off-screen development, which has happened but is not his to tell.
+ */
+export function contributionsToldToNarrator(whiteboard: Whiteboard, direction: TurnDirection | null): AttributedItem[] {
+  return contributionsLetThrough(whiteboard, direction).filter(({ item }) => isToldInScene(item));
 }
 
 export const attributedDevelopmentSchema = z.object({
