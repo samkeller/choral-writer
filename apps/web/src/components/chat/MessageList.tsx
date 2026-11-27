@@ -17,10 +17,12 @@ interface MessageListProps {
   turnMetrics: ReadonlyMap<string, TurnMetrics>;
   inspectedTurnId: string | null;
   onInspectTurn: (turnId: string) => void;
+  /** Offered under a completed variant of a turn; absent while a turn runs. */
+  onCompareTurn?: (turnId: string) => void;
 }
 
 export function MessageList({
-  messages, turns, partial, pending, pipelineProgress, turnMetrics, inspectedTurnId, onInspectTurn,
+  messages, turns, partial, pending, pipelineProgress, turnMetrics, inspectedTurnId, onInspectTurn, onCompareTurn,
 }: MessageListProps) {
   const container = useRef<HTMLDivElement>(null);
   const initializedScroll = useRef(false);
@@ -90,6 +92,8 @@ export function MessageList({
                   failed={endedTurn.turn.status === 'failed'}
                   selected={inspectedTurnId === endedTurn.turn.id}
                   onOpen={() => onInspectTurn(endedTurn.turn.id)}
+                  onCompare={onCompareTurn && endedTurn.turn.regeneratedFromTurnId && endedTurn.turn.status === 'completed'
+                    ? () => onCompareTurn(endedTurn.turn.id) : undefined}
                 />
               )}
             </Stack>

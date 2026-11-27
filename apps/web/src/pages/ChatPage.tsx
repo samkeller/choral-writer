@@ -11,6 +11,7 @@ import { MessageList } from '../components/chat/MessageList';
 import { ReplayDialog } from '../components/chat/ReplayDialog';
 import { PipelineFailure } from '../components/chat/PipelineProgress';
 import { TurnDrawer } from '../components/chat/turnDrawer/TurnDrawer';
+import { VariantComparisonDrawer } from '../components/chat/variantComparison/VariantComparisonDrawer';
 import { ProjectConfiguration } from './ProjectConfiguration';
 import { useChat } from '../hooks/useChat';
 import { useTurnMetrics } from '../hooks/useTurnMetrics';
@@ -31,13 +32,18 @@ function ProjectChat({ projectId }: { projectId: string }) {
   const head = chat.history?.turns.at(-1);
   const [traceTurnId, setTraceTurnId] = useState<string | null>(null);
   const [replayOpen, setReplayOpen] = useState(false);
+  const [comparedTurnId, setComparedTurnId] = useState<string | null>(null);
+  const comparedTurn = chat.history?.turns.find((turn) => turn.id === comparedTurnId);
   const turnMetrics = useTurnMetrics(projectId, chat.history, chat.pending);
   const metricsByTurn = useMemo(
     () => new Map((turnMetrics.metrics ?? []).map((metrics) => [metrics.turnId, metrics])),
     [turnMetrics.metrics],
   );
 
-  useEffect(() => setTraceTurnId(null), [chat.history?.branch.id]);
+  useEffect(() => {
+    setTraceTurnId(null);
+    setComparedTurnId(null);
+  }, [chat.history?.branch.id]);
 
   if (chat.loading) {
     return <Center py="xl"><Loader color="choral" aria-label="Chargement de la conversation" /></Center>;
@@ -103,6 +109,7 @@ function ProjectChat({ projectId }: { projectId: string }) {
               turnMetrics={metricsByTurn}
               inspectedTurnId={traceTurnId}
               onInspectTurn={setTraceTurnId}
+              onCompareTurn={chat.pending ? undefined : setComparedTurnId}
             />
           </Box>
           {head?.status === 'failed' && !chat.pending
@@ -145,6 +152,24 @@ function ProjectChat({ projectId }: { projectId: string }) {
               turnId={traceTurnId}
               onSelectTurn={setTraceTurnId}
               onClose={() => setTraceTurnId(null)}
+            />
+          )}
+          {comparedTurn?.regeneratedFromTurnId && (
+            <VariantComparisonDrawer
+              projectId={projectId}
+              originalTurnId={comparedTurn.regeneratedFromTurnId}
+              variantTurnId={comparedTurn.id}
+              onAdopted={() => {
+                setComparedTurnId(null);
+                chat.selectBranch(comparedTurn.originBranchId);
+                chat.reload();
+              }}
+              onKeepOriginal={() => {
+                setComparedTurnId(null);
+                const originalBranchId = chat.branches.find((branch) => branch.id === comparedTurn.originBranchId)?.sourceBranchId;
+                if (originalBranchId) chat.selectBranch(originalBranchId);
+              }}
+              onClose={() => setComparedTurnId(null)}
             />
           )}
           {replayOpen && head && (

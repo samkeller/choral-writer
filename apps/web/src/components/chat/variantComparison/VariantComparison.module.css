@@ -1,0 +1,46 @@
+.drawer {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.header,
+.footer {
+  flex-shrink: 0;
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+}
+
+/* Two columns side by side, never wider than two comfortable reading lines. */
+.columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--mantine-spacing-md);
+  max-width: 88rem;
+  margin-inline: auto;
+}
+
+@media (min-width: 62em) {
+  .columns {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.column {
+  min-width: 0;
+}
+
+.prose {
+  font-size: var(--mantine-font-size-sm);
+  line-height: 1.65;
+}
+
+.footer {
+  border-top: 1px solid var(--mantine-color-default-border);
+  padding: var(--mantine-spacing-sm) var(--mantine-spacing-md);
+}

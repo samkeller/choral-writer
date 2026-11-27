@@ -17,6 +17,8 @@ import { MemoriesService } from '../memories/services/memoriesService.js';
 
 export type { ChatService } from './services/chatService.js';
 export { ChatController } from './controllers/chatController.js';
+export { VariantAdoptionService } from './services/variantAdoptionService.js';
+export { registerVariantAdoptionRoutes } from './routes/variantAdoptionRoutes.js';
 
 /** Also used by project creation to initialize chat through its branch service. */
 export function createChatBranchService(connection: Database | Transaction, projectId: string): ChatBranchService {
