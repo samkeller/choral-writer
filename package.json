@@ -12,6 +12,7 @@
     "db:generate": "pnpm --filter @choral-writer/api db:generate",
     "db:migrate": "pnpm --filter @choral-writer/api db:migrate",
     "db:seed:demo": "pnpm --filter @choral-writer/api db:seed:demo",
+    "eval:v2": "pnpm --filter @choral-writer/api eval:v2",
     "wt:new": "pnpm --filter @choral-writer/api exec tsx scripts/worktree/cli.ts new",
     "wt:remove": "pnpm --filter @choral-writer/api exec tsx scripts/worktree/cli.ts remove"
   },

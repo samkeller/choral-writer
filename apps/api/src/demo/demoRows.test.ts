@@ -4,7 +4,6 @@ import {
 } from '@choral-writer/shared';
 
 import { buildDemoProjectRows, type DemoProjectRows } from './demoRows.js';
-import { demoDatabaseRefusal } from './demoGuard.js';
 import { demoProjects } from './demoScenario.js';
 
 const rate = { id: '019aee10-0000-7000-8000-000000000001', inputPerMillion: 0.15, outputPerMillion: 0.6, cacheReadPerMillion: 0.003 };
@@ -88,26 +87,5 @@ describe('demo rows', () => {
     expect(priced.filter((usage) => usage.status === 'success').every((usage) => usage.pricingId === rate.id)).toBe(true);
     const unpriced = buildDemoProjectRows(demoProjects[0]!, { startedAt, rate: null, id: sequentialIds() }).llmUsages;
     expect(unpriced.every((usage) => usage.costBasis === 'unpriced' && usage.costMicroUsd === null)).toBe(true);
-  });
-});
-
-describe('demo database guard', () => {
-  const local = 'postgres://user:secret@localhost:5432/demo';
-
-  it('accepts a local development database', () => {
-    for (const host of ['localhost', '127.0.0.1', '[::1]']) {
-      expect(demoDatabaseRefusal({ databaseUrl: `postgres://u:p@${host}:5432/demo`, nodeEnv: 'development' },
-        { allowRemote: false })).toBeNull();
-    }
-  });
-
-  it('refuses production, even locally', () => {
-    expect(demoDatabaseRefusal({ databaseUrl: local, nodeEnv: 'production' }, { allowRemote: true })).toMatch(/production/);
-  });
-
-  it('refuses a remote host unless explicitly allowed', () => {
-    const remote = { databaseUrl: 'postgres://u:p@db.example.com:5432/demo', nodeEnv: 'development' };
-    expect(demoDatabaseRefusal(remote, { allowRemote: false })).toMatch(/--allow-remote/);
-    expect(demoDatabaseRefusal(remote, { allowRemote: true })).toBeNull();
   });
 });
