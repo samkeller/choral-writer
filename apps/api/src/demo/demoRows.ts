@@ -2,8 +2,8 @@ import type { ChatCompletionMessageParam } from 'openai/resources/chat/completio
 import { v7 as uuidv7 } from 'uuid';
 import {
   analysisEnvelopeSchema, defaultMemoryRead, memoryProposalsSchema,
-  type AnalysisEnvelope, type LlmStage, type MemoryContext, type MemoryProposal, type MemoryResult, type MemoryState,
-  type ProjectAgent, type TurnDirection,
+  type AnalysisEnvelope, type ChatTurn, type LlmStage, type MemoryContext,
+  type MemoryProposal, type MemoryResult, type MemoryState, type Message, type ProjectAgent, type TurnDirection,
 } from '@choral-writer/shared';
 
 import type {
@@ -11,13 +11,16 @@ import type {
 } from '../db/schema.js';
 import { resolveCost, type PriceRate } from '../llm/usage/pricingResolver.js';
 import { memoryContext, formatMemoryContext, reduceProposals } from '../modules/memories/services/memoryState.js';
+import { appliedMemoryMessage } from '../modules/memories/services/memoriesService.js';
+import { startingTags } from '../modules/memories/services/startingTags.js';
+import { conversationMessages } from '../modules/chat/services/conversationMessages.js';
 import {
   directorOutputContract, forbiddenNudgeTypes, identifyWhiteboard, isDirectorAgent, resolveDirection,
 } from '../modules/chat/services/directorService.js';
 import { narratorSystemPrompt } from '../modules/chat/services/narratorPrompt.js';
 import { turnConfiguration } from '../modules/chat/services/turnConfiguration.js';
+import { turnDevelopments } from '../modules/chat/services/turnDevelopments.js';
 import { formatItem } from '../modules/chat/services/whiteboardFormat.js';
-import { startingTags } from '../modules/memories/services/startingTags.js';
 import { demoTagNames, type DemoProject, type DemoTag, type DemoTeamMember, type DemoTurn } from './demoScenario.js';
 
 export type DemoProjectRows = {
@@ -35,11 +38,16 @@ export type DemoProjectRows = {
   llmUsages: (typeof llmUsage.$inferInsert)[];
 };
 
-const MODEL = 'deepseek-flash';
-/** Off-peak deepseek-flash price inserted by migration 0009. */
-const PRICE: PriceRate = {
-  id: '019aee10-0000-7000-8000-000000000001', inputPerMillion: 0.15, outputPerMillion: 0.6, cacheReadPerMillion: 0.003,
+export type DemoRowsOptions = {
+  startedAt: Date;
+  /** The price the calls are costed with; null leaves them unpriced, like an unknown model. */
+  rate: PriceRate | null;
+  id?: () => string;
 };
+
+/** Model and price window the demo calls are recorded under. */
+export const DEMO_MODEL = { provider: 'deepseek', model: 'deepseek-flash', priceWindow: 'off_peak' } as const;
+
 const TURN_INTERVAL_MS = 6 * 60_000;
 /** Simulated latency: a fixed share plus a share per generated token. */
 const LATENCY: Record<LlmStage, { baseMs: number; perTokenMs: number }> = {
@@ -50,19 +58,16 @@ const LATENCY: Record<LlmStage, { baseMs: number; perTokenMs: number }> = {
   memory_setup: { baseMs: 1_000, perTokenMs: 10 },
 };
 const REDUCER_MS = 4;
+const INVALID_RESPONSE = 'Le fournisseur LLM a renvoyé une réponse au format invalide.';
 
-type Exchange = { user: string; assistant: string | null };
-
-/** What a later turn needs from its parent. */
+/** What later turns need from a played one. */
 type PlayedTurn = {
-  id: string;
+  turn: ChatTurn;
   startedAt: Date;
-  userMessageId: string;
-  userContent: string;
   memoryAfter: MemoryState;
   direction: TurnDirection | null;
-  /** The path up to and including this turn, as the next turn's history. */
-  history: Exchange[];
+  /** The path up to and including this turn, root first. */
+  path: ChatTurn[];
 };
 
 type CallInput = {
@@ -81,11 +86,13 @@ type CallInput = {
 
 /**
  * Turns a demo description into rows that follow the real schemas, without any LLM call.
- * Pipeline outputs go through the same validation and reduction as a real turn (analysis envelope,
- * Director contract, Guardian proposals), so an inconsistent description fails here, not in the UI.
- * Request prompts are abbreviated: they carry the context of each stage, not its full output contract.
+ * Pipeline outputs go through the same code as a real turn (analysis envelope, Director contract and
+ * resolution, developments, Guardian proposals and reduction, configuration, cost), so an inconsistent
+ * description fails here, not in the UI. Request prompts of analysis, Director and Guardian are abbreviated:
+ * they carry the context of each stage, not its full output contract. Tokens and durations are estimated.
  */
-export function buildDemoProjectRows(project: DemoProject, startedAt: Date, id: () => string = uuidv7): DemoProjectRows {
+export function buildDemoProjectRows(project: DemoProject, options: DemoRowsOptions): DemoProjectRows {
+  const { startedAt, rate, id = uuidv7 } = options;
   const tags = startingTags(id);
   const tagId = (tag: DemoTag) => {
     const value = tags.find((candidate) => candidate.name === demoTagNames[tag])?.id;
@@ -106,7 +113,7 @@ export function buildDemoProjectRows(project: DemoProject, startedAt: Date, id: 
     const narrator = agents.find((agent) => agent.output === 'narrative');
     const guardian = agents.find((agent) => agent.output === 'memory_proposals');
     if (!narrator || !guardian) throw new Error('A demo team needs a Narrator and a Guardian.');
-    return { agents, narrator, guardian };
+    return { agents, narrator, guardian, director: agents.find(isDirectorAgent) };
   };
 
   const rows: DemoProjectRows = {
@@ -125,25 +132,28 @@ export function buildDemoProjectRows(project: DemoProject, startedAt: Date, id: 
 
   const call = (input: CallInput): number => {
     const callId = id();
-    const inputTokens = estimateTokens(JSON.stringify(input.messages));
-    const outputTokens = input.response === null ? null : estimateTokens(input.response);
     const latency = LATENCY[input.stage];
+    const outputTokens = input.response === null ? null : estimateTokens(input.response);
     const durationMs = latency.baseMs + latency.perTokenMs * (outputTokens ?? 200);
     const createdAt = new Date(input.startedAt + durationMs);
     const status = input.error ? 'error' as const : 'success' as const;
-    const measured = status === 'success' ? { inputTokens, outputTokens } : { inputTokens: null, outputTokens: null };
+    // A provider answer, even an invalid one, is measured; a failed connection is not.
+    const measured = outputTokens === null
+      ? { inputTokens: null, outputTokens: null }
+      : { inputTokens: estimateTokens(JSON.stringify(input.messages)), outputTokens };
     rows.llmCalls.push({
       id: callId, projectId: project.id, turnId: input.turnId,
       agentId: input.agent.agentId, agentVersionId: input.agent.versionId, stageExecutionId: input.stageExecutionId ?? null,
-      stage: input.stage, model: MODEL, request: { messages: input.messages, memory: input.memory },
+      stage: input.stage, model: DEMO_MODEL.model, request: { messages: input.messages, memory: input.memory },
       response: input.response, ...measured, durationMs, status, error: input.error ?? null, createdAt,
     });
     if (input.priced) {
-      const cost = resolveCost({ ...measured, cachedInputTokens: null, providerCostUsd: null, rate: PRICE });
+      const cost = resolveCost({ ...measured, cachedInputTokens: null, providerCostUsd: null, rate });
       rows.llmUsages.push({
         id: id(), callId, projectId: project.id, turnId: input.turnId, stage: input.stage,
         stageExecutionId: input.stageExecutionId ?? null,
-        agentId: input.agent.agentId, agentVersionId: input.agent.versionId, provider: 'deepseek', model: MODEL,
+        agentId: input.agent.agentId, agentVersionId: input.agent.versionId,
+        provider: DEMO_MODEL.provider, model: DEMO_MODEL.model,
         ...measured, cachedInputTokens: null, durationMs, status,
         pricingId: cost.pricingId, costBasis: cost.basis, costMicroUsd: cost.costMicroUsd, createdAt,
       });
@@ -157,15 +167,15 @@ export function buildDemoProjectRows(project: DemoProject, startedAt: Date, id: 
     const branchId = branchIds[turn.branch];
     const startedAtMs = clock;
     const before = parent?.memoryAfter ?? initialMemory;
-    const history = parent?.history ?? [];
-    const { agents, narrator, guardian } = team(turn.team);
+    const history = parent?.path ?? [];
+    const { agents, narrator, guardian, director } = team(turn.team);
     const priced = !turn.legacy;
 
-    const user = userMessage(turn, played, id);
-    if (user.created) {
-      rows.messages.push({ id: user.id, projectId: project.id, role: 'user', content: user.content, createdAt: new Date(startedAtMs) });
-    }
-    const dialogue = (system: string) => conversation(system, history, user.content);
+    const userMessage = turn.regeneratedFrom
+      ? playedTurn(played, turn.regeneratedFrom).turn.userMessage
+      : newMessage(project.id, 'user', requiredInput(turn), new Date(startedAtMs), id);
+    if (!turn.regeneratedFrom) rows.messages.push(userMessage);
+    const dialogue = (system: string) => conversationMessages(system, history, userMessage);
 
     let analysisEnd = startedAtMs;
     const whiteboard: AnalysisEnvelope[] = [];
@@ -180,8 +190,7 @@ export function buildDemoProjectRows(project: DemoProject, startedAt: Date, id: 
       for (let attempt = 0; attempt < (analysis.invalidAttempts ?? 0); attempt++) {
         at = call({
           turnId, stage: 'analysis', agent, messages, memory, priced, startedAt: at,
-          response: `Voici mon analyse : ${analysis.summary}`,
-          error: 'Le fournisseur LLM a renvoyé une réponse au format invalide.',
+          response: `Voici mon analyse : ${analysis.summary}`, error: INVALID_RESPONSE,
         });
       }
       at = call({ turnId, stage: 'analysis', agent, messages, memory, priced, startedAt: at, response: JSON.stringify(envelope) });
@@ -190,35 +199,40 @@ export function buildDemoProjectRows(project: DemoProject, startedAt: Date, id: 
 
     let direction: TurnDirection | null = null;
     let directionEnd = analysisEnd;
-    const director = agents.find(isDirectorAgent);
     if (Boolean(director) !== Boolean(turn.direction)) {
       throw new Error(`Demo turn ${turn.ref} must have a direction exactly when its team has a Director.`);
     }
     if (director && turn.direction) {
-      const identified = identifyWhiteboard(whiteboard);
-      const items = identified.flatMap((entry) => entry.items);
-      const output = directorOutputContract(items.map((item) => item.id), forbiddenNudgeTypes([parent?.direction ?? null]))
-        .parse({ v: 1, ...turn.direction });
-      direction = resolveDirection(output, items);
-      directionEnd = call({
-        turnId, stage: 'direction', agent: director, priced, startedAt: analysisEnd,
-        memory: { tags: [], entries: [] }, response: JSON.stringify(output),
-        messages: dialogue([
-          project.systemPrompt, director.instructions,
-          ...items.map((item) => `- [${item.id}] ${item.agent} — ${formatItem(item.item)}`),
-        ].join('\n\n')),
+      const items = identifyWhiteboard(whiteboard).flatMap((entry) => entry.items);
+      const messages = dialogue([
+        project.systemPrompt, director.instructions,
+        ...items.map((item) => `- [${item.id}] ${item.agent} — ${formatItem(item.item)}`),
+      ].join('\n\n'));
+      const directorCall = (response: string, error?: string) => call({
+        turnId, stage: 'direction', agent: director, priced, startedAt: directionEnd,
+        memory: { tags: [], entries: [] }, messages, response, error,
       });
+      if (turn.direction === 'failed') {
+        // Two invalid answers: the Director's retry fails too and the Narrator falls back to the whole whiteboard.
+        directionEnd = directorCall('{"v":1,"retained":[]}', INVALID_RESPONSE);
+        directionEnd = directorCall('{"v":1,"retained":[]}', INVALID_RESPONSE);
+      } else {
+        const output = directorOutputContract(items, forbiddenNudgeTypes([parent?.direction ?? null]))
+          .parse({ v: 1, ...turn.direction });
+        direction = resolveDirection(output, items);
+        directionEnd = directorCall(JSON.stringify(output));
+      }
     }
+    const developments = turnDevelopments(whiteboard, direction);
 
     const narratorMemory = memoryContext(before, narrator);
     const narratorMessages = dialogue(narratorSystemPrompt(
-      [project.systemPrompt, narrator.instructions].filter(Boolean).join('\n\n'),
-      whiteboard, narratorMemory, direction,
+      [project.systemPrompt, narrator.instructions].filter(Boolean).join('\n\n'), whiteboard, narratorMemory, direction,
     ));
     let end: number;
     let memoryAfter = before;
     let memoryResult: MemoryResult | null = null;
-    let assistant: { id: string; content: string } | null = null;
+    let assistantMessage: Message | null = null;
     if (turn.outcome.status === 'failed') {
       end = call({
         turnId, stage: 'narrator', agent: narrator, priced, startedAt: directionEnd,
@@ -229,55 +243,51 @@ export function buildDemoProjectRows(project: DemoProject, startedAt: Date, id: 
         turnId, stage: 'narrator', agent: narrator, priced, startedAt: directionEnd,
         memory: narratorMemory, messages: narratorMessages, response: turn.outcome.prose,
       });
-      assistant = { id: id(), content: turn.outcome.prose };
       if (!turn.legacy) {
-        const runId = id();
-        const proposals = memoryProposalsSchema.parse({
-          v: 2, tagSuggestions: [],
-          proposals: turn.outcome.memory.map((change) => toProposal(change, before, tagId)),
-        });
         const guardianStart = end;
+        const run = guardianRun(turn.outcome.memory, before, tagId);
+        const runId = id();
         end = call({
           turnId, stage: 'guardian', agent: guardian, priced, startedAt: guardianStart, stageExecutionId: runId,
-          memory: memoryContext(before, guardian), response: JSON.stringify(proposals),
+          memory: memoryContext(before, guardian), response: JSON.stringify(run),
           messages: [
             { role: 'system', content: guardian.instructions },
-            { role: 'user', content: JSON.stringify({ projectContext: project.systemPrompt, prose: turn.outcome.prose }) },
+            { role: 'user', content: JSON.stringify({ projectContext: project.systemPrompt, prose: turn.outcome.prose, developments }) },
           ],
         });
-        const reduced = reduceProposals(
-          before, proposals.proposals, guardian, turnId, id, new Date(end).toISOString(),
-        );
+        const reduced = reduceProposals(before, run.proposals, guardian, turnId, id, new Date(end).toISOString());
         memoryAfter = reduced.state;
         memoryResult = {
-          status: 'success', code: null,
-          message: reduced.changes.length
-            ? `${reduced.changes.length} changement(s) mémoire appliqué(s).` : 'Aucun changement mémoire nécessaire.',
+          status: 'success', code: null, message: appliedMemoryMessage(reduced.changes.length),
           changes: reduced.changes, tagSuggestions: [], guardianMs: end - guardianStart, reducerMs: REDUCER_MS,
         };
         end += REDUCER_MS;
-        rows.memoryRuns.push({
-          id: runId, projectId: project.id, branchId, turnId, result: memoryResult, createdAt: new Date(end),
-        });
+        rows.memoryRuns.push({ id: runId, projectId: project.id, branchId, turnId, result: memoryResult, createdAt: new Date(end) });
       }
     }
     const completedAt = new Date(end + 20);
-    if (assistant) {
-      rows.messages.push({ id: assistant.id, projectId: project.id, role: 'assistant', content: assistant.content, createdAt: completedAt });
+    if (turn.outcome.status === 'completed') {
+      assistantMessage = newMessage(project.id, 'assistant', turn.outcome.prose, completedAt, id);
+      rows.messages.push(assistantMessage);
     }
-    rows.turns.push({
-      id: turnId, projectId: project.id, originBranchId: branchId, parentTurnId: parent?.id ?? null,
-      retryOfTurnId: null,
-      regeneratedFromTurnId: turn.regeneratedFrom ? playedTurn(played, turn.regeneratedFrom).id : null,
-      userMessageId: user.id, assistantMessageId: assistant?.id ?? null,
+    const chatTurn: ChatTurn = {
+      id: turnId, parentTurnId: parent?.turn.id ?? null, originBranchId: branchId, retryOfTurnId: null,
+      regeneratedFromTurnId: turn.regeneratedFrom ? playedTurn(played, turn.regeneratedFrom).turn.id : null,
       status: turn.outcome.status, error: turn.outcome.status === 'failed' ? turn.outcome.error : null,
+      userMessage, assistantMessage, memory: memoryResult,
+    };
+    rows.turns.push({
+      id: turnId, projectId: project.id, originBranchId: branchId, parentTurnId: chatTurn.parentTurnId,
+      retryOfTurnId: null, regeneratedFromTurnId: chatTurn.regeneratedFromTurnId,
+      userMessageId: userMessage.id, assistantMessageId: assistantMessage?.id ?? null,
+      status: chatTurn.status, error: chatTurn.error,
       memorySnapshot: turn.legacy ? null : before, memoryResult,
       configuration: turn.legacy ? null : turnConfiguration(project.systemPrompt, agents),
-      direction, createdAt: new Date(startedAtMs), completedAt,
+      direction, developments: turn.legacy ? null : developments,
+      createdAt: new Date(startedAtMs), completedAt,
     });
     played.set(turn.ref, {
-      id: turnId, startedAt: new Date(startedAtMs), userMessageId: user.id, userContent: user.content, memoryAfter, direction,
-      history: [...history, { user: user.content, assistant: assistant?.content ?? null }],
+      turn: chatTurn, startedAt: new Date(startedAtMs), memoryAfter, direction, path: [...history, chatTurn],
     });
     clock = completedAt.getTime() + TURN_INTERVAL_MS;
   }
@@ -288,12 +298,13 @@ export function buildDemoProjectRows(project: DemoProject, startedAt: Date, id: 
     const head = turns.at(-1);
     if (!first || !head) continue;
     const headTurn = playedTurn(played, head.ref);
-    const forkTurnId = name === 'main' || first.parent === null ? null : playedTurn(played, first.parent).id;
     rows.branches.push({
       id: branchIds[name], projectId: project.id,
       name: name === 'main' ? 'Principale' : 'Alternative 1',
       sourceBranchId: name === 'main' ? null : branchIds.main,
-      forkTurnId, headTurnId: headTurn.id,
+      forkTurnId: name === 'main' || first.parent === null ? null : playedTurn(played, first.parent).turn.id,
+      headTurnId: headTurn.turn.id,
+      // An alternative branch is created by the regeneration that starts it.
       createdAt: name === 'main' ? startedAt : playedTurn(played, first.ref).startedAt,
     });
     rows.memoryBanks.push({
@@ -318,31 +329,29 @@ function toProjectAgent(member: DemoTeamMember, tagId: (tag: DemoTag) => string)
   };
 }
 
+/** The Guardian's output for a turn, validated against its contract. */
+function guardianRun(
+  changes: Extract<DemoTurn['outcome'], { status: 'completed' }>['memory'], state: MemoryState,
+  tagId: (tag: DemoTag) => string,
+) {
+  return memoryProposalsSchema.parse({
+    v: 2, tagSuggestions: [], proposals: changes.map((change) => toProposal(change, state, tagId)),
+  });
+}
+
 function playedTurn(played: ReadonlyMap<string, PlayedTurn>, ref: string): PlayedTurn {
   const turn = played.get(ref);
   if (!turn) throw new Error(`Demo turn ${ref} is referenced before it is played.`);
   return turn;
 }
 
-function userMessage(turn: DemoTurn, played: ReadonlyMap<string, PlayedTurn>, id: () => string) {
-  if (turn.regeneratedFrom) {
-    const source = playedTurn(played, turn.regeneratedFrom);
-    return { id: source.userMessageId, content: source.userContent, created: false };
-  }
+function requiredInput(turn: DemoTurn): string {
   if (!turn.input) throw new Error(`Demo turn ${turn.ref} needs an input.`);
-  return { id: id(), content: turn.input, created: true };
+  return turn.input;
 }
 
-/** Same shape as the pipeline's conversation: system prompt, the path's exchanges, then the new input. */
-function conversation(system: string, history: readonly Exchange[], input: string): ChatCompletionMessageParam[] {
-  return [
-    { role: 'system', content: system },
-    ...history.flatMap((exchange): ChatCompletionMessageParam[] => [
-      { role: 'user', content: exchange.user },
-      ...(exchange.assistant === null ? [] : [{ role: 'assistant' as const, content: exchange.assistant }]),
-    ]),
-    { role: 'user', content: input },
-  ];
+function newMessage(projectId: string, role: Message['role'], content: string, createdAt: Date, id: () => string): Message {
+  return { id: id(), projectId, role, content, createdAt };
 }
 
 function toProposal(

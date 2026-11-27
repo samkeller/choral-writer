@@ -1,12 +1,15 @@
 import { loadConfig } from '../config.js';
 import { db, pool } from '../db/client.js';
+import { demoDatabaseRefusal } from './demoGuard.js';
 import { clearDemoProjects, seedDemoProjects } from './demoSeed.js';
 
-/** `pnpm db:seed:demo` fills the database of `.env` with the demo projects; `--clear` only removes them. */
+/**
+ * `pnpm db:seed:demo` fills the local database of `.env` with the demo projects; `--clear` only removes them.
+ * `--allow-remote` is required to target a database on another host.
+ */
 async function main(): Promise<void> {
-  if (loadConfig().nodeEnv === 'production') {
-    throw new Error('Demo data is for development databases only (NODE_ENV=production).');
-  }
+  const refusal = demoDatabaseRefusal(loadConfig(), { allowRemote: process.argv.includes('--allow-remote') });
+  if (refusal) throw new Error(refusal);
   if (process.argv.includes('--clear')) {
     await clearDemoProjects(db);
     console.log('Projets de démo supprimés.');

@@ -135,6 +135,12 @@ describe.skipIf(!process.env.DATABASE_URL)('demo data with PostgreSQL', () => {
     expect(changes).toEqual(expect.arrayContaining(['agentChanged', 'agentRemoved']));
     expect(metrics.some((metric) => metric.direction?.status === 'success' && metric.direction.nudges.length > 0)).toBe(true);
     expect(metrics.some((metric) => metric.direction === null)).toBe(true);
+    expect(metrics.some((metric) => metric.direction?.status === 'error')).toBe(true);
+    expect(summaries.some((summary) => summary.direction?.status === 'error' && summary.direction.attempts === 2)).toBe(true);
+    // The « Développements » tab: developments split by scope, absent from turns recorded before them.
+    expect(summaries.some((summary) => summary.developments === null)).toBe(true);
+    expect(summaries.some((summary) => (summary.developments?.scene.length ?? 0) > 0)).toBe(true);
+    expect(summaries.some((summary) => (summary.developments?.offscreen.length ?? 0) > 0)).toBe(true);
   });
 
   it('clears the demo projects and keeps the library', async () => {

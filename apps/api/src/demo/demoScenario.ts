@@ -7,8 +7,9 @@ import { LIBRARY_AGENTS, type LibraryAgent } from '../modules/agents/repository/
  *
  * Ce module ne fait que décrire, avec les agents de la bibliothèque. `demoRows.ts` en tire des lignes
  * conformes aux schémas réels, et `demoSeed.ts` les écrit. Pour enrichir la démo (nouvelle phase du
- * pipeline, nouveau champ de trace, développements d'un tour), compléter ces descriptions puis leur
- * traduction dans `demoRows.ts`.
+ * pipeline, nouveau champ de trace), compléter ces descriptions puis leur traduction dans `demoRows.ts`.
+ * Les tours se lisent dans l'ordre où ils ont été joués : une régénération suit immédiatement le tour
+ * qu'elle régénère, alors en tête de sa branche.
  */
 
 /** Les identifiants fixes marquent les projets de démo : un nouveau seed remplace exactement ces projets. */
@@ -75,7 +76,8 @@ export type DemoTurn = {
   /** Tour antérieur aux configurations enregistrées : ni configuration, ni coût, ni mémoire tracée. */
   legacy?: boolean;
   analysis: readonly DemoAnalysis[];
-  direction?: DemoDirection;
+  /** Exigée avec un Directeur ; `failed` reproduit deux réponses invalides, et le Narrateur lit alors tout le whiteboard. */
+  direction?: DemoDirection | 'failed';
   outcome:
     | { status: 'completed'; prose: string; memory: readonly DemoMemoryChange[] }
     | { status: 'failed'; error: string };
@@ -106,8 +108,11 @@ const restitution = [
 ] satisfies DemoTeamMember[];
 
 const villageMembers = {
-  characters: { agent: characters, version: 1, reads: ['intentions', 'faits'] },
-  offscreen: { agent: offscreen, version: 1, reads: ['intentions', 'fils'] },
+  /** Versions antérieures aux développements, pour le tour antérieur. */
+  charactersV1: { agent: characters, version: 1, reads: ['intentions', 'faits'] },
+  offscreenV1: { agent: offscreen, version: 1, reads: ['intentions', 'fils'] },
+  characters: { agent: characters, version: 2, reads: ['intentions', 'faits'] },
+  offscreen: { agent: offscreen, version: 2, reads: ['intentions', 'fils'] },
   continuity: { agent: continuity, version: 1, reads: ['faits', 'monde'] },
   directorV1: { agent: measuredDirector, version: 1 },
   directorV2: { agent: measuredDirector, version: 2 },
@@ -152,7 +157,7 @@ const village: DemoProject = {
   turns: [
     {
       ref: 'arrivee', branch: 'main', parent: null, legacy: true,
-      team: [villageMembers.characters, villageMembers.offscreen, ...restitution],
+      team: [villageMembers.charactersV1, villageMembers.offscreenV1, ...restitution],
       input: 'J’arrive au port et je demande à un pêcheur où se trouve la chapelle.',
       analysis: [
         {
@@ -179,13 +184,19 @@ const village: DemoProject = {
         {
           agent: characters, summary: 'Inès voit la lumière de la lampe de poche dans le clocher.',
           items: [
-            { kind: 'intention', text: 'Inès descend du phare pour voir ce que l’enquêtrice découvre.', importance: 'NORMAL' },
+            {
+              kind: 'development', characters: ['Inès Le Goff'], scope: 'offscreen', importance: 'NORMAL',
+              text: 'Inès quitte le phare pour voir ce que l’enquêtrice découvre.',
+            },
             { kind: 'perspective', text: 'Inès pense que la cloche est simplement tombée à la mer.', importance: 'LOW' },
           ],
         },
         {
           agent: offscreen, summary: 'Le recteur cherche partout la clé du clocher.',
-          items: [{ kind: 'développement', text: 'Le recteur fouille la sacristie sans trouver la clé.', importance: 'NORMAL' }],
+          items: [{
+            kind: 'development', characters: ['Yves Kerbrat'], scope: 'offscreen', importance: 'NORMAL',
+            text: 'Le recteur fouille la sacristie sans trouver la clé du clocher.',
+          }],
         },
         {
           agent: continuity, summary: 'Le clocher porte des traces récentes.',
@@ -204,14 +215,21 @@ const village: DemoProject = {
       },
       outcome: {
         status: 'completed',
-        memory: [{
-          op: 'create', key: 'Indice — la corde coupée', tags: ['faits', 'fils'],
-          content: 'La corde de la cloche a été coupée net ; des traces de sel séché marquent les marches du clocher.',
-          reason: 'Lou a établi cet indice en examinant le clocher.',
-        }],
+        memory: [
+          {
+            op: 'create', key: 'Indice — la corde coupée', tags: ['faits', 'fils'],
+            content: 'La corde de la cloche a été coupée net ; des traces de sel séché marquent les marches du clocher.',
+            reason: 'Lou a établi cet indice en examinant le clocher.',
+          },
+          {
+            op: 'edit', key: 'personnage/Yves Kerbrat',
+            content: 'Le recteur veut retrouver la cloche avant dimanche sans ébruiter l’affaire. Il a fouillé la sacristie sans trouver la clé du clocher.',
+            reason: 'Développement hors champ retenu à ce tour.',
+          },
+        ],
         prose: 'L’escalier en colimaçon sent la pierre humide. En haut, le joug de bois est vide et la corde pend, '
           + 'tranchée d’un coup franc. Sur les marches, des auréoles blanches crissent sous vos semelles : du sel, '
-          + 'comme si quelqu’un était monté tout droit depuis la mer. Par la lucarne, une silhouette quitte le phare.',
+          + 'comme si quelqu’un était monté tout droit depuis la mer.',
       },
     },
     {
@@ -222,14 +240,23 @@ const village: DemoProject = {
           agent: characters, summary: 'Inès protège quelqu’un et le cache mal.', invalidAttempts: 1,
           items: [
             { kind: 'intention', text: 'Inès veut éviter qu’on soupçonne son neveu Malo.', importance: 'HIGH' },
-            { kind: 'réplique possible', text: 'Inès propose du thé pour gagner du temps.', importance: 'LOW' },
+            {
+              kind: 'development', characters: ['Inès Le Goff'], scope: 'scene', importance: 'LOW',
+              text: 'Inès sert du thé pour gagner du temps.',
+            },
           ],
         },
         {
-          agent: offscreen, summary: 'Malo travaille loin des regards.',
+          agent: offscreen, summary: 'Malo travaille loin des regards ; le recteur hésite.',
           items: [
-            { kind: 'développement', text: 'Malo ponce quelque chose de lourd dans le hangar à bateaux.', importance: 'NORMAL' },
-            { kind: 'hors champ', text: 'Le recteur annonce que la fête aura lieu, cloche ou pas.', importance: 'LOW' },
+            {
+              kind: 'development', characters: ['Malo Le Goff'], scope: 'offscreen', importance: 'NORMAL',
+              text: 'Malo ponce quelque chose de lourd dans le hangar à bateaux.',
+            },
+            {
+              kind: 'development', characters: ['Yves Kerbrat'], scope: 'offscreen', importance: 'LOW',
+              text: 'Le recteur annonce que la fête aura lieu, cloche ou pas.',
+            },
           ],
         },
         {
@@ -242,12 +269,10 @@ const village: DemoProject = {
         retained: [
           { item: 'c1', why: 'Le cœur de la scène avec Inès.' },
           { item: 'c2', why: 'Un geste qui trahit sa gêne.' },
+          { item: 'c3', why: 'Le mystère avance hors champ sans être révélé.' },
           { item: 'c5', why: 'Donne à Lou de quoi relier le sel à la marée.' },
         ],
-        dismissed: [
-          { item: 'c3', why: 'Révélerait trop tôt la piste de Malo.' },
-          { item: 'c4', why: 'Sans lien avec la scène du phare.' },
-        ],
+        dismissed: [{ item: 'c4', why: 'La question de la fête reste ouverte un tour de plus.' }],
         nudges: [
           { type: 'pression', target: 'Inès veut détourner les soupçons de son neveu', basis: 'c1' },
           { type: 'retard', target: 'l’origine des traces de sel', basis: null },
@@ -263,8 +288,8 @@ const village: DemoProject = {
           },
           {
             op: 'create', key: 'personnage/Malo Le Goff', tags: ['intentions'],
-            content: 'Malo veut réparer en secret la cloche fêlée pour l’offrir au village pendant la fête.',
-            reason: 'Le récit établit hors champ que Malo travaille sur un objet lourd.',
+            content: 'Malo veut réparer en secret la cloche fêlée pour l’offrir au village pendant la fête. Il y travaille dans le hangar à bateaux.',
+            reason: 'Développement hors champ retenu : Malo ponce un objet lourd au hangar.',
           },
         ],
         prose: 'Inès vous ouvre avant que vous ne frappiez, une théière déjà fumante à la main. « Les gens du continent '
@@ -281,10 +306,16 @@ const village: DemoProject = {
           items: [{ kind: 'intention', text: 'Inès accepte pour garder un œil sur l’enquêtrice.', importance: 'NORMAL' }],
         },
         {
-          agent: offscreen, summary: 'Le marché s’installe sur le port.',
+          agent: offscreen, summary: 'Le marché s’installe ; Malo voudrait déplacer son ouvrage.',
           items: [
-            { kind: 'développement', text: 'Les marchands installent leurs étals sur le quai.', importance: 'LOW' },
-            { kind: 'hors champ', text: 'Malo charge une forme bâchée sur une charrette.', importance: 'NORMAL' },
+            {
+              kind: 'development', characters: ['Fañch'], scope: 'scene', importance: 'LOW',
+              text: 'Les marchands installent leurs étals sur le quai.',
+            },
+            {
+              kind: 'development', characters: ['Malo Le Goff'], scope: 'offscreen', importance: 'NORMAL',
+              text: 'Malo charge une forme bâchée sur une charrette.',
+            },
           ],
         },
         {
@@ -299,7 +330,7 @@ const village: DemoProject = {
           { item: 'c2', why: 'L’ambiance de fête qui détend la scène.' },
           { item: 'c4', why: 'Ferme une fausse piste.' },
         ],
-        dismissed: [{ item: 'c3', why: 'Garder Malo hors de la scène encore un tour.' }],
+        dismissed: [{ item: 'c3', why: 'Trop tôt : Malo ne bouge pas encore.' }],
         nudges: [{ type: 'relance', target: 'les habitants à interroger au marché', basis: null }],
       },
       outcome: {
@@ -315,39 +346,10 @@ const village: DemoProject = {
             reason: 'Établi par le récit au marché.',
           },
         ],
-        prose: 'Inès noue un foulard bleu et vous suit sur le quai, où les étals sentent la crêpe et le goudron. '
-          + 'Le vieux Fañch rit quand vous parlez de la clé du clocher : « Une clé ? Cette porte ne ferme plus depuis '
-          + 'le baptême de mon petit-fils ! » Inès sourit enfin, et désigne du menton le stand du cidre.',
+        prose: 'Inès noue un foulard bleu et vous suit sur le quai, où les marchands dressent leurs étals entre deux '
+          + 'odeurs de crêpe et de goudron. Le vieux Fañch rit quand vous parlez de la clé du clocher : « Une clé ? '
+          + 'Cette porte ne ferme plus depuis le baptême de mon petit-fils ! » Inès sourit enfin.',
       },
-    },
-    {
-      ref: 'quais', branch: 'main', parent: 'marche', team: villageTeam,
-      input: 'Je cherche Malo sur les quais.',
-      analysis: [
-        {
-          agent: characters, summary: 'Inès s’inquiète de la question.',
-          items: [{ kind: 'intention', text: 'Inès cherche une excuse pour s’éloigner.', importance: 'NORMAL' }],
-        },
-        {
-          agent: offscreen, summary: 'Malo n’est plus au hangar.',
-          items: [{ kind: 'développement', text: 'Malo pousse sa charrette vers la chapelle par le sentier côtier.', importance: 'HIGH' }],
-        },
-        {
-          agent: continuity, summary: 'Rien d’incohérent.',
-          items: [{ kind: 'cohérence', text: 'Le sentier côtier relie le hangar à la chapelle en vingt minutes.', importance: 'LOW' }],
-        },
-      ],
-      direction: {
-        tension: 'monter',
-        retained: [
-          { item: 'c1', why: 'La gêne d’Inès nourrit la scène.' },
-          { item: 'c2', why: 'Un développement qui fait avancer l’intrigue.' },
-          { item: 'c3', why: 'Garantit des distances crédibles.' },
-        ],
-        dismissed: [],
-        nudges: [{ type: 'complication', target: 'la recherche de Malo sur les quais', basis: null }],
-      },
-      outcome: { status: 'failed', error: 'Le fournisseur LLM a interrompu la réponse avant sa fin.' },
     },
     {
       ref: 'marche-refus', branch: 'alternative', parent: 'phare', regeneratedFrom: 'marche',
@@ -359,7 +361,10 @@ const village: DemoProject = {
         },
         {
           agent: offscreen, summary: 'Le marché s’installe sans Inès.',
-          items: [{ kind: 'développement', text: 'Le recteur cherche des bras pour porter les bannières.', importance: 'LOW' }],
+          items: [{
+            kind: 'development', characters: ['Yves Kerbrat'], scope: 'offscreen', importance: 'LOW',
+            text: 'Le recteur cherche des bras pour porter les bannières de la fête.',
+          }],
         },
         {
           agent: continuity, summary: 'La lanterne tourne trop tôt depuis deux jours.',
@@ -377,6 +382,73 @@ const village: DemoProject = {
           + 'tôt depuis deux jours. Quelqu’un a touché au mécanisme. » Elle vous raccompagne jusqu’à la porte, poliment, '
           + 'fermement. Derrière vous, le verrou claque deux fois.',
       },
+    },
+    {
+      ref: 'fete', branch: 'main', parent: 'marche', team: villageTeam, direction: 'failed',
+      input: 'Je goûte le cidre avec Inès en observant la foule.',
+      analysis: [
+        {
+          agent: characters, summary: 'Le recteur vient saluer Inès.',
+          items: [{
+            kind: 'development', characters: ['Yves Kerbrat', 'Inès Le Goff'], scope: 'scene', importance: 'NORMAL',
+            text: 'Le recteur rejoint le stand et remercie Inès d’être venue malgré tout.',
+          }],
+        },
+        {
+          agent: offscreen, summary: 'Malo profite de la fête pour agir.',
+          items: [{
+            kind: 'development', characters: ['Malo Le Goff'], scope: 'offscreen', importance: 'HIGH',
+            text: 'Malo cache une forme bâchée dans la chapelle déserte.',
+          }],
+        },
+        {
+          agent: continuity, summary: 'Rien d’incohérent.',
+          items: [{ kind: 'cohérence', text: 'Le marché ferme au coucher du soleil.', importance: 'LOW' }],
+        },
+      ],
+      outcome: {
+        status: 'completed',
+        memory: [{
+          op: 'edit', key: 'personnage/Malo Le Goff',
+          content: 'Malo veut offrir au village la cloche fêlée qu’il a réparée. Il l’a cachée sous une bâche dans la chapelle pendant la fête.',
+          reason: 'Développement hors champ du tour.',
+        }],
+        prose: 'Le cidre pique un peu. Le recteur fend la foule pour serrer la main d’Inès : « Vous êtes venue, '
+          + 'malgré tout ! » Elle rougit, vous présente comme « une amie du continent », et le recteur vous dévisage '
+          + 'avec l’intérêt poli d’un homme qui a beaucoup de choses à taire.',
+      },
+    },
+    {
+      ref: 'quais', branch: 'main', parent: 'fete', team: villageTeam,
+      input: 'Je cherche Malo sur les quais.',
+      analysis: [
+        {
+          agent: characters, summary: 'Inès s’inquiète de la question.',
+          items: [{ kind: 'intention', text: 'Inès cherche une excuse pour s’éloigner.', importance: 'NORMAL' }],
+        },
+        {
+          agent: offscreen, summary: 'Malo revient de la chapelle.',
+          items: [{
+            kind: 'development', characters: ['Malo Le Goff'], scope: 'offscreen', importance: 'HIGH',
+            text: 'Malo redescend de la chapelle par le sentier côtier.',
+          }],
+        },
+        {
+          agent: continuity, summary: 'Rien d’incohérent.',
+          items: [{ kind: 'cohérence', text: 'Le sentier côtier relie la chapelle au port en vingt minutes.', importance: 'LOW' }],
+        },
+      ],
+      direction: {
+        tension: 'monter',
+        retained: [
+          { item: 'c1', why: 'La gêne d’Inès nourrit la scène.' },
+          { item: 'c2', why: 'Malo se rapproche sans entrer en scène.' },
+          { item: 'c3', why: 'Garantit des distances crédibles.' },
+        ],
+        dismissed: [],
+        nudges: [{ type: 'complication', target: 'la recherche de Malo sur les quais', basis: null }],
+      },
+      outcome: { status: 'failed', error: 'Le fournisseur LLM a interrompu la réponse avant sa fin.' },
     },
   ],
 };
@@ -435,7 +507,10 @@ const mountain: DemoProject = {
       input: 'Au cairn renversé, je le reconstruis avant de continuer.',
       analysis: [{
         agent: world, summary: 'La brume arrive plus tôt que prévu.',
-        items: [{ kind: 'météo', text: 'La brume recouvre le premier lacet pendant la reconstruction.', importance: 'NORMAL' }],
+        items: [{
+          kind: 'development', characters: [], scope: 'scene', importance: 'NORMAL',
+          text: 'La brume recouvre le premier lacet pendant la reconstruction.',
+        }],
       }],
       outcome: {
         status: 'completed', memory: [],
@@ -448,3 +523,4 @@ const mountain: DemoProject = {
 };
 
 export const demoProjects: readonly DemoProject[] = [village, mountain];
+

@@ -4,8 +4,10 @@ import type { Database, Transaction } from '../db/client.js';
 import {
   chatBranches, chatMessages, chatTurns, llmCall, llmUsage, memoryBanks, memoryRuns, memorySettings, projectAgents, projects,
 } from '../db/schema.js';
+import { selectRate, type PriceRate } from '../llm/usage/pricingResolver.js';
+import { toPriceRate, UsageRepository } from '../llm/usage/usageRepository.js';
 import { AgentRepository } from '../modules/agents/repository/agentsRepository.js';
-import { buildDemoProjectRows, type DemoProjectRows } from './demoRows.js';
+import { buildDemoProjectRows, DEMO_MODEL, type DemoProjectRows } from './demoRows.js';
 import { demoProjects } from './demoScenario.js';
 
 export const DEMO_PROJECT_IDS = demoProjects.map((project) => project.id);
@@ -26,11 +28,19 @@ export async function seedDemoProjects(database: Database, now = new Date()): Pr
     for (const [index, project] of demoProjects.entries()) {
       // Each project starts a few days ago so that its turns read as past activity.
       const startedAt = new Date(now.getTime() - (demoProjects.length - index + 1) * DAY_MS);
-      await insertRows(tx, buildDemoProjectRows(project, startedAt));
+      await insertRows(tx, buildDemoProjectRows(project, { startedAt, rate: await demoRate(tx, startedAt) }));
       report.push({ id: project.id, name: project.name, turns: project.turns.length });
     }
     return report;
   });
+}
+
+/** The published price of the demo model, as the usage service would select it for a call at that date. */
+async function demoRate(tx: Transaction, at: Date): Promise<PriceRate | null> {
+  const rates = await new UsageRepository(tx).ratesFor(DEMO_MODEL.provider, DEMO_MODEL.model);
+  return selectRate(
+    rates.filter((rate) => rate.priceWindow === DEMO_MODEL.priceWindow || rate.priceWindow === 'all'), at, toPriceRate,
+  );
 }
 
 /** Deletes the demo projects with everything they own; library agents stay. */

@@ -42,20 +42,23 @@ deux projets fictifs préfixés « Démo · » :
 - **La cloche de Port-Lénic** : une équipe complète tirée de la bibliothèque d'agents (trois
   agents d'analyse, le Directeur mesuré, le Narrateur scénique et le Gardien des Intentions),
   la mémoire activée avec les tags de départ et des Intentions, et des tours tracés (coûts,
-  tokens, durées, analyses, direction, configuration). On y trouve un tour antérieur sans
-  configuration enregistrée ni coût, une analyse relancée après une réponse invalide, le passage
-  du Directeur de la version 1 à la version 2, un dernier tour en échec sur la branche principale
-  et une branche « Alternative 1 » régénérée sans Directeur.
+  tokens, durées, analyses, direction, développements dans la scène et hors champ, configuration).
+  On y trouve un tour antérieur sans configuration enregistrée ni coût, une analyse relancée après
+  une réponse invalide, le passage du Directeur de la version 1 à la version 2, un tour dont la
+  direction échoue, un dernier tour en échec sur la branche principale et une branche
+  « Alternative 1 » régénérée sans Directeur.
 - **Expédition au col des Brumes** : un petit projet sans Directeur.
 
 La commande est idempotente : elle remplace ces projets, repérés par leurs identifiants fixes
 (`019aee20-…`), sans toucher aux autres. Elle ajoute au besoin les agents de la bibliothèque, comme
 le serveur au démarrage. `pnpm db:seed:demo --clear` supprime seulement les projets de démo.
-La commande refuse de s'exécuter avec `NODE_ENV=production`.
+La commande refuse de s'exécuter avec `NODE_ENV=production`, et sur une base dont l'hôte n'est pas
+`localhost`, `127.0.0.1` ou `::1`, sauf avec `--allow-remote`.
 
 Le contenu est décrit dans `apps/api/src/demo/demoScenario.ts` ; `demoRows.ts` le traduit en lignes
 conformes aux schémas réels, en validant les sorties comme le pipeline. Une nouvelle donnée de trace
-s'ajoute à ces deux fichiers, et `demoSeed.integration.test.ts` vérifie que l'API relit tout sans erreur.
+s'ajoute à ces deux fichiers. `demoRows.test.ts` valide le scénario sans base, et
+`demoSeed.integration.test.ts` vérifie que l'API relit tout sans erreur.
 
 ## Variables d'environnement
 

@@ -11,6 +11,11 @@ import { applyManualChange, applyMemorySetup, reduceProposals, validateMemory } 
 import { GuardianService, type GuardianInput } from './guardianService.js';
 import type { createCallLLM } from '../../../llm/call-llm.js';
 
+/** What a successful memory run reports to the user. */
+export function appliedMemoryMessage(changeCount: number): string {
+  return changeCount ? `${changeCount} changement(s) mémoire appliqué(s).` : 'Aucun changement mémoire nécessaire.';
+}
+
 export function skippedMemory(message: string): MemoryResult {
   return { status: 'skipped', message, code: null, changes: [], guardianMs: 0, reducerMs: 0 };
 }
@@ -191,7 +196,7 @@ export class MemorySession {
         input.signal.throwIfAborted();
         const result: MemoryResult = {
           status: 'success', code: null,
-          message: reduced.changes.length ? `${reduced.changes.length} changement(s) mémoire appliqué(s).` : 'Aucun changement mémoire nécessaire.',
+          message: appliedMemoryMessage(reduced.changes.length),
           changes: reduced.changes, tagSuggestions, guardianMs, reducerMs: Math.round(performance.now() - reducerStarted),
         };
         await storage.recordRun(runId, branchId, input.turnId, result);
