@@ -1,13 +1,14 @@
 import type { createCallLLM } from '../../../llm/call-llm.js';
 import { conversationMessages } from './conversationMessages.js';
-import { narratorSystemPrompt } from './narratorPrompt.js';
+import { narratorSystemSections } from './narratorPrompt.js';
 import type { NarratorInput, NarratorOutput } from '../types/narrator.types.js';
 
 export class ChatNarratorService {
   constructor(private readonly callLLM: ReturnType<typeof createCallLLM>) {}
 
   async generate({
-    projectId, turnId, agentId, agentVersionId, systemPrompt, whiteboard, direction, history, userMessage, signal, onDelta, memoryContext,
+    projectId, turnId, agentId, agentVersionId, systemPrompt, instructions, whiteboard, direction, history, userMessage,
+    signal, onDelta, memoryContext,
   }: NarratorInput): Promise<NarratorOutput> {
     const memory = memoryContext ?? { tags: [], entries: [] };
     const result = await this.callLLM({
@@ -18,7 +19,9 @@ export class ChatNarratorService {
       stage: 'narrator',
       memory,
       signal,
-      messages: conversationMessages(narratorSystemPrompt(systemPrompt, whiteboard, memory, direction), history, userMessage),
+      ...conversationMessages(
+        narratorSystemSections(systemPrompt, instructions, whiteboard, memory, direction), history, userMessage,
+      ),
       onDelta,
     });
     return { prose: result.content, callId: result.callId };

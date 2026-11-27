@@ -1,6 +1,6 @@
 import { index, jsonb, text, timestamp, uuid, integer } from 'drizzle-orm/pg-core';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
-import type { MemoryContext } from '@choral-writer/shared';
+import type { ContextComposition, MemoryContext } from '@choral-writer/shared';
 import { choralWriterSchema } from '../namespace.js';
 import { projects } from './project.js';
 
@@ -14,7 +14,10 @@ export const llmCall = choralWriterSchema.table("llm_call",{
   stageExecutionId: uuid('stage_execution_id'),
   stage: text('stage').notNull(),
   model: text('model').notNull(),
-  request: jsonb('request').$type<{ messages: ChatCompletionMessageParam[]; memory?: MemoryContext }>().notNull(),
+  /** `composition` is absent from calls recorded before it was measured. */
+  request: jsonb('request').$type<{
+    messages: ChatCompletionMessageParam[]; memory?: MemoryContext; composition?: ContextComposition;
+  }>().notNull(),
   response: text('response'),
   inputTokens: integer('input_tokens'),
   outputTokens: integer('output_tokens'),

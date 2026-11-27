@@ -11,6 +11,31 @@ export const traceStageSchema = z.enum(['analysis', 'direction', 'narrator', 'gu
 export const traceStatusSchema = z.enum(['success', 'error']);
 export const traceCallParamsSchema = chatExecutionParamsSchema.extend({ callId: z.string().uuid() });
 
+/**
+ * The parts a call's input is made of, whatever the stage; a stage uses only some of them.
+ * `contributions` are the analysis perspectives, `developments` the facts the agents make happen.
+ */
+export const contextPartSchema = z.enum([
+  'systemPrompt', 'instructions', 'rules', 'history', 'memory', 'contributions', 'developments', 'direction', 'prose',
+  'input',
+]);
+
+/**
+ * Average characters per token used to estimate a composition, a usual rule of thumb for BPE
+ * tokenizers on French or English prose. Good enough to compare parts, not to count them.
+ */
+export const CONTEXT_CHARS_PER_TOKEN = 4;
+
+/**
+ * Estimated size of each part of a call's input, in order of appearance in the request. It is an
+ * estimate from the length of the text, not a provider count: it shows proportions, while the call's
+ * `inputTokens` remains the measured total.
+ */
+export const contextCompositionSchema = z.array(z.object({
+  part: contextPartSchema,
+  estimatedTokens: z.number().int().nonnegative(),
+}));
+
 export const traceCallSummarySchema = z.object({
   id: z.string().uuid(),
   turnId: z.string().uuid(),
@@ -30,6 +55,8 @@ export const traceCallSummarySchema = z.object({
   costMicroUsd: z.number().int().nonnegative().nullable(),
   /** Origine du montant ; nulle si aucune ligne de consommation n'existe pour cet appel. */
   costBasis: costBasisSchema.nullable(),
+  /** Null for a call recorded before compositions were. */
+  composition: contextCompositionSchema.nullable(),
 });
 
 /** Coût d'un tour. `complete` est faux dès qu'un appel du tour n'a pas de montant connu. */
@@ -135,6 +162,8 @@ export const turnMetricsSchema = z.object({
   cost: turnCostSchema,
   /** Tokens d'entrée du dernier appel du Narrateur ; nul sans appel mesuré. */
   narratorInputTokens: z.number().int().nonnegative().nullable(),
+  /** Composition du contexte de ce même appel ; nulle sans appel ou pour un appel enregistré avant les compositions. */
+  narratorComposition: contextCompositionSchema.nullable(),
   /** Nul quand la comparaison est impossible : premier tour, ou configuration non enregistrée. */
   configurationChanges: z.array(turnConfigurationChangeSchema).nullable(),
   /** Nulle quand le tour s'est déroulé sans Directeur. */

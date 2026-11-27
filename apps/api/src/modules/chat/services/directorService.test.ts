@@ -115,6 +115,16 @@ describe('ChatDirectorService', () => {
     });
   });
 
+  it('records the composition of its context with the call', async () => {
+    const { service, traces, input } = setup([JSON.stringify(validOutput)]);
+
+    await service.generate(input({ recentDirections: [{ tension: 'tenir', nudges: [], retained: [], dismissed: [] }] }));
+
+    expect(traces[0]!.composition?.map((entry) => entry.part))
+      .toEqual(['systemPrompt', 'instructions', 'rules', 'contributions', 'direction', 'input']);
+    expect(traces[0]!.composition?.every((entry) => entry.estimatedTokens > 0)).toBe(true);
+  });
+
   it.each([
     ['an item left unselected', { ...validOutput, dismissed: [] }],
     ['an item selected twice', { ...validOutput, dismissed: [{ item: 'c2', why: 'x' }, { item: 'c1', why: 'x' }] }],

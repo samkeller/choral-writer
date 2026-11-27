@@ -1,9 +1,9 @@
 import type {
-  AnalysisTrace, AttributedDevelopment, DirectionTrace, NarratorTrace, StageDuration, TraceCallDetail, TraceCallSummary,
+  AnalysisTrace, AttributedDevelopment, ContextComposition, DirectionTrace, NarratorTrace, StageDuration, TraceCallDetail, TraceCallSummary,
   TurnConfiguration, TurnConfigurationChange, TurnDevelopments, TurnDirection, TurnDirectionMetrics, TurnMetrics,
   TurnTraceSummary,
 } from '@choral-writer/shared';
-import { recordedAnalysisEnvelopeSchema, traceCallDetailSchema } from '@choral-writer/shared';
+import { contextCompositionSchema, recordedAnalysisEnvelopeSchema, traceCallDetailSchema } from '@choral-writer/shared';
 
 import type { MetricCallRecord, TraceDetailRecord, TraceSummaryRecord } from '../repositories/traceRepository.js';
 
@@ -33,7 +33,14 @@ export function toTraceCallSummaryDto(trace: TraceSummaryRecord, turnId: string)
     error: trace.status === 'error' ? 'L’appel LLM a échoué.' : null,
     costMicroUsd: trace.costMicroUsd,
     costBasis: trace.costBasis,
+    composition: toComposition(trace.composition),
   };
+}
+
+/** Null for a call recorded before compositions were, or whose recorded composition is unreadable. */
+function toComposition(recorded: unknown): ContextComposition | null {
+  const result = contextCompositionSchema.safeParse(recorded);
+  return result.success ? result.data : null;
 }
 
 export function toTraceCallDetailDto(trace: TraceDetailRecord, turnId: string): TraceCallDetail {
@@ -128,6 +135,7 @@ export function toTurnMetricsDto(
     durationMs: totalDuration(toStageTimeline(callsDuringTurn(calls, turn.completedAt))),
     cost: toTurnCost(calls),
     narratorInputTokens: narratorCall?.inputTokens ?? null,
+    narratorComposition: narratorCall ? toComposition(narratorCall.narratorComposition) : null,
     configurationChanges,
     direction: toDirectionMetrics(turn.direction, calls),
   };

@@ -5,7 +5,10 @@ export type NarratorInput = {
   turnId: string;
   agentId: string;
   agentVersionId: string;
+  /** The project's system prompt. */
   systemPrompt: string;
+  /** The Narrator's own instructions. */
+  instructions: string;
   whiteboard: readonly AnalysisEnvelope[];
   /** When present, replaces the whiteboard in the Narrator's prompt. */
   direction: TurnDirection | null;
