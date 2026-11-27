@@ -124,7 +124,7 @@ export class GuardianService {
       { part: 'systemPrompt', text: JSON.stringify(sources.projectContext) },
       { part: 'memory', text: JSON.stringify({ tags: sources.tags, entries: sources.entries }) },
       { part: 'prose', text: JSON.stringify(sources.prose) },
-      { part: 'contributions', text: JSON.stringify(sources.developments) },
+      { part: 'developments', text: JSON.stringify(sources.developments) },
     ];
     const request: CallLLMInput<MemoryProposals> = {
       projectId: input.projectId,

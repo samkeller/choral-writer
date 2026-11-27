@@ -5,11 +5,15 @@ import {
 
 import { stagePresentation, stagePresentationOf } from '../../phases/stagePresentation';
 import { formatTokens } from '../turnFormat';
-import { compositionSegments, contextPartPresentation, contextParts, historyShare } from './contextComposition';
+import {
+  compositionSegments, contextPartPresentation, contextParts, estimatedTotal, historyShare,
+} from './contextComposition';
 import { DrawerBlock } from './DrawerBlock';
 import { EvolutionBars } from './EvolutionBars';
 
 const NOT_RECORDED = 'composition non enregistrée';
+/** Beyond this share of the Narrator input, the history is flagged, as in the Debug mode prototype. */
+const HEAVY_HISTORY_SHARE = 0.5;
 
 /** « Contexte » : what each call received, part by part, and how the Narrator input evolves over the story. */
 export function TurnContextPanel({ calls, metrics, index, onSelectTurn }: {
@@ -20,14 +24,12 @@ export function TurnContextPanel({ calls, metrics, index, onSelectTurn }: {
 }) {
   const largestInput = Math.max(0, ...calls.map(measuredInput));
   const narratorShare = historyShare(calls.filter((call) => call.stage === 'narrator').at(-1)?.composition ?? null);
-  const parts = contextParts.filter((part) => calls.some((call) => call.composition?.some((entry) => entry.part === part)));
+  const parts = partsOf(calls.map((call) => call.composition));
 
   return (
     <Stack gap="sm">
-      <DrawerBlock title="Composition du contexte" aside={narratorShare !== null && (
-        <Badge size="xs" variant="light" color={narratorShare > 0.5 ? 'orange' : 'gray'}>
-          historique : {percent(narratorShare)} du Narrateur
-        </Badge>
+      <DrawerBlock title="Composition du contexte" aside={narratorShare !== null && narratorShare > HEAVY_HISTORY_SHARE && (
+        <Badge size="xs" variant="light" color="orange">historique : {percent(narratorShare)} du Narrateur</Badge>
       )}>
         {calls.length === 0 ? <Text size="sm" c="dimmed">Aucun appel enregistré pour ce tour.</Text> : (
           <Stack gap={6}>
@@ -45,16 +47,25 @@ export function TurnContextPanel({ calls, metrics, index, onSelectTurn }: {
       {metrics && (
         <>
           <DrawerBlock title="Entrée du Narrateur au fil des tours">
-            <EvolutionBars values={metrics.map((turn) => turn.narratorInputTokens ?? estimatedTotal(turn.narratorComposition))}
-              current={index} color={stagePresentation.narrator.color} onSelect={onSelectTurn}
-              segmentsOf={(turnIndex) => barSegments(metrics[turnIndex]?.narratorComposition ?? null)}
-              describe={(tokens, turnNumber) => `Tour ${turnNumber} : ${tokens === null ? 'non mesuré' : `${formatTokens(tokens)} tokens`}${
-                metrics[turnNumber - 1]?.narratorComposition ? '' : ` (${NOT_RECORDED})`}`} />
+            <Stack gap={6}>
+              <EvolutionBars values={metrics.map((turn) => turn.narratorInputTokens ?? estimatedTotal(turn.narratorComposition))}
+                current={index} color={stagePresentation.narrator.color} onSelect={onSelectTurn}
+                segmentsOf={(turnIndex) => barSegments(metrics[turnIndex]?.narratorComposition ?? null)}
+                describe={(tokens, turnNumber) => tokens === null
+                  ? `Tour ${turnNumber} : non mesuré`
+                  : `Tour ${turnNumber} : ${formatTokens(tokens)} tokens${
+                    metrics[turnNumber - 1]?.narratorComposition ? '' : ` (${NOT_RECORDED})`}`} />
+              <ContextLegend parts={partsOf(metrics.map((turn) => turn.narratorComposition))} />
+            </Stack>
           </DrawerBlock>
           <DrawerBlock title="Part de l’historique dans l’entrée du Narrateur">
-            <EvolutionBars values={metrics.map((turn) => percentValue(historyShare(turn.narratorComposition)))}
-              current={index} color={contextPartPresentation.history.color} onSelect={onSelectTurn} scaleMax={100} height={50}
-              describe={(share, turnNumber) => `Tour ${turnNumber} : ${share === null ? NOT_RECORDED : `historique à ${share} %`}`} />
+            <Stack gap={6}>
+              <EvolutionBars values={metrics.map((turn) => percentValue(historyShare(turn.narratorComposition)))}
+                current={index} color={contextPartPresentation.history.color} onSelect={onSelectTurn} scaleMax={100} height={50}
+                describe={(share, turnNumber) => `Tour ${turnNumber} : ${share !== null ? `historique à ${share} %`
+                  : metrics[turnNumber - 1]?.narratorInputTokens === null ? 'non mesuré' : NOT_RECORDED}`} />
+              <ContextLegend parts={['history']} />
+            </Stack>
           </DrawerBlock>
         </>
       )}
@@ -121,8 +132,9 @@ function measuredInput(call: TraceCallSummary): number {
   return call.inputTokens ?? estimatedTotal(call.composition) ?? 0;
 }
 
-function estimatedTotal(composition: ContextComposition | null): number | null {
-  return composition ? composition.reduce((sum, entry) => sum + entry.estimatedTokens, 0) : null;
+/** Parts found in any of the compositions, in the stable order of the legend. */
+function partsOf(compositions: readonly (ContextComposition | null)[]): ContextPart[] {
+  return contextParts.filter((part) => compositions.some((composition) => composition?.some((entry) => entry.part === part)));
 }
 
 function barSegments(composition: ContextComposition | null) {

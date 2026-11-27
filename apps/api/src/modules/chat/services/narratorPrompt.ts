@@ -21,6 +21,15 @@ const directionRules = [
 
 const sceneDevelopmentRules = 'DÉVELOPPEMENTS DANS LA SCÈNE. Les contributions de type « développement dans la scène » arrivent à ce tour : ne les contredis pas. Tu restes libre de la manière et du moment de les raconter, et ta prose répond d’abord à la saisie.';
 
+function itemLine(item: AnalysisItem): string {
+  return `- ${formatItem(item)}`;
+}
+
+/** The lines of the developments among `items`, measured as their own part of the context. */
+function developmentLines(items: readonly AnalysisItem[]): ContextSection['embedded'] {
+  return items.filter(isDevelopment).map((item) => ({ part: 'developments', text: itemLine(item) }));
+}
+
 /** Rend le whiteboard en texte lisible : le JSON brut détournait le Narrateur vers un registre de données. */
 export function formatWhiteboard(whiteboard: readonly AnalysisEnvelope[]): string {
   if (!whiteboard.length) return '';
@@ -29,7 +38,7 @@ export function formatWhiteboard(whiteboard: readonly AnalysisEnvelope[]): strin
     ...whiteboard.map((envelope) => [
       `## ${envelope.agent}`,
       envelope.summary,
-      ...envelope.items.map((item) => `- ${formatItem(item)}`),
+      ...envelope.items.map(itemLine),
     ].join('\n')),
   ].join('\n\n');
 }
@@ -57,10 +66,11 @@ function directionSections(direction: TurnDirection): ContextSection[] {
           ...agents.map((agent) => [
             `## ${agent}`,
             ...direction.retained.filter((selection) => selection.agent === agent)
-              .map((selection) => `- ${formatItem(selection.item)}`),
+              .map((selection) => itemLine(selection.item)),
           ].join('\n')),
         ].join('\n\n')
         : 'Aucune contribution des agents n’est retenue à ce tour.',
+      embedded: developmentLines(direction.retained.map((selection) => selection.item)),
     },
   ];
 }
@@ -78,9 +88,10 @@ function narratorMaterial(
     return { sections: directionSections({ ...direction, retained }), items: retained.map((selection) => selection.item) };
   }
   const envelopes = whiteboard.map((envelope) => ({ ...envelope, items: envelope.items.filter(isToldInScene) }));
+  const items = envelopes.flatMap((envelope) => envelope.items);
   return {
-    sections: [{ part: 'contributions', text: formatWhiteboard(envelopes) }],
-    items: envelopes.flatMap((envelope) => envelope.items),
+    sections: [{ part: 'contributions', text: formatWhiteboard(envelopes), embedded: developmentLines(items) }],
+    items,
   };
 }
 

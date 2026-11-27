@@ -101,4 +101,16 @@ describe('narratorSystemSections', () => {
     expect(sections.find((section) => section.part === 'contributions')?.text).toContain('Un fil est visible.');
     expect(sections.find((section) => section.part === 'direction')?.text).toContain('Tension visée');
   });
+
+  it('measures the scene developments of the whiteboard as their own part', () => {
+    const development = {
+      kind: 'development', characters: ['Mara'], scope: 'scene', text: 'La lampe s’éteint.', importance: 'HIGH',
+    } as const;
+    const observation = { kind: 'observation', text: 'Un fil est visible.', importance: 'HIGH' } as const;
+    const whiteboard = [{ v: 1 as const, agent: 'Monde', summary: 'Le soir tombe.', items: [observation, development] }];
+
+    const composition = measureComposition(narratorSystemSections('Contexte.', '', whiteboard, emptyMemory, null));
+
+    expect(composition.map((entry) => entry.part)).toEqual(['systemPrompt', 'rules', 'contributions', 'developments']);
+  });
 });

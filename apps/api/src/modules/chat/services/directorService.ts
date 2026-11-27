@@ -1,7 +1,7 @@
 import type {
   AnalysisEnvelope, AttributedItem, ChatTurn, Message, NudgeType, ProjectAgent, TurnDirection,
 } from '@choral-writer/shared';
-import { nudgeTypeSchema, tensionTargetSchema } from '@choral-writer/shared';
+import { isDevelopment, nudgeTypeSchema, tensionTargetSchema } from '@choral-writer/shared';
 import { z } from 'zod';
 
 import { ApiError } from '../../../errors/errors.js';
@@ -136,6 +136,10 @@ function directorContract(forbidden: readonly NudgeType[]): string {
   ].join('\n');
 }
 
+function identifiedLine({ id, item }: IdentifiedItem): string {
+  return `- [${id}] ${formatItem(item)}`;
+}
+
 function formatIdentifiedWhiteboard(whiteboard: readonly IdentifiedEnvelope[]): string {
   if (!whiteboard.some(({ items }) => items.length)) {
     return 'WHITEBOARD. Aucune contribution à ce tour : "retained" et "dismissed" restent vides.';
@@ -145,7 +149,7 @@ function formatIdentifiedWhiteboard(whiteboard: readonly IdentifiedEnvelope[]): 
     ...whiteboard.map(({ envelope, items }) => [
       `## ${envelope.agent}`,
       envelope.summary,
-      ...items.map(({ id, item }) => `- [${id}] ${formatItem(item)}`),
+      ...items.map(identifiedLine),
     ].join('\n')),
   ].join('\n\n');
 }
@@ -181,7 +185,12 @@ export class ChatDirectorService {
           { part: 'systemPrompt', text: input.systemPrompt },
           { part: 'instructions', text: input.agent.instructions },
           { part: 'rules', text: directorContract(forbidden) },
-          { part: 'contributions', text: formatIdentifiedWhiteboard(whiteboard) },
+          {
+            part: 'contributions',
+            text: formatIdentifiedWhiteboard(whiteboard),
+            embedded: items.filter(({ item }) => isDevelopment(item))
+              .map((item) => ({ part: 'developments', text: identifiedLine(item) })),
+          },
           { part: 'direction', text: formatRecentDirections(input.recentDirections) },
         ],
         input.history,

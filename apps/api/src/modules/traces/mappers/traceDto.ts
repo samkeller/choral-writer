@@ -135,7 +135,7 @@ export function toTurnMetricsDto(
     durationMs: totalDuration(toStageTimeline(callsDuringTurn(calls, turn.completedAt))),
     cost: toTurnCost(calls),
     narratorInputTokens: narratorCall?.inputTokens ?? null,
-    narratorComposition: narratorCall ? toComposition(narratorCall.composition) : null,
+    narratorComposition: narratorCall ? toComposition(narratorCall.narratorComposition) : null,
     configurationChanges,
     direction: toDirectionMetrics(turn.direction, calls),
   };

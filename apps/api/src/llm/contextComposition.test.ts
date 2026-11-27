@@ -24,6 +24,16 @@ describe('context composition', () => {
     ]);
   });
 
+  it('counts embedded passages under their own part and takes them out of the section that holds them', () => {
+    expect(measureComposition([
+      { part: 'contributions', text: 'a'.repeat(40), embedded: [{ part: 'developments', text: 'b'.repeat(12) }] },
+      { part: 'contributions', text: 'c'.repeat(8), embedded: [{ part: 'developments', text: 'd'.repeat(8) }] },
+    ])).toEqual([
+      { part: 'contributions', estimatedTokens: 7 },
+      { part: 'developments', estimatedTokens: 5 },
+    ]);
+  });
+
   it('joins the non-empty sections as a prompt reads them', () => {
     expect(joinSections([
       { part: 'systemPrompt', text: 'Projet.' }, { part: 'instructions', text: '' }, { part: 'rules', text: 'Règles.' },

@@ -11,9 +11,13 @@ export const traceStageSchema = z.enum(['analysis', 'direction', 'narrator', 'gu
 export const traceStatusSchema = z.enum(['success', 'error']);
 export const traceCallParamsSchema = chatExecutionParamsSchema.extend({ callId: z.string().uuid() });
 
-/** The parts a call's input is made of, whatever the stage; a stage uses only some of them. */
+/**
+ * The parts a call's input is made of, whatever the stage; a stage uses only some of them.
+ * `contributions` are the analysis perspectives, `developments` the facts the agents make happen.
+ */
 export const contextPartSchema = z.enum([
-  'systemPrompt', 'instructions', 'rules', 'history', 'memory', 'contributions', 'direction', 'prose', 'input',
+  'systemPrompt', 'instructions', 'rules', 'history', 'memory', 'contributions', 'developments', 'direction', 'prose',
+  'input',
 ]);
 
 /**

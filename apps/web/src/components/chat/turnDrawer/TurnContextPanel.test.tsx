@@ -69,10 +69,16 @@ describe('TurnContextPanel', () => {
     expect(screen.getByLabelText('Composition de l’entrée de Narrateur')).toBeTruthy();
     expect(screen.getByText('historique : 60 % du Narrateur')).toBeTruthy();
     for (const label of ['Prompt du projet', 'Consignes fixes', 'Historique', 'Mémoire', 'Saisie']) {
-      expect(screen.getByText(label)).toBeTruthy();
+      expect(screen.getAllByText(label).length).toBeGreaterThan(0);
     }
     expect(screen.queryByText('Contributions')).toBeNull();
     expect(screen.queryByText('composition non enregistrée')).toBeNull();
+  });
+
+  it('flags the history only when it takes more than half of the Narrator input', () => {
+    renderPanel([call({ composition: [{ part: 'history', estimatedTokens: 50 }, { part: 'input', estimatedTokens: 50 }] })]);
+
+    expect(screen.queryByText(/historique :/)).toBeNull();
   });
 
   it('keeps showing a call recorded before compositions, and says its composition is missing', () => {
@@ -88,6 +94,8 @@ describe('TurnContextPanel', () => {
 
     expect(screen.getByRole('button', { name: 'Tour 1 : 500 tokens (composition non enregistrée)' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Tour 1 : composition non enregistrée' })).toBeTruthy();
+    // The evolution has its own legend, so that every stacked turn reads without the current one.
+    expect(screen.getAllByText('Historique')).toHaveLength(2);
     fireEvent.click(screen.getByRole('button', { name: 'Tour 2 : historique à 60 %' }));
     expect(onSelectTurn).toHaveBeenCalledWith(1);
   });

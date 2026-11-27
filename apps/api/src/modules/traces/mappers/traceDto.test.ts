@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AttributedDevelopment } from '@choral-writer/shared';
 
-import type { TraceDetailRecord } from '../repositories/traceRepository.js';
+import type { MetricCallRecord, TraceDetailRecord } from '../repositories/traceRepository.js';
 import { toTraceCallDetailDto, toTraceCallSummaryDto, toTurnMetricsDto, toTurnTraceSummaryDto } from './traceDto.js';
 
 const turnId = '019ad30c-19b0-7000-8000-000000000101';
@@ -12,7 +12,10 @@ const narratorCallId = '019ad30c-19b0-7000-8000-000000000105';
 
 const runningTurn = { id: turnId, configuration: null, direction: null, developments: null, completedAt: null };
 
-function trace(overrides: Partial<TraceDetailRecord> = {}): TraceDetailRecord {
+/** A call as both the trace summary and the turn metrics read it. */
+type RecordedCall = TraceDetailRecord & MetricCallRecord;
+
+function trace(overrides: Partial<RecordedCall> = {}): RecordedCall {
   return {
     id: narratorCallId,
     turnId,
@@ -32,6 +35,7 @@ function trace(overrides: Partial<TraceDetailRecord> = {}): TraceDetailRecord {
     costMicroUsd: null,
     costBasis: null,
     composition: null,
+    narratorComposition: null,
     ...overrides,
   };
 }
@@ -43,7 +47,9 @@ describe('trace DTO mapping', () => {
       { part: 'history', estimatedTokens: 480 },
       { part: 'input', estimatedTokens: 15 },
     ];
-    const narrator = trace({ status: 'success', response: 'Prose.', inputTokens: 640, composition });
+    const narrator = trace({
+      status: 'success', response: 'Prose.', inputTokens: 640, composition, narratorComposition: composition,
+    });
 
     expect(toTraceCallSummaryDto(narrator, turnId).composition).toEqual(composition);
     expect(toTurnMetricsDto(runningTurn, [narrator], null).narratorComposition).toEqual(composition);

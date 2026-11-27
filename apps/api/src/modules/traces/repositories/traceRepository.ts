@@ -41,9 +41,17 @@ function summaryColumns() {
   };
 }
 
-/** Read without the prompts it measures; untrusted until validated, since older calls lack it. */
+/** Transfers no prompt, but reading it decompresses the whole request; untrusted until validated, since older calls lack it. */
 function recordedComposition() {
   return sql<unknown>`${llmCall.request} -> 'composition'`;
+}
+
+/**
+ * Only the Narrator's composition is compared across turns: the other calls skip the request,
+ * whose history would otherwise be decompressed for every call of the branch.
+ */
+function narratorComposition() {
+  return sql<unknown>`case when ${llmCall.stage} = 'narrator' then ${llmCall.request} -> 'composition' end`;
 }
 
 export class TraceRepository {
@@ -105,7 +113,7 @@ export class TraceRepository {
       durationMs: llmCall.durationMs,
       createdAt: llmCall.createdAt,
       costMicroUsd: llmUsage.costMicroUsd,
-      composition: recordedComposition(),
+      narratorComposition: narratorComposition(),
     })
       .from(llmCall)
       .leftJoin(llmUsage, eq(llmUsage.callId, llmCall.id))
