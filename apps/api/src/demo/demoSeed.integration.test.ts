@@ -147,7 +147,7 @@ describe.skipIf(!process.env.DATABASE_URL)('demo data with PostgreSQL', () => {
     await clearDemoProjects(database);
 
     const ids = projectSchema.array().parse(await get('/api/projects')).map((project) => project.id);
-    expect(ids).not.toEqual(expect.arrayContaining([DEMO_PROJECT_IDS[0]]));
+    expect(ids.filter((id) => DEMO_PROJECT_IDS.includes(id))).toEqual([]);
     expect(ids).toContain(unrelatedProjectId);
     const agents = agentDtoSchema.array().parse(await get('/api/agents'));
     expect(agents.some((agent) => agent.id === '019aee00-0000-7000-8000-000000000106')).toBe(true);
