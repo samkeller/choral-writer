@@ -11,7 +11,9 @@
     "start": "pnpm --filter @choral-writer/api start",
     "db:generate": "pnpm --filter @choral-writer/api db:generate",
     "db:migrate": "pnpm --filter @choral-writer/api db:migrate",
-    "db:seed:demo": "pnpm --filter @choral-writer/api db:seed:demo"
+    "db:seed:demo": "pnpm --filter @choral-writer/api db:seed:demo",
+    "wt:new": "pnpm --filter @choral-writer/api exec tsx scripts/worktree/cli.ts new",
+    "wt:remove": "pnpm --filter @choral-writer/api exec tsx scripts/worktree/cli.ts remove"
   },
   "devDependencies": {
     "concurrently": "^9.2.0"
