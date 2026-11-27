@@ -1,14 +1,15 @@
 import { useId, type ReactNode } from 'react';
-import { Badge, Box, Button, Group, Select, Stack, Text, Title } from '@mantine/core';
+import { Badge, Box, Button, getThemeColor, Group, Select, Stack, Text, Title, useMantineTheme } from '@mantine/core';
 import { IconLibrary, IconPlus, IconX } from '@tabler/icons-react';
 import type { Agent } from '@choral-writer/shared';
 
-import { addAgent, removeAgent, replaceVersion, selectedVersion } from '../../hooks/useAgentTeam';
+import { addAgent, removeAgent, replaceVersion, roleCardinality, selectedVersion } from '../../hooks/useAgentTeam';
 import { IconAction } from '../atoms/IconAction';
 import { stagePresentation } from '../phases/stagePresentation';
 import styles from './AgentTeamPipeline.module.css';
 
 type Team = { agents: Agent[]; versionIds: string[]; change: (ids: string[]) => void };
+type Version = Agent['versions'][number];
 
 /** What a screen adds to an agent's row: a short summary, its own actions, an expanded detail. */
 export type AgentRowExtras = { summary?: ReactNode; actions?: ReactNode; details?: ReactNode };
@@ -16,8 +17,6 @@ export type AgentRowExtras = { summary?: ReactNode; actions?: ReactNode; details
 type TeamStep = {
   output: Agent['output'];
   stage: keyof typeof stagePresentation;
-  /** `many` adds up, `optional` holds zero or one agent, `one` exactly one. */
-  cardinality: 'many' | 'optional' | 'one';
   description: string;
   empty: string;
 };
@@ -25,22 +24,22 @@ type TeamStep = {
 /** The team's roles, in the order the pipeline runs them. */
 const teamSteps: TeamStep[] = [
   {
-    output: 'envelope', stage: 'analysis', cardinality: 'many',
+    output: 'envelope', stage: 'analysis',
     description: 'Examinent la situation avant la narration et apportent leurs perspectives au Narrateur.',
     empty: 'Aucun agent d’analyse : le Narrateur écrit sans perspective préalable.',
   },
   {
-    output: 'direction', stage: 'direction', cardinality: 'optional',
+    output: 'direction', stage: 'direction',
     description: 'Retient ou écarte les contributions et oriente la scène, sans en fixer l’issue.',
     empty: 'Sans Directeur, le tour passe directement de l’analyse au Narrateur.',
   },
   {
-    output: 'narrative', stage: 'narrator', cardinality: 'one',
+    output: 'narrative', stage: 'narrator',
     description: 'Écrit la prose montrée à l’utilisateur.',
     empty: 'Aucun Narrateur : choisissez-en un pour pouvoir jouer.',
   },
   {
-    output: 'memory_proposals', stage: 'guardian', cardinality: 'one',
+    output: 'memory_proposals', stage: 'guardian',
     description: 'Propose les modifications de la mémoire après le tour.',
     empty: 'Aucun Gardien : choisissez-en un pour pouvoir jouer.',
   },
@@ -48,8 +47,8 @@ const teamSteps: TeamStep[] = [
 
 /**
  * Edits a team of agents role by role, in pipeline order: one row per retained agent,
- * then the library agents that can join this role. The cardinality rules live in
- * `useAgentTeam`; this component only offers the choices they allow.
+ * then the library agents that can join this role. How many agents a role takes is
+ * decided by `roleCardinality` in `useAgentTeam`; this component only reflects it.
  */
 export function AgentTeamPipeline({ team, disabled, onCreate, extras }: {
   team: Team;
@@ -75,43 +74,41 @@ function PipelineStep({ step, team, disabled, onCreate, extras }: {
   extras?: (agent: Agent) => AgentRowExtras;
 }) {
   const titleId = useId();
+  const theme = useMantineTheme();
   const { label, color } = stagePresentation[step.stage];
+  const cardinality = roleCardinality(step.output);
   const roleAgents = team.agents.filter((agent) => agent.output === step.output);
   // Rows follow the team's order, which is also the order agents are saved and run in.
   const members = team.versionIds.flatMap((id) => {
     const agent = roleAgents.find((entry) => entry.versions.some((version) => version.id === id));
-    return agent ? [agent] : [];
+    const version = agent && selectedVersion(agent, team.versionIds);
+    return agent && version ? [{ agent, version }] : [];
   });
-  const candidates = roleAgents.filter((agent) => !members.includes(agent));
-  const picker = step.cardinality === 'many' ? 'Ajouter depuis la bibliothèque'
+  const candidates = roleAgents.filter((agent) => !members.some((member) => member.agent === agent));
+  const picker = cardinality === 'many' ? 'Ajouter depuis la bibliothèque'
     : members.length ? 'Remplacer depuis la bibliothèque' : 'Choisir dans la bibliothèque';
 
   return (
     <Box component="section" aria-labelledby={titleId} className={styles.step}
-      style={{ '--step-color': `var(--mantine-color-${color.replace('.', '-')})` }}>
+      style={{ '--step-color': getThemeColor(color, theme) }}>
       <Stack gap="xs">
         <Stack gap={2}>
           <Group gap="xs">
             <Title id={titleId} order={3} size="h5">{label}</Title>
-            {step.cardinality === 'optional' && <Badge size="xs" variant="outline" color="gray">Facultative</Badge>}
+            {cardinality === 'optional' && <Badge size="xs" variant="outline" color="gray">Facultative</Badge>}
           </Group>
           <Text size="sm" c="dimmed">{step.description}</Text>
         </Stack>
-        {members.map((agent) => (
-          <AgentRow key={agent.id} agent={agent} team={team} disabled={disabled}
-            removable={step.cardinality !== 'one'} extras={extras?.(agent) ?? {}} />
+        {members.map(({ agent, version }) => (
+          <AgentRow key={agent.id} agent={agent} version={version} team={team} disabled={disabled}
+            removable={cardinality !== 'one'} extras={extras?.(agent) ?? {}} />
         ))}
         {members.length === 0 && <Text size="sm" c="dimmed" className={styles.row}>{step.empty}</Text>}
         {(candidates.length > 0 || onCreate) && (
           <Group gap="xs">
             {candidates.length > 0 && (
-              <Select aria-label={`${picker} : ${label}`} placeholder={picker} value={null} w={{ base: '100%', xs: '18rem' }}
-                leftSection={<IconLibrary size={16} aria-hidden="true" />} disabled={disabled}
-                data={candidates.map((agent) => ({ value: agent.id, label: agent.versions[0]?.name ?? agent.id }))}
-                onChange={(agentId) => {
-                  const agent = candidates.find((entry) => entry.id === agentId);
-                  if (agent) team.change(addAgent(team.versionIds, team.agents, agent));
-                }} />
+              <LibraryPicker label={`${picker} : ${label}`} placeholder={picker} candidates={candidates} disabled={disabled}
+                onPick={(agent) => team.change(addAgent(team.versionIds, team.agents, agent))} />
             )}
             {onCreate && (
               <Button variant="subtle" color="gray" size="sm" disabled={disabled} aria-label={`Créer un agent : ${label}`}
@@ -126,15 +123,43 @@ function PipelineStep({ step, team, disabled, onCreate, extras }: {
   );
 }
 
-function AgentRow({ agent, team, disabled, removable, extras }: {
+/** Library agents that can join a role, each previewed with its latest instructions before it is added. */
+function LibraryPicker({ label, placeholder, candidates, disabled, onPick }: {
+  label: string;
+  placeholder: string;
+  candidates: Agent[];
+  disabled?: boolean;
+  onPick: (agent: Agent) => void;
+}) {
+  return (
+    <Select aria-label={label} placeholder={placeholder} value={null} w={{ base: '100%', xs: '22rem' }}
+      leftSection={<IconLibrary size={16} aria-hidden="true" />} disabled={disabled}
+      comboboxProps={{ width: 'target' }} maxDropdownHeight={360}
+      data={candidates.map((agent) => ({ value: agent.id, label: agent.versions[0]?.name ?? agent.id }))}
+      renderOption={({ option }) => {
+        const instructions = candidates.find((agent) => agent.id === option.value)?.versions[0]?.instructions;
+        return (
+          <Stack gap={2} miw={0}>
+            <Text size="sm" fw={600}>{option.label}</Text>
+            <Text size="xs" c="dimmed" lineClamp={3}>{instructions || 'Aucune instruction supplémentaire.'}</Text>
+          </Stack>
+        );
+      }}
+      onChange={(agentId) => {
+        const agent = candidates.find((entry) => entry.id === agentId);
+        if (agent) onPick(agent);
+      }} />
+  );
+}
+
+function AgentRow({ agent, version, team, disabled, removable, extras }: {
   agent: Agent;
+  version: Version;
   team: Team;
   disabled?: boolean;
   removable: boolean;
   extras: AgentRowExtras;
 }) {
-  const version = selectedVersion(agent, team.versionIds);
-  if (!version) return null;
   return (
     <Box className={styles.row}>
       <Group gap="xs" wrap="wrap">

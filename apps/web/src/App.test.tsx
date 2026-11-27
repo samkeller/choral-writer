@@ -902,7 +902,9 @@ describe('projects and chat screens', () => {
   it('adds library agents to their step, keeps a single Director, and gives the Director no memory', async () => {
     const narrator = existingAgent('019ad30c-19b0-7000-8000-000000000311', 'narrative', 'Narrateur');
     const guardian = existingAgent('019ad30c-19b0-7000-8000-000000000312', 'memory_proposals', 'Gardien');
-    const observer = existingAgent('019ad30c-19b0-7000-8000-000000000313', 'envelope', 'Observateur');
+    const plainObserver = existingAgent('019ad30c-19b0-7000-8000-000000000313', 'envelope', 'Observateur');
+    const observer: AgentDto = { ...plainObserver,
+      versions: [{ ...plainObserver.versions[0]!, instructions: 'Relève ce que la scène laisse dans l’ombre.' }] };
     const director = { ...existingAgent('019ad30c-19b0-7000-8000-000000000314', 'direction', 'Metteur en scène'), phase: 'direction' as const };
     const rival = { ...existingAgent('019ad30c-19b0-7000-8000-000000000315', 'direction', 'Dramaturge'), phase: 'direction' as const };
     const saved = mockProjectSetup([narrator, guardian, observer, director, rival], [narrator, guardian, director]);
@@ -917,7 +919,10 @@ describe('projects and chat screens', () => {
     const analysis = within(setup.getByRole('region', { name: 'Analyse' }));
     expect(analysis.getByText('Aucun agent d’analyse : le Narrateur écrit sans perspective préalable.')).toBeTruthy();
     fireEvent.click(analysis.getByRole('textbox', { name: 'Ajouter depuis la bibliothèque : Analyse' }));
-    fireEvent.click(await screen.findByRole('option', { name: 'Observateur' }));
+    // Le choix dans la bibliothèque laisse lire les instructions avant d'ajouter l'agent.
+    const option = await screen.findByRole('option', { name: /^Observateur/ });
+    expect(within(option).getByText('Relève ce que la scène laisse dans l’ombre.')).toBeTruthy();
+    fireEvent.click(option);
     // Ajouté depuis l'étape d'analyse, l'agent est retenu d'office.
     expect(analysis.getByLabelText('Version de Observateur', { selector: 'input' })).toBeTruthy();
     expect(analysis.getByText('Accès mémoire réglable après enregistrement')).toBeTruthy();
@@ -925,7 +930,7 @@ describe('projects and chat screens', () => {
 
     // Choisir un autre Directeur remplace le premier : il n'y en a jamais deux.
     fireEvent.click(direction.getByRole('textbox', { name: 'Remplacer depuis la bibliothèque : Direction' }));
-    fireEvent.click(await screen.findByRole('option', { name: 'Dramaturge' }));
+    fireEvent.click(await screen.findByRole('option', { name: /^Dramaturge/ }));
     expect(direction.getByLabelText('Version de Dramaturge', { selector: 'input' })).toBeTruthy();
     expect(direction.queryByLabelText('Version de Metteur en scène', { selector: 'input' })).toBeNull();
 
@@ -942,6 +947,26 @@ describe('projects and chat screens', () => {
     fireEvent.click(direction.getByRole('button', { name: 'Retirer Dramaturge' }));
     expect(direction.getByText('Sans Directeur, le tour passe directement de l’analyse au Narrateur.')).toBeTruthy();
     expect(direction.getByRole('textbox', { name: 'Choisir dans la bibliothèque : Direction' })).toBeTruthy();
+  });
+
+  it('opens the details of the agent suggested by « Configurer ce projet », until the user closes them', async () => {
+    const narrator = existingAgent('019ad30c-19b0-7000-8000-000000000321', 'narrative', 'Narrateur');
+    const guardian = existingAgent('019ad30c-19b0-7000-8000-000000000322', 'memory_proposals', 'Gardien');
+    const observer = existingAgent('019ad30c-19b0-7000-8000-000000000323', 'envelope', 'Observateur');
+    mockProjectSetup([narrator, guardian, observer], [narrator, guardian, observer]);
+
+    renderApp(`/projects/${project.id}?setup=agents&agentVersion=${observer.versions[0]!.id}`);
+    const setup = within(await screen.findByRole('region', { name: 'Agents' }));
+    const toggle = await setup.findByRole('button', { name: 'Détails de Observateur' });
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    const details = setup.getByRole('region', { name: 'Détails de Observateur' });
+    expect(details.id).toBe(toggle.getAttribute('aria-controls'));
+    expect(within(details).getByText('Instructions')).toBeTruthy();
+    expect(setup.getByRole('button', { name: 'Détails de Narrateur' }).getAttribute('aria-expanded')).toBe('false');
+
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(setup.queryByRole('region', { name: 'Détails de Observateur' })).toBeNull();
   });
 
   it('replaces the branch memory from the exported CSV files', async () => {
@@ -1358,7 +1383,7 @@ describe('projects and chat screens', () => {
 
     // Le Directeur, absent du projet, s'ajoute depuis la bibliothèque puis change de version.
     fireEvent.click(dialog.getByRole('textbox', { name: 'Choisir dans la bibliothèque : Direction' }));
-    fireEvent.click(await screen.findByRole('option', { name: 'Directeur' }));
+    fireEvent.click(await screen.findByRole('option', { name: /^Directeur/ }));
     fireEvent.click(dialog.getByRole('textbox', { name: 'Version de Directeur' }));
     fireEvent.click(await screen.findByRole('option', { name: 'v1 · Directeur' }));
 

@@ -1,5 +1,5 @@
-﻿import { useState } from 'react';
-import { Alert, Button, Loader, Stack, Text } from '@mantine/core';
+﻿import { useId, useState } from 'react';
+import { Alert, Box, Button, Loader, Stack, Text } from '@mantine/core';
 import { Link } from 'react-router-dom';
 import {
   defaultMemoryRead, readsMemory, type Agent, type MemoryTag, type ProjectAgent,
@@ -25,6 +25,7 @@ export function ProjectAgentSetup({ projectId, suggestedVersion, onSaved, memory
 }) {
   const setup = useProjectSetup(projectId, suggestedVersion);
   const [creating, setCreating] = useState<Agent['output'] | null>(null);
+  const idPrefix = useId();
   // Until the user opens or closes a row, the suggested agent's detail is open.
   const [openId, setOpenId] = useState<string | null>();
   const suggestedId = setup.agents.find((agent) => agent.versions.some((version) => version.id === suggestedVersion))?.id;
@@ -35,26 +36,32 @@ export function ProjectAgentSetup({ projectId, suggestedVersion, onSaved, memory
     const persisted = memory.agents.find((item) => item.agentId === agent.id);
     const expanded = expandedId === agent.id;
     const Chevron = expanded ? IconChevronUp : IconChevronDown;
+    const detailsId = `${idPrefix}-${agent.id}`;
+    const name = version?.name ?? agent.id;
     return {
       summary: memorySummary(agent.output, persisted, memory.view?.state.tags ?? []),
       actions: (
-        <IconAction label={`Détails de ${version?.name ?? agent.id}`} aria-expanded={expanded}
+        <IconAction label={`Détails de ${name}`} aria-expanded={expanded} aria-controls={detailsId}
           variant={expanded ? 'light' : 'subtle'} onClick={() => setOpenId(expanded ? null : agent.id)}>
           <Chevron size={18} aria-hidden="true" />
         </IconAction>
       ),
-      details: expanded && version && (
-        <Stack gap="sm" pt="sm">
-          {readsMemory(agent.output) && persisted && memory.view && (
-            <AgentMemoryEditor key={`${persisted.agentId}:${JSON.stringify(persisted.memoryRead)}`} agent={persisted}
-              tags={memory.view.state.tags} pending={memory.pending} save={memory.change} />
+      details: (
+        <Box id={detailsId} role="region" aria-label={`Détails de ${name}`} hidden={!expanded}>
+          {expanded && version && (
+            <Stack gap="sm" pt="sm">
+              {readsMemory(agent.output) && persisted && memory.view && (
+                <AgentMemoryEditor key={`${persisted.agentId}:${JSON.stringify(persisted.memoryRead)}`} agent={persisted}
+                  tags={memory.view.state.tags} pending={memory.pending} save={memory.change} />
+              )}
+              {readsMemory(agent.output) && !persisted && (
+                <Text size="sm" c="dimmed">Enregistrez l’équipe pour configurer l’accès mémoire de cet agent.</Text>
+              )}
+              <Text size="sm" fw={600}>Instructions</Text>
+              <PromptDisplay content={version.instructions || 'Aucune instruction supplémentaire au prompt du projet.'} />
+            </Stack>
           )}
-          {readsMemory(agent.output) && !persisted && (
-            <Text size="sm" c="dimmed">Enregistrez l’équipe pour configurer l’accès mémoire de cet agent.</Text>
-          )}
-          <Text size="sm" fw={600}>Instructions</Text>
-          <PromptDisplay content={version.instructions || 'Aucune instruction supplémentaire au prompt du projet.'} />
-        </Stack>
+        </Box>
       ),
     };
   }

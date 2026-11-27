@@ -4,14 +4,25 @@ import { listAgents, listProjectAgents } from '../api/agents/agentsApi';
 import { getErrorMessage } from '../api/client';
 
 /**
- * Un projet a exactement un narrateur et un gardien, et au plus un Directeur :
- * choisir une version pour ces contrats remplace celle de l'agent précédent,
- * alors que les agents d'analyse s'ajoutent à la sélection.
+ * Combien d'agents un rôle accueille dans une équipe : les agents d'analyse
+ * s'additionnent (`many`), le Directeur est facultatif et unique (`optional`),
+ * le Narrateur et le Gardien sont obligatoires et uniques (`one`).
+ */
+export type RoleCardinality = 'many' | 'optional' | 'one';
+
+export function roleCardinality(output: Agent['output']): RoleCardinality {
+  if (output === 'envelope') return 'many';
+  return output === 'direction' ? 'optional' : 'one';
+}
+
+/**
+ * Retient une version : pour un rôle unique, elle remplace celle de l'agent
+ * précédent ; pour l'analyse, elle s'ajoute à la sélection.
  */
 export function selectVersion(
   ids: string[], agents: Agent[], output: Agent['output'], versionId: string,
 ): string[] {
-  if (output === 'envelope') return ids.includes(versionId) ? ids : [...ids, versionId];
+  if (roleCardinality(output) === 'many') return ids.includes(versionId) ? ids : [...ids, versionId];
   const previous = new Set(agents.filter((agent) => agent.output === output)
     .flatMap((agent) => agent.versions.map((version) => version.id)));
   // Le remplacement garde la position de la version précédente pour stabiliser l'ordre d'enregistrement.
