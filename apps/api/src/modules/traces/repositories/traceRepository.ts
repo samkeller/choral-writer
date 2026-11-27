@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, ne, sql } from 'drizzle-orm';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 import type { AttributedDevelopment, TurnConfiguration, TurnDirection } from '@choral-writer/shared';
 
@@ -8,6 +8,12 @@ import { chatBranches } from '../../../db/entities/chat/branch.js';
 import { chatTurns } from '../../../db/entities/chat/turn.js';
 import { llmCall } from '../../../db/entities/llmCall.js';
 import { llmUsage } from '../../../db/entities/llmUsage.js';
+
+/**
+ * The attribution is read by the Debug mode after the turn: it is billed, but it is no part of the turn,
+ * its calls, its duration or its cost.
+ */
+const ownCall = ne(llmCall.stage, 'attribution');
 
 function turnColumns() {
   return {
@@ -37,7 +43,21 @@ function summaryColumns() {
     createdAt: llmCall.createdAt,
     costMicroUsd: llmUsage.costMicroUsd,
     costBasis: llmUsage.costBasis,
+    composition: recordedComposition(),
   };
+}
+
+/** Transfers no prompt, but reading it decompresses the whole request; untrusted until validated, since older calls lack it. */
+function recordedComposition() {
+  return sql<unknown>`${llmCall.request} -> 'composition'`;
+}
+
+/**
+ * Only the Narrator's composition is compared across turns: the other calls skip the request,
+ * whose history would otherwise be decompressed for every call of the branch.
+ */
+function narratorComposition() {
+  return sql<unknown>`case when ${llmCall.stage} = 'narrator' then ${llmCall.request} -> 'composition' end`;
 }
 
 export class TraceRepository {
@@ -48,7 +68,7 @@ export class TraceRepository {
       .from(llmCall)
       .leftJoin(agentVersions, eq(llmCall.agentVersionId, agentVersions.id))
       .leftJoin(llmUsage, eq(llmUsage.callId, llmCall.id))
-      .where(eq(llmCall.turnId, turnId))
+      .where(and(eq(llmCall.turnId, turnId), ownCall))
       .orderBy(asc(llmCall.createdAt), asc(llmCall.id));
   }
 
@@ -99,10 +119,11 @@ export class TraceRepository {
       durationMs: llmCall.durationMs,
       createdAt: llmCall.createdAt,
       costMicroUsd: llmUsage.costMicroUsd,
+      narratorComposition: narratorComposition(),
     })
       .from(llmCall)
       .leftJoin(llmUsage, eq(llmUsage.callId, llmCall.id))
-      .where(inArray(llmCall.turnId, [...turnIds]))
+      .where(and(inArray(llmCall.turnId, [...turnIds]), ownCall))
       .orderBy(asc(llmCall.createdAt), asc(llmCall.id));
   }
 

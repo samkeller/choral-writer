@@ -1,4 +1,4 @@
-import type { NudgeType, TurnConfigurationChange, TurnMetrics, TurnTraceSummary } from '@choral-writer/shared';
+import type { AnalysisTrace, NudgeType, TurnConfigurationChange, TurnMetrics, TurnTraceSummary } from '@choral-writer/shared';
 
 /** A turn costs notably more than usual beyond this ratio to the story average. */
 export const COST_ABOVE_AVERAGE_RATIO = 1.2;
@@ -46,10 +46,7 @@ export function attentionPoints(
   }
 
   for (const agent of summary.analysis.filter((item) => item.status === 'error')) {
-    const lastCall = [...summary.calls].reverse().find((call) => call.stage === 'analysis' && (agent.agentVersionId
-      ? call.agentVersionId === agent.agentVersionId
-      : call.agentId === agent.agentId));
-    points.push({ kind: 'analysisAgentWithoutEnvelope', agentName: agent.name, callId: lastCall?.id ?? null });
+    points.push({ kind: 'analysisAgentWithoutEnvelope', agentName: agent.name, callId: lastAnalysisCallId(summary, agent) });
   }
 
   const failedCalls = summary.calls.filter((call) => call.status === 'error').length;
@@ -69,4 +66,14 @@ function directionPoints(summary: TurnTraceSummary, previous: TurnMetrics | unde
   if (!trace) return previous?.direction ? [{ kind: 'directorDisabled' }] : [];
   if (!trace.direction) return [{ kind: 'directionFailed', attempts: trace.attempts }];
   return trace.direction.nudges.map(({ type, target }) => ({ kind: 'directorNudge', type, target }));
+}
+
+/** The latest call of an analysis agent, retries included: the raw response to open from its contributions. */
+export function lastAnalysisCallId(
+  summary: Pick<TurnTraceSummary, 'calls'>, agent: Pick<AnalysisTrace, 'agentId' | 'agentVersionId'>,
+): string | null {
+  const call = [...summary.calls].reverse().find((candidate) => candidate.stage === 'analysis' && (agent.agentVersionId
+    ? candidate.agentVersionId === agent.agentVersionId
+    : candidate.agentId === agent.agentId));
+  return call?.id ?? null;
 }

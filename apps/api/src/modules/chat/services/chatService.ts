@@ -126,9 +126,8 @@ export class ChatService {
             turnId,
             agentId: narrator.agentId,
             agentVersionId: narrator.versionId,
-            systemPrompt: [pipeline.systemPrompt, narrator.instructions]
-              .filter(Boolean)
-              .join('\n\n'),
+            systemPrompt: pipeline.systemPrompt,
+            instructions: narrator.instructions,
             whiteboard,
             direction,
             history,

@@ -1,14 +1,13 @@
 import type {
   AnalysisEnvelope, AttributedItem, ChatTurn, Message, NudgeType, ProjectAgent, TurnDirection,
 } from '@choral-writer/shared';
-import { nudgeTypeSchema, tensionTargetSchema } from '@choral-writer/shared';
+import { isDevelopment, isToldInScene, nudgeTypeSchema, tensionTargetSchema } from '@choral-writer/shared';
 import { z } from 'zod';
 
 import { ApiError } from '../../../errors/errors.js';
 import type { CallLLMInput, createCallLLM } from '../../../llm/call-llm.js';
 import { conversationMessages } from './conversationMessages.js';
 import { nudgeDescriptions, tensionLabels } from './directionVocabulary.js';
-import { isToldInScene } from './turnDevelopments.js';
 import { formatItem } from './whiteboardFormat.js';
 
 export type DirectorAgent = ProjectAgent & { phase: 'direction'; output: 'direction' };
@@ -136,6 +135,10 @@ function directorContract(forbidden: readonly NudgeType[]): string {
   ].join('\n');
 }
 
+function identifiedLine({ id, item }: IdentifiedItem): string {
+  return `- [${id}] ${formatItem(item)}`;
+}
+
 function formatIdentifiedWhiteboard(whiteboard: readonly IdentifiedEnvelope[]): string {
   if (!whiteboard.some(({ items }) => items.length)) {
     return 'WHITEBOARD. Aucune contribution à ce tour : "retained" et "dismissed" restent vides.';
@@ -145,7 +148,7 @@ function formatIdentifiedWhiteboard(whiteboard: readonly IdentifiedEnvelope[]): 
     ...whiteboard.map(({ envelope, items }) => [
       `## ${envelope.agent}`,
       envelope.summary,
-      ...items.map(({ id, item }) => `- [${id}] ${formatItem(item)}`),
+      ...items.map(identifiedLine),
     ].join('\n')),
   ].join('\n\n');
 }
@@ -176,10 +179,19 @@ export class ChatDirectorService {
       agentVersionId: input.agent.versionId,
       stage: 'direction',
       memory: { tags: [], entries: [] },
-      messages: conversationMessages(
-        [input.systemPrompt, input.agent.instructions, directorContract(forbidden),
-          formatIdentifiedWhiteboard(whiteboard), formatRecentDirections(input.recentDirections),
-        ].filter(Boolean).join('\n\n'),
+      ...conversationMessages(
+        [
+          { part: 'systemPrompt', text: input.systemPrompt },
+          { part: 'instructions', text: input.agent.instructions },
+          { part: 'rules', text: directorContract(forbidden) },
+          {
+            part: 'contributions',
+            text: formatIdentifiedWhiteboard(whiteboard),
+            embedded: items.filter(({ item }) => isDevelopment(item))
+              .map((item) => ({ part: 'developments', text: identifiedLine(item) })),
+          },
+          { part: 'direction', text: formatRecentDirections(input.recentDirections) },
+        ],
         input.history,
         input.userMessage,
       ),

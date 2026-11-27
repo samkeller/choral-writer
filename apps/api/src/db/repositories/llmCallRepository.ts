@@ -12,7 +12,7 @@ export async function insertLlmCall(trace: LlmCallTrace): Promise<void> {
     stageExecutionId: trace.stageExecutionId,
     stage: trace.stage,
     model: trace.model,
-    request: { messages: trace.messages, memory: trace.memory },
+    request: { messages: trace.messages, memory: trace.memory, composition: trace.composition },
     response: trace.response,
     inputTokens: trace.inputTokens,
     outputTokens: trace.outputTokens,

@@ -10,6 +10,7 @@ import type {
   analysisTraceSchema, directionTraceSchema, narratorTraceSchema, traceCallDetailSchema,
   traceCallSummarySchema, turnTraceSummarySchema, stageDurationSchema,
   turnConfigurationChangeSchema, turnDirectionMetricsSchema, turnMetricsSchema,
+  contextCompositionSchema, contextPartSchema,
 } from './schemas/traces.js';
 
 export type MessageDto = z.infer<typeof messageDtoSchema>;
@@ -27,6 +28,8 @@ export type StageDuration = z.infer<typeof stageDurationSchema>;
 export type TurnConfigurationChange = z.infer<typeof turnConfigurationChangeSchema>;
 export type TurnMetrics = z.infer<typeof turnMetricsSchema>;
 export type TurnDirectionMetrics = z.infer<typeof turnDirectionMetricsSchema>;
+export type ContextPart = z.infer<typeof contextPartSchema>;
+export type ContextComposition = z.infer<typeof contextCompositionSchema>;
 
 export type Message = z.infer<typeof messageSchema>;
 export type ChatBranch = z.infer<typeof chatBranchSchema>;

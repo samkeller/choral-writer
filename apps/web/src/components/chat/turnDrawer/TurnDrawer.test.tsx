@@ -26,11 +26,11 @@ function summary(turnId: string, microUsd: number, narratorMs: number): TurnTrac
 
 const metrics: TurnMetrics[] = [
   {
-    turnId: firstTurnId, durationMs: 1000, cost: { microUsd: 1000, complete: true }, narratorInputTokens: 800, configurationChanges: null,
+    turnId: firstTurnId, durationMs: 1000, cost: { microUsd: 1000, complete: true }, narratorInputTokens: 800, narratorComposition: null, configurationChanges: null,
     direction: { status: 'success', tension: 'monter', nudges: ['saillance'] },
   },
   {
-    turnId: secondTurnId, durationMs: 4000, cost: { microUsd: 3000, complete: true }, narratorInputTokens: 2000,
+    turnId: secondTurnId, durationMs: 4000, cost: { microUsd: 3000, complete: true }, narratorInputTokens: 2000, narratorComposition: null,
     configurationChanges: [{ kind: 'agentChanged', name: 'Rythme', fromVersion: 1, toVersion: 2 }],
     direction: { status: 'success', tension: 'monter', nudges: ['complication'] },
   },
@@ -65,7 +65,7 @@ const summaries = new Map([
     calls: [{
       id: silentAgentCallId, turnId: secondTurnId, stage: 'analysis', ...silentAgent, agentName: 'Rythme', agentVersion: 2,
       model: 'test-model', status: 'success' as const, inputTokens: 500, outputTokens: 20, durationMs: 300,
-      createdAt: '2025-01-01T00:00:00.000Z', error: null, costMicroUsd: 1, costBasis: 'priced' as const,
+      createdAt: '2025-01-01T00:00:00.000Z', error: null, costMicroUsd: 1, costBasis: 'priced' as const, composition: null,
     }],
   }],
 ]);
@@ -160,16 +160,11 @@ describe('TurnDrawer', () => {
       .toBe('Pousse vers complication (contrarier l’issue d’une tentative du protagoniste) : Personnage A');
     expect(drawer.getByText('En appui sur la contribution de Monde : « Un fait générique. »')).toBeTruthy();
 
-    const retained = within(drawer.getByRole('region', { name: 'Contributions retenues · 1' }));
-    expect(retained.getByText('Monde')).toBeTruthy();
-    expect(retained.getByText('Raison : Utile à la scène.')).toBeTruthy();
-    // A contribution recorded before scopes existed reads as a perspective: no scope badge.
-    expect(retained.queryByText(/^Dans la scène|^Hors champ/)).toBeNull();
-    const dismissed = within(drawer.getByRole('region', { name: 'Contributions écartées · 2' }));
-    expect(dismissed.getByText('Rythme')).toBeTruthy();
-    expect(dismissed.getByText('Une idée générique.')).toBeTruthy();
-    expect(dismissed.getByText('Raison : Hors sujet.')).toBeTruthy();
-    expect(dismissed.getByText('Hors champ · Personnage B')).toBeTruthy();
+    // The sorting of contributions lives in the Analyse tab: the Direction tab only counts it.
+    const sorting = within(drawer.getByRole('region', { name: 'Tri des contributions' }));
+    expect(sorting.getByText(/^1 retenue\(s\), 2 écartée\(s\)/)).toBeTruthy();
+    fireEvent.click(sorting.getByRole('button', { name: /Voir le sort de chaque item dans Analyse/ }));
+    expect(drawer.getByRole('tab', { name: 'Analyse' }).getAttribute('aria-selected')).toBe('true');
   });
 
   it('says so on the Direction tab when the turn ran without a Director', async () => {

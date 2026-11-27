@@ -580,7 +580,7 @@ describe('projects and chat screens', () => {
   function metricsOf(turnId: string, overrides: Partial<TurnMetrics> = {}): TurnMetrics {
     return {
       turnId, durationMs: 2300, cost: { microUsd: 4100, complete: true },
-      narratorInputTokens: 900, configurationChanges: null, direction: null, ...overrides,
+      narratorInputTokens: 900, narratorComposition: null, configurationChanges: null, direction: null, ...overrides,
     };
   }
 
@@ -1143,14 +1143,14 @@ describe('projects and chat screens', () => {
           agentVersionId: '019ad30c-19b0-7000-8000-000000000304',
           agentName: 'Chaos', agentVersion: 1, model: 'test-model', status: 'success',
           inputTokens: 812, outputTokens: 240, durationMs: 800,
-          createdAt: project.createdAt, error: null, costMicroUsd: 210, costBasis: 'priced',
+          createdAt: project.createdAt, error: null, costMicroUsd: 210, costBasis: 'priced', composition: null,
         },
         {
           id: narratorCallId, turnId, stage: 'narrator',
           agentId: null, agentVersionId: null, agentName: 'Narrateur', agentVersion: 1,
           model: 'test-model', status: 'success', inputTokens: 900, outputTokens: 100,
           durationMs: 1500, createdAt: project.createdAt, error: null,
-          costMicroUsd: 195, costBasis: 'priced',
+          costMicroUsd: 195, costBasis: 'priced', composition: null,
         },
       ],
       timeline: [
@@ -1210,7 +1210,7 @@ describe('projects and chat screens', () => {
     expect(drawer.getByRole('button', { name: 'Tour précédent' }).hasAttribute('disabled')).toBe(true);
     expect(drawer.getByRole('button', { name: 'Tour suivant' }).hasAttribute('disabled')).toBe(true);
     expect(drawer.getByRole('tab', { name: 'Synthèse' }).getAttribute('aria-selected')).toBe('true');
-    expect(drawer.queryByRole('tab', { name: 'Analyse' })).toBeNull();
+    expect(drawer.getByRole('tab', { name: 'Analyse' })).toBeTruthy();
     expect(await drawer.findByRole('button', { name: /^Coût : 0,0004 \$/ })).toBeTruthy();
     expect(drawer.getByRole('button', { name: /^Durée : 2,3 s, Narrateur : 1,5 s/ })).toBeTruthy();
     expect(drawer.getByRole('button', { name: /^Entrée du Narrateur : 900 tokens, premier tour/ })).toBeTruthy();

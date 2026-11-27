@@ -6,11 +6,12 @@ type TraceStage = (typeof traceStageSchema.options)[number];
 
 /**
  * Pipeline stages, in execution order, with the phase palette extended to V2 stages.
- * Shade 7 keeps stages distinct on a dark background without shouting.
+ * Shade 7 keeps stages distinct on a dark background without shouting. Direction is indigo, as the
+ * Debug mode decided: the orange of its phase is the colour of the history in the context composition.
  */
 export const stagePresentation = {
   analysis: { label: 'Analyse', color: `${phasePresentation.analysis.color}.7` },
-  direction: { label: 'Direction', color: `${phasePresentation.direction.color}.7` },
+  direction: { label: 'Direction', color: 'indigo.7' },
   narrator: { label: 'Narrateur', color: `${phasePresentation.restitution.color}.7` },
   guardian: { label: 'Gardien', color: 'teal.7' },
   reducer: { label: 'Mémoire', color: 'teal.9' },

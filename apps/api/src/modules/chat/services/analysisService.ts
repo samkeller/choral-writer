@@ -77,9 +77,13 @@ export class ChatAnalysisService {
         agentVersionId: agent.versionId,
         stage: 'analysis',
         memory,
-        messages: conversationMessages(
-          [input.systemPrompt, agent.instructions, analysisContract(agent.name, itemBudget),
-            formatMemoryContext(memory)].filter(Boolean).join('\n\n'),
+        ...conversationMessages(
+          [
+            { part: 'systemPrompt', text: input.systemPrompt },
+            { part: 'instructions', text: agent.instructions },
+            { part: 'rules', text: analysisContract(agent.name, itemBudget) },
+            { part: 'memory', text: formatMemoryContext(memory) },
+          ],
           input.history,
           input.userMessage,
         ),
