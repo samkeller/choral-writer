@@ -1,6 +1,6 @@
 import { loadConfig } from '../config.js';
 import { db, pool } from '../db/client.js';
-import { demoDatabaseRefusal } from './demoGuard.js';
+import { localDatabaseRefusal } from '../db/localDatabaseGuard.js';
 import { clearDemoProjects, seedDemoProjects } from './demoSeed.js';
 
 /**
@@ -8,7 +8,9 @@ import { clearDemoProjects, seedDemoProjects } from './demoSeed.js';
  * `--allow-remote` is required to target a database on another host.
  */
 async function main(): Promise<void> {
-  const refusal = demoDatabaseRefusal(loadConfig(), { allowRemote: process.argv.includes('--allow-remote') });
+  const refusal = localDatabaseRefusal(
+    loadConfig(), { allowRemote: process.argv.includes('--allow-remote') }, 'Demo data',
+  );
   if (refusal) throw new Error(refusal);
   if (process.argv.includes('--clear')) {
     await clearDemoProjects(db);

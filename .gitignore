@@ -6,5 +6,7 @@ coverage/
 .env.*
 !.env.example
 .DS_Store
+# Rapports locaux de `pnpm eval:v2` : ils contiennent de la prose, jamais versionnée.
+eval-output/
 
 .mcp.json

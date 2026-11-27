@@ -39,7 +39,11 @@ export interface CallLLMInput<T = unknown> {
   schema?: z.ZodType<T, z.ZodTypeDef, any>;
   onDelta?: (delta: string) => void | Promise<void>;
   signal?: AbortSignal;
+  /** Délai maximal de l'appel ; 120 s par défaut, à allonger seulement pour une entrée exceptionnellement longue. */
+  timeoutMs?: number;
 }
+
+const DEFAULT_TIMEOUT_MS = 120_000;
 
 export interface LlmCallTrace {
   id: string;
@@ -96,7 +100,7 @@ interface LLMClient {
     completions: {
       create(
         params: ChatCompletionCreateParamsNonStreaming | ChatCompletionCreateParamsStreaming,
-        options?: { signal?: AbortSignal },
+        options?: { signal?: AbortSignal; timeout?: number },
       ): Promise<ChatCompletion | AsyncIterable<ChatCompletionChunk>>;
     };
   };
@@ -152,7 +156,8 @@ export function createCallLLM({
     let outputTokens: number | null = null;
     let cachedInputTokens: number | null = null;
     let providerCostUsd: number | null = null;
-    const timeout = AbortSignal.timeout(120_000);
+    const timeoutMs = input.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    const timeout = AbortSignal.timeout(timeoutMs);
     const signal = input.signal ? AbortSignal.any([input.signal, timeout]) : timeout;
 
     /** Normalise la consommation via la stratégie fournisseur : aucune lecture directe de `usage`. */
@@ -206,7 +211,7 @@ export function createCallLLM({
         stream: Boolean(input.onDelta),
         ...(input.onDelta ? { stream_options: { include_usage: true } } : {}),
         ...(input.schema ? { response_format: { type: 'json_object' } } : {}),
-      }, { signal });
+      }, { signal, timeout: timeoutMs });
 
       if (Symbol.asyncIterator in result) {
         content = '';
