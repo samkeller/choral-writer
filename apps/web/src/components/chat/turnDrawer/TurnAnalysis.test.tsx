@@ -45,7 +45,7 @@ function summary(turnId: string, directionFailed = false): TurnTraceSummary {
     calls: [{
       id: analysisCallId, turnId, stage: 'analysis', agentId: null, agentVersionId, agentName: 'Chaos', agentVersion: 1,
       model: 'test-model', status: 'success', inputTokens: 100, outputTokens: 20, durationMs: 400,
-      createdAt: '2025-01-01T00:00:00.000Z', error: null, costMicroUsd: 10, costBasis: 'priced',
+      createdAt: '2025-01-01T00:00:00.000Z', error: null, costMicroUsd: 10, costBasis: 'priced', composition: null,
     }],
     timeline: [{ stage: 'narrator', durationMs: 900, agentCount: 1 }], durationMs: 900,
     cost: { microUsd: 1000, complete: true }, configuration: null,

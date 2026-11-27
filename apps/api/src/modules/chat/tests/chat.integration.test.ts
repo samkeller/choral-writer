@@ -8,7 +8,7 @@ import type {
 import { APIError } from 'openai/error';
 import { v7 as uuidv7 } from 'uuid';
 import {
-  agentSchema, projectAgentSchema, chatEventSchema, chatHistorySchema, projectSchema,
+  agentSchema, projectAgentSchema, chatEventSchema, chatHistorySchema, projectSchema, CONTEXT_CHARS_PER_TOKEN,
   traceCallDetailSchema, turnMetricsListSchema, turnTraceSummarySchema,
   memoryViewSchema, memoryTraceSchema, type MemoryMutation, type MemoryProposal, type MemoryView,
 } from '@choral-writer/shared';
@@ -21,7 +21,8 @@ import { testProvider } from '../../../tests/support/callLLM.js';
 import { createUsageService } from '../../../llm/usage/usageService.js';
 import { createChatBranchService, createChatService } from '../index.js';
 import { ChatMessageService } from '../services/messageService.js';
-import { narratorSystemPrompt } from '../services/narratorPrompt.js';
+import { narratorSystemSections } from '../services/narratorPrompt.js';
+import { joinSections } from '../../../llm/contextComposition.js';
 import { ChatTurnService } from '../services/turnService.js';
 import { ChatMessageRepository } from '../repositories/messageRepository.js';
 import { ChatTurnRepository } from '../repositories/turnRepository.js';
@@ -73,8 +74,8 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
     provider: testProvider,
     usage: createUsageService(database),
     traces: {
-      insert: async ({ messages, memory, ...trace }) => {
-        await database.insert(schema.llmCall).values({ ...trace, request: { messages, memory } });
+      insert: async ({ messages, memory, composition, ...trace }) => {
+        await database.insert(schema.llmCall).values({ ...trace, request: { messages, memory, composition } });
       },
     },
   });
@@ -128,8 +129,8 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
     const project = await projects.get(projectId);
     const narrator = (await agents.listForProject(projectId)).find((agent) => agent.output === 'narrative');
     if (!narrator) throw new Error('Missing narrator assignment.');
-    const systemPrompt = [project.systemPrompt, narrator.instructions].filter(Boolean).join('\n\n');
-    return narratorSystemPrompt(systemPrompt, [], { tags: [], entries: [] }, null);
+    return joinSections(narratorSystemSections(
+      project.systemPrompt, narrator.instructions, [], { tags: [], entries: [] }, null));
   }
 
   async function sendOnBranch(projectId: string, branchId: string, content: string) {
@@ -372,6 +373,10 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
     // The simulated model has no price grid: its usage is recorded, but the turn total is partial.
     expect(traceSummary.calls.map((call) => call.costBasis)).toEqual(traceSummary.calls.map(() => 'unpriced'));
     expect(traceSummary.cost).toEqual({ microUsd: 0, complete: false });
+    const narratorComposition = traceSummary.calls.find((call) => call.stage === 'narrator')?.composition;
+    expect(narratorComposition?.map((entry) => entry.part)).toEqual(expect.arrayContaining(['systemPrompt', 'rules', 'input']));
+    expect(narratorComposition?.find((entry) => entry.part === 'input')?.estimatedTokens)
+      .toBe(Math.ceil('Mara entre.'.length / CONTEXT_CHARS_PER_TOKEN));
     const traceDetailResponse = await app.inject({
       method: 'GET',
       url: `/api/projects/${first.id}/turns/${start.turnId}/traces/${trace.id}`,
@@ -399,8 +404,20 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
     expect(traceSummary.timeline.map((stage) => stage.stage)).toEqual([...new Set(traceSummary.calls.map((call) => call.stage))]);
     expect(turnMetricsListSchema.parse(metricsResponse.json())).toEqual([{
       turnId: start.turnId, durationMs: traceSummary.durationMs,
-      cost: { microUsd: 0, complete: false }, narratorInputTokens: 20, configurationChanges: null, direction: null,
+      cost: { microUsd: 0, complete: false }, narratorInputTokens: 20, narratorComposition,
+      configurationChanges: null, direction: null,
     }]);
+    // A call recorded before compositions keeps being summarized, without one.
+    await database.update(schema.llmCall).set({ request: { messages: trace.request.messages } })
+      .where(eq(schema.llmCall.id, trace.id));
+    const legacySummary = turnTraceSummarySchema.parse((await app.inject({
+      method: 'GET', url: `/api/projects/${first.id}/turns/${start.turnId}/traces`, headers: { cookie },
+    })).json());
+    expect(legacySummary.calls.find((call) => call.id === trace.id)?.composition).toBeNull();
+    const legacyMetrics = turnMetricsListSchema.parse((await app.inject({
+      method: 'GET', url: `/api/projects/${first.id}/branches/${first.defaultBranchId}/turn-metrics`, headers: { cookie },
+    })).json());
+    expect(legacyMetrics[0]?.narratorComposition).toBeNull();
     const [turn] = await database.select().from(schema.chatTurns).where(eq(schema.chatTurns.id, start.turnId));
     expect(turn.status).toBe('completed');
     await send(first.id, 'Elle avance.');

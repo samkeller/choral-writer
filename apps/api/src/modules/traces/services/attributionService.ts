@@ -6,7 +6,7 @@ import { contributionsToldToNarrator } from '@choral-writer/shared';
 import { ApiError, notfoundError } from '../../../errors/errors.js';
 import type { CallLLMInput, createCallLLM } from '../../../llm/call-llm.js';
 import type { AttributionRepository } from '../repositories/attributionRepository.js';
-import { type AttributionOutput, attributionMessages, attributionOutputSchema } from './attributionPrompt.js';
+import { type AttributionOutput, attributionOutputSchema, attributionRequest } from './attributionPrompt.js';
 
 export interface ProseAttributionInput {
   projectId: string;
@@ -63,7 +63,7 @@ export class AttributionService {
       projectId,
       turnId,
       stage: 'attribution',
-      messages: attributionMessages(prose, contributions),
+      ...attributionRequest(prose, contributions),
       schema: attributionOutputSchema(contributions.length),
     };
     const result = await this.callLLM(request).catch((error: unknown) => {

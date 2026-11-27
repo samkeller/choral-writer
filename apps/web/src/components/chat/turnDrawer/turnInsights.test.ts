@@ -8,7 +8,7 @@ const turnId = '019ad30c-19b0-7000-8000-000000000501';
 function metrics(microUsd: number, overrides: Partial<TurnMetrics> = {}): TurnMetrics {
   return {
     turnId, durationMs: 1000, cost: { microUsd, complete: true },
-    narratorInputTokens: 1000, configurationChanges: null, direction: null, ...overrides,
+    narratorInputTokens: 1000, narratorComposition: null, configurationChanges: null, direction: null, ...overrides,
   };
 }
 
@@ -34,7 +34,7 @@ describe('turn insights', () => {
     const story = [
       metrics(100),
       metrics(400, {
-        narratorInputTokens: 2000,
+        narratorInputTokens: 2000, narratorComposition: null,
         configurationChanges: [{ kind: 'systemPromptChanged' }],
       }),
     ];
@@ -51,7 +51,7 @@ describe('turn insights', () => {
     const call = {
       id: '019ad30c-19b0-7000-8000-000000000505', turnId, stage: 'analysis', ...agent, agentName: 'Rythme', agentVersion: 1,
       model: 'test-model', status: 'success' as const, inputTokens: 10, outputTokens: 10, durationMs: 10,
-      createdAt: '2025-01-01T00:00:00.000Z', error: null, costMicroUsd: 1, costBasis: 'priced' as const,
+      createdAt: '2025-01-01T00:00:00.000Z', error: null, costMicroUsd: 1, costBasis: 'priced' as const, composition: null,
     };
     const silent = summary(100, {
       analysis: [{ ...agent, name: 'Rythme', status: 'error', durationMs: 10, attempts: 1, envelope: null }],
@@ -94,7 +94,7 @@ describe('turn insights', () => {
       id: '019ad30c-19b0-7000-8000-000000000502', turnId, stage: 'narrator', agentId: null, agentVersionId: null,
       agentName: null, agentVersion: null, model: 'test-model', status: 'error' as const, inputTokens: null,
       outputTokens: null, durationMs: 10, createdAt: '2025-01-01T00:00:00.000Z', error: 'Échec.',
-      costMicroUsd: null, costBasis: null,
+      costMicroUsd: null, costBasis: null, composition: null,
     };
     const partial = summary(9000, { cost: { microUsd: 9000, complete: false }, calls: [failedCall] });
 

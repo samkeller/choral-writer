@@ -122,7 +122,7 @@ describe('chat orchestration without infrastructure', () => {
     }));
   });
 
-  it('adds enabled narrator instructions to the project prompt', async () => {
+  it('gives the narrator its instructions next to the project prompt', async () => {
     const { context, narrate, run } = setup();
     context.projectAgents[0]!.instructions = 'Write in a concise, playful tone.';
     narrate.mockResolvedValue({ prose: 'The door opens.', callId: 'narrator-call' });
@@ -132,7 +132,8 @@ describe('chat orchestration without infrastructure', () => {
     expect(narrate).toHaveBeenCalledWith(expect.objectContaining({
       agentId: 'narrator',
       agentVersionId: 'narrator-version',
-      systemPrompt: 'Current prompt.\n\nWrite in a concise, playful tone.',
+      systemPrompt: 'Current prompt.',
+      instructions: 'Write in a concise, playful tone.',
       whiteboard: [],
     }));
   });
