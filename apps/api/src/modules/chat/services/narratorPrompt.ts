@@ -1,9 +1,8 @@
 import type { AnalysisEnvelope, AnalysisItem, MemoryContext, TurnDirection } from '@choral-writer/shared';
-import { isDevelopment } from '@choral-writer/shared';
+import { isDevelopment, isToldInScene } from '@choral-writer/shared';
 
 import { formatMemoryContext } from '../../memories/services/memoryState.js';
 import { nudgeDescriptions, tensionLabels } from './directionVocabulary.js';
-import { isToldInScene } from './turnDevelopments.js';
 import { formatItem } from './whiteboardFormat.js';
 
 const narratorRules = [

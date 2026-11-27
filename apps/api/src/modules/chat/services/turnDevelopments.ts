@@ -13,8 +13,3 @@ export function turnDevelopments(
     : whiteboard.flatMap((envelope) => envelope.items.map((item) => ({ agent: envelope.agent, item })));
   return contributions.flatMap(({ agent, item }) => isDevelopment(item) ? [{ agent, item }] : []);
 }
-
-/** The Narrator tells the scene: an off-screen development has happened, but is not his to tell. */
-export function isToldInScene(item: AttributedItem['item']): boolean {
-  return !isDevelopment(item) || item.scope === 'scene';
-}

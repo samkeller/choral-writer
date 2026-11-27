@@ -9,7 +9,7 @@ import { projects } from '../project.js';
 import { chatMessages } from './message.js';
 import { chatBranches } from './branch.js';
 import type {
-  AttributedDevelopment, MemoryResult, MemoryState, TurnConfiguration, TurnDirection,
+  AttributedDevelopment, MemoryResult, MemoryState, TurnAttribution, TurnConfiguration, TurnDirection,
 } from '@choral-writer/shared';
 
 /**
@@ -39,6 +39,8 @@ export const chatTurns = choralWriterSchema.table('chat_turn', {
   direction: jsonb('direction').$type<TurnDirection>(),
   /** Developments that happened during the turn, as their agents wrote them. Null for turns recorded before them. */
   developments: jsonb('developments').$type<AttributedDevelopment[]>(),
+  /** Cached reading of the prose, computed on demand by the Debug mode; null until first requested. */
+  attribution: jsonb('attribution').$type<TurnAttribution>(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   completedAt: timestamp('completed_at', { withTimezone: true }),
 }, (table): PgTableExtraConfigValue[] => [

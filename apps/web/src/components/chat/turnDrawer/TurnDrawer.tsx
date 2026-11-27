@@ -11,12 +11,14 @@ import { DirectionPanel } from './DirectionPanel';
 import { estimateTensionLevels } from './directionInsights';
 import { StoryPanel } from './StoryPanel';
 import { TraceCallsPanel } from './TraceCallsPanel';
+import { TurnAnalysisPanel } from './TurnAnalysisPanel';
 import { TurnConfigurationPanel } from './TurnConfigurationPanel';
 import { TurnContextPanel } from './TurnContextPanel';
 import { TurnCostPanel } from './TurnCostPanel';
 import { TurnDevelopmentsPanel } from './TurnDevelopmentsPanel';
 import { TurnOverview } from './TurnOverview';
 import { isTurnDrawerTab, turnDrawerTabs, type TurnDrawerTab } from './turnDrawerTabs';
+import { useTurnAttribution } from './useTurnAttribution';
 import styles from './TurnDrawer.module.css';
 
 interface TurnDrawerProps {
@@ -40,6 +42,8 @@ export function TurnDrawer({
   /** The call « Appels bruts » opens on, when a summary link points to one. */
   const [focusedCallId, setFocusedCallId] = useState<string | null>(null);
   const summary = useTurnTraceSummary(projectId, turnId);
+  /** Requested at the turn's first opening, shared by the Synthèse and the Analyse tab. */
+  const attribution = useTurnAttribution(projectId, turnId, summary.summary);
   const index = turnIds.indexOf(turnId);
   const storyMetrics = storyMetricsOf(turnIds, metricsByTurn);
   const tensionLevels = storyMetrics ? estimateTensionLevels(storyMetrics)[index] ?? null : null;
@@ -95,9 +99,14 @@ export function TurnDrawer({
               <Tabs.Panel value="overview">
                 <WithSummary state={summary}>
                   {(loaded) => (
-                    <TurnOverview summary={loaded} metrics={storyMetrics} index={index} tensionLevels={tensionLevels}
-                      onOpenTab={openTab} onOpenCall={openCall} />
+                    <TurnOverview summary={loaded} attribution={attribution} metrics={storyMetrics} index={index}
+                      tensionLevels={tensionLevels} onOpenTab={openTab} onOpenCall={openCall} />
                   )}
+                </WithSummary>
+              </Tabs.Panel>
+              <Tabs.Panel value="analysis">
+                <WithSummary state={summary}>
+                  {(loaded) => <TurnAnalysisPanel summary={loaded} attribution={attribution.state} onOpenCall={openCall} />}
                 </WithSummary>
               </Tabs.Panel>
               <Tabs.Panel value="developments">

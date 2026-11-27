@@ -13,9 +13,10 @@ export type LlmProvider = z.infer<typeof llmProviderSchema>;
  * Étapes capables d'émettre un appel LLM, `reducer` exclu.
  *
  * Volontairement distinct de `traceStageSchema` : `reducer` ne consomme aucun token
- * et ne doit jamais apparaître comme une phase facturable.
+ * et ne doit jamais apparaître comme une phase facturable. `attribution` est un outil du mode Debug,
+ * calculé à la demande après le tour : facturé, mais jamais compté dans le coût du tour.
  */
-export const llmStageSchema = z.enum(['analysis', 'direction', 'narrator', 'guardian', 'memory_setup']);
+export const llmStageSchema = z.enum(['analysis', 'direction', 'narrator', 'guardian', 'memory_setup', 'attribution']);
 export type LlmStage = z.infer<typeof llmStageSchema>;
 
 /**

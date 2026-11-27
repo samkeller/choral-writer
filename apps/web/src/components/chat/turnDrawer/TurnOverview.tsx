@@ -7,6 +7,9 @@ import type { DirectionTrace, TurnMetrics, TurnTraceSummary } from '@choral-writ
 
 import { phasePresentation } from '../../phases/phasePresentation';
 import { formatCost, formatDelta, formatSeconds, formatTokens, formatUsd } from '../turnFormat';
+import { AnalysisFunnelBlock } from './AnalysisFunnelBlock';
+import { analysisCards, analysisFunnel } from './analysisInsights';
+import { AttributionBlock } from './AttributionBlock';
 import { DrawerBlock } from './DrawerBlock';
 import { configurationChangeLabel } from './TurnConfigurationPanel';
 import { type TensionLevels, tensionScale } from './directionInsights';
@@ -14,10 +17,12 @@ import { TENSION_ESTIMATE_HINT, nudgeDescriptions, tensionMoveLabels } from './d
 import { TurnTimeline } from './TurnTimeline';
 import type { TurnDrawerTab } from './turnDrawerTabs';
 import { type AttentionPoint, attentionPoints, averageCompleteCost } from './turnInsights';
+import type { TurnAttributionHandle } from './useTurnAttribution';
 
 /** « Synthèse » : the essentials of a turn, each leading to the tab that details it. */
-export function TurnOverview({ summary, metrics, index, tensionLevels, onOpenTab, onOpenCall }: {
+export function TurnOverview({ summary, attribution, metrics, index, tensionLevels, onOpenTab, onOpenCall }: {
   summary: TurnTraceSummary;
+  attribution: TurnAttributionHandle;
   metrics: TurnMetrics[] | null;
   index: number;
   tensionLevels: TensionLevels | null;
@@ -31,6 +36,9 @@ export function TurnOverview({ summary, metrics, index, tensionLevels, onOpenTab
   const narratorTokens = turn?.narratorInputTokens ?? null;
   const previousTokens = previous?.narratorInputTokens ?? null;
   const points = attentionPoints(summary, metrics ?? [], index);
+  const attributionState = attribution.state;
+  const reading = attributionState.status === 'ready' ? attributionState.response.attribution : null;
+  const funnel = analysisFunnel(analysisCards(summary, reading), reading !== null);
 
   return (
     <Stack gap="sm">
@@ -49,6 +57,13 @@ export function TurnOverview({ summary, metrics, index, tensionLevels, onOpenTab
             {...describeTension(summary.direction, tensionLevels)} />
         )}
       </SimpleGrid>
+
+      <AttributionBlock attribution={attribution} />
+
+      {summary.analysis.length > 0 && (
+        <AnalysisFunnelBlock funnel={funnel} directed={Boolean(summary.direction?.direction)}
+          attribution={attributionState.status} onOpen={() => onOpenTab('analysis')} />
+      )}
 
       <DrawerBlock title="Points d’attention">
         {points.length === 0

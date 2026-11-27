@@ -78,6 +78,25 @@ export const attributedItemSchema = z.object({
 });
 export type AttributedItem = z.infer<typeof attributedItemSchema>;
 
+/** The Narrator tells the scene: an off-screen development has happened, but is not his to tell. */
+export function isToldInScene(item: AttributedItem['item']): boolean {
+  return !isDevelopment(item) || item.scope === 'scene';
+}
+
+/**
+ * The contributions the Narrator received, in the order he read them: those the Director retained, or the
+ * whole whiteboard without a direction (none configured, or a failed one), never an off-screen development.
+ */
+export function contributionsToldToNarrator(
+  whiteboard: readonly { agent: string; items: readonly AttributedItem['item'][] }[],
+  direction: TurnDirection | null,
+): AttributedItem[] {
+  const transmitted = direction
+    ? direction.retained.map(({ agent, item }) => ({ agent, item }))
+    : whiteboard.flatMap((envelope) => envelope.items.map((item) => ({ agent: envelope.agent, item })));
+  return transmitted.filter(({ item }) => isToldInScene(item));
+}
+
 export const attributedDevelopmentSchema = z.object({
   agent: z.string(),
   item: developmentItemSchema,

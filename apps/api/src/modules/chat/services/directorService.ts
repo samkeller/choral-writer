@@ -1,14 +1,13 @@
 import type {
   AnalysisEnvelope, AttributedItem, ChatTurn, Message, NudgeType, ProjectAgent, TurnDirection,
 } from '@choral-writer/shared';
-import { nudgeTypeSchema, tensionTargetSchema } from '@choral-writer/shared';
+import { isToldInScene, nudgeTypeSchema, tensionTargetSchema } from '@choral-writer/shared';
 import { z } from 'zod';
 
 import { ApiError } from '../../../errors/errors.js';
 import type { CallLLMInput, createCallLLM } from '../../../llm/call-llm.js';
 import { conversationMessages } from './conversationMessages.js';
 import { nudgeDescriptions, tensionLabels } from './directionVocabulary.js';
-import { isToldInScene } from './turnDevelopments.js';
 import { formatItem } from './whiteboardFormat.js';
 
 export type DirectorAgent = ProjectAgent & { phase: 'direction'; output: 'direction' };

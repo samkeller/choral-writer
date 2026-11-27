@@ -5,7 +5,7 @@ import { callLLM } from './llm/index.js';
 import { AgentsService } from './modules/agents/services/agentsService.js';
 import { ProjectsService } from './modules/projects/services/projectServices.js';
 import { createChatBranchService, createChatService } from './modules/chat/index.js';
-import { createTraceService } from './modules/traces/index.js';
+import { createAttributionService, createTraceService } from './modules/traces/index.js';
 import { MemoriesService } from './modules/memories/services/memoriesService.js';
 
 async function main(): Promise<void> {
@@ -14,12 +14,14 @@ async function main(): Promise<void> {
   const agents = new AgentsService(db, projects);
   const memories = new MemoriesService(db, projects, callLLM);
   const chat = createChatService(db, projects, callLLM, memories);
+  const traces = createTraceService(db);
   const app = buildApp(config, {
     projects,
     agents,
     chat,
-    traces: createTraceService(db),
+    traces,
     memories,
+    attribution: createAttributionService(db, callLLM, traces),
   });
 
   try {
