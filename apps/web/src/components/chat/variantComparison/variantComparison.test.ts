@@ -27,6 +27,10 @@ describe('configurationBadges', () => {
   it('tells nothing apart in a configuration compared with itself', () => {
     expect(configurationBadges(original, original, 'variant').every((badge) => badge.change === 'same')).toBe(true);
   });
+
+  it('claims no equality when the other configuration was not recorded', () => {
+    expect(configurationBadges(variant, null, 'variant').every((badge) => badge.change === 'unknown')).toBe(true);
+  });
 });
 
 describe('agentVerdicts', () => {
@@ -54,5 +58,6 @@ describe('wordCount', () => {
   it('counts words across lines and paragraphs', () => {
     expect(wordCount('  Un deux\n\ntrois  quatre ')).toBe(4);
     expect(wordCount('')).toBe(0);
+    expect(wordCount('# Titre\n\n- un *mot*\n\n***\n\n> 2 fois')).toBe(5);
   });
 });

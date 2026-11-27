@@ -5,7 +5,9 @@ import { eq } from 'drizzle-orm';
 import type {
   ChatCompletion, ChatCompletionChunk, ChatCompletionCreateParamsNonStreaming, ChatCompletionCreateParamsStreaming,
 } from 'openai/resources/chat/completions';
-import { chatEventSchema, memoryViewSchema, projectSchema, type ChatEvent } from '@choral-writer/shared';
+import {
+  chatEventSchema, chatTurnDtoSchema, defaultMemoryRead, memoryViewSchema, projectSchema, type ChatEvent,
+} from '@choral-writer/shared';
 
 import { buildApp } from '../../../app.js';
 import * as schema from '../../../db/schema.js';
@@ -18,6 +20,8 @@ import { AgentsService } from '../../agents/services/agentsService.js';
 import { ProjectsService } from '../../projects/services/projectServices.js';
 import { MemoriesService } from '../../memories/services/memoriesService.js';
 import { createTraceService } from '../../traces/index.js';
+import { AgentRepository } from '../../agents/repository/agentsRepository.js';
+import { DEFAULT_NARRATOR_ID } from '../../agents/repository/defaultNarrators.js';
 
 // The model is simulated: no real LLM call. Only runs against a disposable PostgreSQL database.
 describe.skipIf(!process.env.DATABASE_URL)('adopting a variant of a turn with PostgreSQL', () => {
@@ -28,10 +32,13 @@ describe.skipIf(!process.env.DATABASE_URL)('adopting a variant of a turn with Po
       { kind: 'observation', text: 'Un fil est visible.', importance: 'HIGH' },
     ],
   });
+  /** Makes the next narrations fail, as a provider outage would. */
+  let failNarration = false;
   const create = vi.fn(async (
     params: ChatCompletionCreateParamsNonStreaming | ChatCompletionCreateParamsStreaming,
   ): Promise<ChatCompletion | AsyncIterable<ChatCompletionChunk>> => {
     if (params.stream) {
+      if (failNarration) throw new Error('Fournisseur indisponible.');
       const chunk = (content: string, finish_reason: 'stop' | null = null): ChatCompletionChunk => ({
         id: 'stream', object: 'chat.completion.chunk', created: 0, model: 'simulated-model',
         choices: [{ index: 0, delta: { content }, finish_reason }],
@@ -139,6 +146,8 @@ describe.skipIf(!process.env.DATABASE_URL)('adopting a variant of a turn with Po
   it('makes the variant’s configuration the project’s and moves the story to its branch', async () => {
     const { projectId, mainBranchId, variantTurnId, variantBranchId, variantAgents } = await originalAndVariant();
     expect(variantBranchId).not.toBe(mainBranchId);
+    // The memory access a kept agent has in the project survives the adoption; a newcomer gets its output's default.
+    await new AgentRepository(database).setMemoryRead(projectId, DEFAULT_NARRATOR_ID, { mode: 'none', tagIds: [] });
     expect((await app.inject({ method: 'POST', url: `/api/projects/${projectId}/turns/${variantTurnId}/adoption` })).statusCode)
       .toBe(401);
 
@@ -150,6 +159,54 @@ describe.skipIf(!process.env.DATABASE_URL)('adopting a variant of a turn with Po
     const [stored] = await database.select().from(schema.projects).where(eq(schema.projects.id, projectId));
     expect(stored).toMatchObject({ systemPrompt: 'Prompt de la variante.', defaultBranchId: variantBranchId });
     expect(sorted(await projectAgents(projectId))).toEqual(sorted(variantAgents));
+    const memoryReads = new Map((await agents.listForProject(projectId)).map((agent) => [agent.agentId, agent.memoryRead]));
+    expect(memoryReads.get(DEFAULT_NARRATOR_ID)).toEqual({ mode: 'none', tagIds: [] });
+    expect(memoryReads.get(variantAgents.at(-1)!.agentId)).toEqual(defaultMemoryRead('envelope'));
+  });
+
+  it('keeps a retried variant a variant of the same original, comparable and adoptable', async () => {
+    const { projectId, mainBranchId, variantTurnId, variantBranchId } = await originalAndVariant();
+    // The variant above succeeded; regenerate it again, failing this time, then retry the failure.
+    failNarration = true;
+    const failed = events((await app.inject({
+      method: 'POST', url: `/api/projects/${projectId}/branches/${variantBranchId}/turns/${variantTurnId}/regenerate`,
+      headers: { cookie }, payload: { expectedHeadTurnId: variantTurnId },
+    })).body).find((event) => event.type === 'chat.turn.failed');
+    failNarration = false;
+    if (failed?.type !== 'chat.turn.failed' || !failed.branchId || !failed.turnId) throw new Error('Missing failed variant.');
+    const retried = events((await app.inject({
+      method: 'POST', url: `/api/projects/${projectId}/branches/${failed.branchId}/turns/${failed.turnId}/retry`,
+      headers: { cookie }, payload: { expectedHeadTurnId: failed.turnId },
+    })).body).find((event) => event.type === 'chat.turn.completed');
+    if (retried?.type !== 'chat.turn.completed') throw new Error('Missing retried variant.');
+
+    const turn = chatTurnDtoSchema.parse((await app.inject({
+      method: 'GET', url: `/api/projects/${projectId}/turns/${retried.turnId}`, headers: { cookie },
+    })).json());
+    // What the comparison offers under a turn line: a completed turn regenerated from another.
+    expect(turn).toMatchObject({ status: 'completed', retryOfTurnId: failed.turnId, regeneratedFromTurnId: variantTurnId });
+    const response = await adopt(projectId, retried.turnId);
+    expect(response.statusCode, response.body).toBe(200);
+    expect(projectSchema.parse(response.json()).defaultBranchId).toBe(failed.branchId);
+    expect(failed.branchId).not.toBe(mainBranchId);
+  });
+
+  it('makes a chosen branch of the project its story branch again, and only one of its own', async () => {
+    const { projectId, mainBranchId, variantTurnId, variantBranchId } = await originalAndVariant();
+    const { mainBranchId: otherBranchId } = await originalAndVariant();
+    expect((await adopt(projectId, variantTurnId)).statusCode).toBe(200);
+    const choose = (branchId: string, headers: Record<string, string> = { cookie }) => app.inject({
+      method: 'PUT', url: `/api/projects/${projectId}/default-branch`, headers, payload: { branchId },
+    });
+
+    expect((await choose(mainBranchId, {})).statusCode).toBe(401);
+    expect((await choose(otherBranchId)).statusCode).toBe(404);
+    const [unchanged] = await database.select().from(schema.projects).where(eq(schema.projects.id, projectId));
+    expect(unchanged?.defaultBranchId).toBe(variantBranchId);
+
+    const response = await choose(mainBranchId);
+    expect(response.statusCode, response.body).toBe(200);
+    expect(projectSchema.parse(response.json()).defaultBranchId).toBe(mainBranchId);
   });
 
   it('changes nothing when the turn is not a variant, as keeping the original does', async () => {

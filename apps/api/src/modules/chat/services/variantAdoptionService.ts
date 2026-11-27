@@ -2,7 +2,7 @@ import type { Project } from '@choral-writer/shared';
 
 import { ApiError } from '../../../errors/errors.js';
 import { AgentRepository } from '../../agents/repository/agentsRepository.js';
-import { assertValidAgentSelection } from '../../agents/services/agentSelection.js';
+import { replaceProjectTeam } from '../../agents/services/agentSelection.js';
 import { ProjectRepository } from '../../projects/repositories/projectRepository.js';
 import type { ProjectsService } from '../../projects/services/projectServices.js';
 import { ChatTurnRepository } from '../repositories/turnRepository.js';
@@ -29,11 +29,8 @@ export class VariantAdoptionService {
           'La configuration de cette variante n’a pas été enregistrée : elle ne peut pas être adoptée.');
       }
 
-      const agents = new AgentRepository(tx);
-      const selections = configuration.agents.map(({ agentId, versionId }) => ({ agentId, versionId }));
-      const resolved = await agents.resolveSelections(selections);
-      assertValidAgentSelection(selections, resolved);
-      await agents.replace(projectId, resolved);
+      await replaceProjectTeam(new AgentRepository(tx), projectId,
+        configuration.agents.map(({ agentId, versionId }) => ({ agentId, versionId })));
 
       const repository = new ProjectRepository(tx);
       await repository.update(projectId, { name: project.name, systemPrompt: configuration.systemPrompt });

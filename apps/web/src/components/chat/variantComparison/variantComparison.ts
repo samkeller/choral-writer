@@ -3,30 +3,33 @@ import type { AttributionVerdict, TurnAttribution, TurnConfiguration } from '@ch
 /** Which of the two compared versions a column shows. */
 export type ComparedSide = 'original' | 'variant';
 
-/** How a configuration element differs from the other version's. */
-export type ConfigurationChange = 'same' | 'added' | 'removed' | 'changed';
+/** How a configuration element differs from the other version's; unknown when the other one was not recorded. */
+export type ConfigurationChange = 'same' | 'added' | 'removed' | 'changed' | 'unknown';
 
 export type ConfigurationBadge = { key: string; label: string; change: ConfigurationChange };
 
 /**
  * One badge per element of a version's configuration, colored against the other version: an agent the other
  * lacks is added to the variant or removed from the original, an agent in another version is changed. Agents are
- * matched by identity, as the configuration changes between turns are.
+ * matched by identity, as the configuration changes between turns are. Without the other configuration, nothing
+ * can be told apart: every element is unknown, never the same.
  */
 export function configurationBadges(
-  own: TurnConfiguration, other: TurnConfiguration, side: ComparedSide,
+  own: TurnConfiguration, other: TurnConfiguration | null, side: ComparedSide,
 ): ConfigurationBadge[] {
-  const others = new Map(other.agents.map((agent) => [agent.agentId, agent]));
-  const agents = own.agents.map((agent): ConfigurationBadge => {
+  const others = new Map(other?.agents.map((agent) => [agent.agentId, agent]));
+  const changeOf = (agent: TurnConfiguration['agents'][number]): ConfigurationChange => {
+    if (!other) return 'unknown';
     const counterpart = others.get(agent.agentId);
-    const change: ConfigurationChange = !counterpart
-      ? side === 'variant' ? 'added' : 'removed'
-      : counterpart.versionId === agent.versionId ? 'same' : 'changed';
-    return { key: agent.agentId, label: `${agent.name} v${agent.version}`, change };
-  });
+    if (!counterpart) return side === 'variant' ? 'added' : 'removed';
+    return counterpart.versionId === agent.versionId ? 'same' : 'changed';
+  };
   return [
-    ...agents,
-    { key: 'systemPrompt', label: 'Prompt du projet', change: own.systemPrompt === other.systemPrompt ? 'same' : 'changed' },
+    ...own.agents.map((agent) => ({ key: agent.agentId, label: `${agent.name} v${agent.version}`, change: changeOf(agent) })),
+    {
+      key: 'systemPrompt', label: 'Prompt du projet',
+      change: !other ? 'unknown' : own.systemPrompt === other.systemPrompt ? 'same' : 'changed',
+    },
   ];
 }
 
@@ -52,6 +55,7 @@ export function overallVerdict({ counts }: AgentVerdict): AttributionVerdict {
   return 'partiel';
 }
 
+/** Words of the prose; Markdown markers standing alone (`-`, `#`, `***`) are not words. */
 export function wordCount(prose: string): number {
-  return prose.split(/\s+/).filter(Boolean).length;
+  return prose.split(/\s+/).filter((token) => /[\p{L}\p{N}]/u.test(token)).length;
 }

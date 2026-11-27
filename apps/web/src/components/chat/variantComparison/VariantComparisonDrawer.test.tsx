@@ -153,6 +153,21 @@ describe('VariantComparisonDrawer', () => {
     expect(requests.filter((request) => !/\/(traces|attribution)$/.test(request.url ?? ''))).toEqual([]);
   });
 
+  it('claims no equality against an original whose configuration was not recorded', async () => {
+    const recorded = summaries.get(originalTurnId)!;
+    summaries.set(originalTurnId, { ...recorded, configuration: null });
+    try {
+      renderDrawer();
+      const variant = within(await screen.findByRole('region', { name: 'Variante' }));
+
+      expect(await variant.findByText(/Configuration d’origine non enregistrée/)).toBeTruthy();
+      expect(within(variant.getByRole('list', { name: 'Configuration' })).getAllByRole('listitem')
+        .map((badge) => badge.getAttribute('data-change'))).toEqual(['unknown', 'unknown', 'unknown']);
+    } finally {
+      summaries.set(originalTurnId, recorded);
+    }
+  });
+
   it('says why an adoption failed and stays open', async () => {
     api.defaults.adapter = vi.fn<AxiosAdapter>(async (config) => {
       if (config.url?.endsWith('/adoption')) throw new Error('Adoption refusée.');

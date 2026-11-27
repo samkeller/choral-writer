@@ -55,7 +55,7 @@ function ProjectChat({ projectId }: { projectId: string }) {
         title={chat.project?.name ?? 'Conversation'}
         actions={<Group gap="xs">
           <BranchSwitcher branches={chat.branches} currentId={chat.history?.branch.id ?? null}
-            disabled={chat.pending || !chat.history} onChange={chat.selectBranch} />
+            disabled={chat.pending || !chat.history} onChange={chat.chooseBranch} />
           <IconAction component={Link} to="/projects" label="Tous les projets">
             <IconArrowLeft size={18} aria-hidden="true" />
           </IconAction>
@@ -159,10 +159,10 @@ function ProjectChat({ projectId }: { projectId: string }) {
               projectId={projectId}
               originalTurnId={comparedTurn.regeneratedFromTurnId}
               variantTurnId={comparedTurn.id}
-              onAdopted={() => {
+              onAdopted={(project) => {
                 setComparedTurnId(null);
-                chat.selectBranch(comparedTurn.originBranchId);
-                chat.reload();
+                chat.replaceProject(project);
+                if (project.defaultBranchId) chat.selectBranch(project.defaultBranchId);
               }}
               onKeepOriginal={() => {
                 setComparedTurnId(null);

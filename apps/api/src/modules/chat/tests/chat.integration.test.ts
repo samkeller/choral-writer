@@ -977,7 +977,14 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
     expect(retried).toMatchObject({ type: 'chat.turn.completed', branchId: alternativeId });
     const updated = await history(project.id, alternativeId);
     expect(updated.turns).toHaveLength(1);
-    expect(updated.turns[0]).toMatchObject({ retryOfTurnId: failedTurnId, parentTurnId: null });
+    // A retried variant stays a variant of the same original, replayed from the memory the variant started from.
+    expect(updated.turns[0]).toMatchObject({
+      retryOfTurnId: failedTurnId, parentTurnId: null, regeneratedFromTurnId: original.turnId,
+    });
+    const snapshots = await database.select({ id: schema.chatTurns.id, memorySnapshot: schema.chatTurns.memorySnapshot })
+      .from(schema.chatTurns).where(eq(schema.chatTurns.originBranchId, alternativeId));
+    expect(snapshots).toHaveLength(2);
+    expect(snapshots[0]!.memorySnapshot).toEqual(snapshots[1]!.memorySnapshot);
     expect(create).toHaveBeenLastCalledWith(expect.objectContaining({
       messages: [
         { role: 'system', content: await narratorPrompt(project.id) },

@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Alert, Badge, Button, Drawer, Group, Loader, Paper, Stack, Text } from '@mantine/core';
+import { useState, type ReactNode } from 'react';
+import { Alert, Badge, Button, Drawer, Group, Loader, Paper, Spoiler, Stack, Text } from '@mantine/core';
 import { IconRefresh } from '@tabler/icons-react';
 import type { Project, TurnConfiguration, TurnTraceSummary } from '@choral-writer/shared';
 
@@ -8,7 +8,6 @@ import { getErrorMessage } from '../../../api/client';
 import { MarkdownContent } from '../../llm/MarkdownContent';
 import { formatCost, formatSeconds } from '../turnFormat';
 import { verdictPresentation } from '../turnDrawer/attributionPresentation';
-import { DrawerBlock } from '../turnDrawer/DrawerBlock';
 import { useTurnAttribution, type TurnAttributionHandle } from '../turnDrawer/useTurnAttribution';
 import { useTurnTraceSummary, type SummaryState } from '../turnDrawer/useTurnTraceSummary';
 import { WithSummary } from '../turnDrawer/WithSummary';
@@ -19,7 +18,7 @@ import {
 import styles from './VariantComparison.module.css';
 
 const changeColor = {
-  same: 'gray', added: 'green', removed: 'red', changed: 'blue',
+  same: 'gray', added: 'green', removed: 'red', changed: 'blue', unknown: 'gray',
 } satisfies Record<ConfigurationChange, string>;
 
 const sideTitle = { original: 'Version d’origine', variant: 'Variante' } satisfies Record<ComparedSide, string>;
@@ -102,23 +101,26 @@ function VersionColumn({ side, version, other }: {
   side: ComparedSide; version: ComparedVersion; other: TurnTraceSummary | null;
 }) {
   return (
-    <Stack component="section" aria-label={sideTitle[side]} gap="sm" className={styles.column}>
+    <section aria-label={sideTitle[side]} className={styles.column}>
       <Text fw={700}>{sideTitle[side]}</Text>
       <WithSummary state={version.summary}>
         {(summary) => {
           const prose = summary.narrator?.prose ?? null;
           return (
             <>
-              <DrawerBlock title="Configuration">
-                <ConfigurationBadges side={side} own={summary.configuration} other={other?.configuration ?? null} />
-              </DrawerBlock>
-              <AttributionBlocks attribution={version.attribution} />
-              <DrawerBlock title="Coût, durée, longueur">
-                <Text size="sm">
-                  {[formatCost(summary.cost), formatSeconds(summary.durationMs),
-                    prose === null ? 'longueur inconnue' : `${wordCount(prose)} mots`].join(' · ')}
-                </Text>
-              </DrawerBlock>
+              {/* What tells the versions apart, condensed so that the prose shows without scrolling. */}
+              <Paper withBorder radius="md" bg="dark.7" className={styles.facts}>
+                <Fact label="Configuration">
+                  <ConfigurationBadges side={side} own={summary.configuration} other={other} />
+                </Fact>
+                <AttributionFacts attribution={version.attribution} />
+                <Fact label="Mesures">
+                  <Text size="sm">
+                    {[formatCost(summary.cost), formatSeconds(summary.durationMs),
+                      prose === null ? 'longueur inconnue' : `${wordCount(prose)} mots`].join(' · ')}
+                  </Text>
+                </Fact>
+              </Paper>
               <Paper withBorder p="md" radius="md" aria-label={`Prose : ${sideTitle[side]}`}>
                 {prose === null
                   ? <Text size="sm" c="dimmed">Prose indisponible : la trace du Narrateur n’existe plus ou l’appel a échoué.</Text>
@@ -128,30 +130,49 @@ function VersionColumn({ side, version, other }: {
           );
         }}
       </WithSummary>
+    </section>
+  );
+}
+
+/** One line of the condensed header: a short label, then its content. */
+function Fact({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className={styles.fact} role="group" aria-label={label}>
+      <Text size="xs" fw={700} tt="uppercase" c="dimmed" lts="0.06em" className={styles.factLabel}>{label}</Text>
+      <div className={styles.factContent}>{children}</div>
+    </div>
+  );
+}
+
+/** `other` is null while the other version loads. */
+function ConfigurationBadges({ side, own, other }: {
+  side: ComparedSide; own: TurnConfiguration | null; other: TurnTraceSummary | null;
+}) {
+  if (!own) return <Text size="sm" c="dimmed">Configuration non enregistrée pour ce tour.</Text>;
+  const otherMissing = other !== null && other.configuration === null;
+  const badges = configurationBadges(own, other?.configuration ?? null, side);
+  return (
+    <Stack gap={4}>
+      <Group gap={4} role="list" aria-label="Configuration">
+        {badges.map((badge) => (
+          <Badge key={badge.key} role="listitem" size="sm" variant={badge.change === 'unknown' ? 'outline' : 'light'}
+            tt="none" color={changeColor[badge.change]} data-change={badge.change}>
+            {badge.label}
+          </Badge>
+        ))}
+      </Group>
+      {otherMissing && (
+        <Text size="xs" c="dimmed">
+          {side === 'variant' ? 'Configuration d’origine non enregistrée' : 'Configuration de la variante non enregistrée'} :
+          comparaison impossible.
+        </Text>
+      )}
     </Stack>
   );
 }
 
-function ConfigurationBadges({ side, own, other }: {
-  side: ComparedSide; own: TurnConfiguration | null; other: TurnConfiguration | null;
-}) {
-  if (!own) return <Text size="sm" c="dimmed">Configuration non enregistrée pour ce tour.</Text>;
-  // Until the other version is known, nothing is told apart.
-  const badges = configurationBadges(own, other ?? own, side);
-  return (
-    <Group gap={6} role="list" aria-label="Configuration">
-      {badges.map((badge) => (
-        <Badge key={badge.key} role="listitem" variant="light" tt="none" color={changeColor[badge.change]}
-          data-change={badge.change}>
-          {badge.label}
-        </Badge>
-      ))}
-    </Group>
-  );
-}
-
-/** « Ce qui s'est passé » then the verdicts by agent, two separate blocks read from the same attribution. */
-function AttributionBlocks({ attribution }: { attribution: TurnAttributionHandle }) {
+/** « Ce qui s'est passé » then the verdicts by agent, two lines read from the same attribution. */
+function AttributionFacts({ attribution }: { attribution: TurnAttributionHandle }) {
   const { state } = attribution;
   const reading = state.status === 'ready' ? state.response.attribution : null;
   const failure = state.status === 'error' ? state.error
@@ -159,29 +180,33 @@ function AttributionBlocks({ attribution }: { attribution: TurnAttributionHandle
 
   return (
     <>
-      <DrawerBlock title="Ce qui s’est passé">
+      <Fact label="Ce qui s’est passé">
         {state.status === 'unavailable' && <Text size="sm" c="dimmed">Ce tour n’a pas de prose à lire.</Text>}
         {(state.status === 'waiting' || state.status === 'loading') && (
-          <Group gap="xs">
+          <Group gap="xs" wrap="nowrap">
             <Loader size="xs" color="choral" />
             <Text size="sm" c="dimmed">Lecture de la prose, calculée une seule fois pour ce tour…</Text>
           </Group>
         )}
         {failure && (
-          <Group gap="xs" justify="space-between" mb={reading ? 'xs' : 0}>
+          <Group gap="xs" wrap="nowrap" mb={reading ? 4 : 0}>
             <Text size="sm" c="red.4">Attribution impossible : {failure}</Text>
             <Button size="compact-xs" variant="light" leftSection={<IconRefresh size={12} />} onClick={attribution.retry}>
               Réessayer
             </Button>
           </Group>
         )}
-        {reading && <Text size="sm" fw={600}>{reading.whatHappened}</Text>}
-      </DrawerBlock>
-      <DrawerBlock title="Verdicts par agent">
+        {reading && (
+          <Spoiler maxHeight={44} showLabel="Lire tout" hideLabel="Réduire">
+            <Text size="sm" fw={600}>{reading.whatHappened}</Text>
+          </Spoiler>
+        )}
+      </Fact>
+      <Fact label="Verdicts">
         {reading
           ? <AgentVerdicts verdicts={agentVerdicts(reading)} />
-          : <Text size="sm" c="dimmed">Disponibles après la lecture de la prose.</Text>}
-      </DrawerBlock>
+          : <Text size="sm" c="dimmed">Après la lecture de la prose.</Text>}
+      </Fact>
     </>
   );
 }
@@ -189,9 +214,9 @@ function AttributionBlocks({ attribution }: { attribution: TurnAttributionHandle
 function AgentVerdicts({ verdicts }: { verdicts: AgentVerdict[] }) {
   if (verdicts.length === 0) return <Text size="sm" c="dimmed">Aucune contribution n’a été transmise au Narrateur.</Text>;
   return (
-    <Group gap={6} role="list" aria-label="Verdicts par agent">
+    <Group gap={4} role="list" aria-label="Verdicts par agent">
       {verdicts.map((verdict) => (
-        <Badge key={verdict.agent} role="listitem" variant="dot" tt="none"
+        <Badge key={verdict.agent} role="listitem" size="sm" variant="dot" tt="none"
           color={verdictPresentation[overallVerdict(verdict)].color}>
           {verdict.agent} : {verdictLabel(verdict)}
         </Badge>
