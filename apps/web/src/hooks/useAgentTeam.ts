@@ -28,15 +28,19 @@ export function selectVersion(
 }
 
 /**
- * Active un agent facultatif (analyse ou Directeur) avec sa dernière version, ou le
- * retire de l'équipe. Activer un Directeur remplace celui qui était retenu.
+ * Fait entrer un agent dans l'équipe avec sa dernière version. Un agent d'analyse
+ * s'ajoute aux autres ; un Narrateur, un Gardien ou un Directeur remplace celui
+ * qui tenait ce rôle. Un agent déjà retenu garde sa version.
  */
-export function toggleOptionalAgent(ids: string[], agents: Agent[], agent: Agent, enabled: boolean): string[] {
-  const ownVersions = new Set(agent.versions.map((version) => version.id));
+export function addAgent(ids: string[], agents: Agent[], agent: Agent): string[] {
   const latest = agent.versions[0]?.id;
-  if (!enabled) return ids.filter((id) => !ownVersions.has(id));
-  if (!latest || ids.some((id) => ownVersions.has(id))) return ids;
+  if (!latest || selectedVersion(agent, ids)) return ids;
   return selectVersion(ids, agents, agent.output, latest);
+}
+
+export function removeAgent(ids: string[], agent: Agent): string[] {
+  const ownVersions = new Set(agent.versions.map((version) => version.id));
+  return ids.filter((id) => !ownVersions.has(id));
 }
 
 /** Remplace, à la même position, la version retenue d'un agent par une autre de ses versions. */
@@ -47,14 +51,6 @@ export function replaceVersion(ids: string[], agent: Agent, versionId: string): 
 
 export function selectedVersion(agent: Agent, ids: string[]): Agent['versions'][number] | undefined {
   return agent.versions.find((version) => ids.includes(version.id));
-}
-
-/** Choix du Narrateur ou du Gardien : les versions de chaque agent de ce contrat, groupées par agent. */
-export function requiredVersionOptions(agents: Agent[], output: Agent['output']) {
-  return agents.filter((agent) => agent.output === output).map((agent) => ({
-    group: agent.versions[0]?.name ?? agent.id,
-    items: agent.versions.map((version) => ({ value: version.id, label: `${version.name} · v${version.version}` })),
-  }));
 }
 
 /** Associe chaque version sélectionnée à son agent, comme l'attend l'API. */

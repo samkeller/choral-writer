@@ -752,25 +752,28 @@ describe('projects and chat screens', () => {
     });
 
     renderApp(`/projects/${project.id}?setup=agents`);
-    const responseSelect = await screen.findByLabelText('Réponse utilisateur · Narrateur', { selector: 'input' });
-    await waitFor(() => expect(responseSelect.getAttribute('value')).toBe('Narrateur · v1'));
-    expect((await screen.findByRole('button', { name: 'Enregistrer les accès de Narrateur' })).textContent).toBe('Enregistrer les accès');
-    const instructions = screen.getByText('Lire les instructions').closest('details');
-    expect(instructions?.open).toBe(false);
-    fireEvent.click(screen.getByText('Lire les instructions'));
-    expect(instructions?.open).toBe(true);
-    expect(screen.getByText('Ton v1')).toBeTruthy();
+    const setup = within(await screen.findByRole('region', { name: 'Agents' }));
+    const responseSelect = await setup.findByLabelText('Version de Narrateur', { selector: 'input' });
+    await waitFor(() => expect(responseSelect.getAttribute('value')).toBe('v1 · Narrateur'));
+    // Les étapes suivent l'ordre d'exécution du pipeline.
+    expect(setup.getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent))
+      .toEqual(['Analyse', 'Direction', 'Narrateur', 'Gardien']);
+    // Le Narrateur et le Gardien sont obligatoires : on les remplace, on ne les retire pas.
+    expect(setup.queryByRole('button', { name: 'Retirer Narrateur' })).toBeNull();
+    expect(setup.queryByRole('button', { name: 'Retirer Gardien' })).toBeNull();
+    await waitFor(() => expect(setup.getAllByText('Toute la mémoire')).toHaveLength(2));
+    expect(setup.queryByText('Ton v1')).toBeNull();
+    fireEvent.click(setup.getByRole('button', { name: 'Détails de Narrateur' }));
+    expect((await setup.findByRole('button', { name: 'Enregistrer les accès de Narrateur' })).textContent).toBe('Enregistrer les accès');
+    expect(setup.getByText('Ton v1')).toBeTruthy();
     expect(writes).toBe(0);
     fireEvent.click(responseSelect);
-    fireEvent.click(await screen.findByRole('option', { name: 'Narrateur · v2' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'v2 · Narrateur' }));
     fireEvent.click(screen.getByRole('button', { name: 'Enregistrer l’équipe' }));
     await screen.findByText('Configuration enregistrée. Elle sera utilisée au prochain tour.');
     expect(writes).toBe(1);
     expect(assignments.find((entry) => entry.output === 'narrative')?.version).toBe(2);
     expect(assignments.find((entry) => entry.output === 'memory_proposals')?.versionId).toBe(memoryVersion.id);
-    fireEvent.click(screen.getByRole('button', { name: /Gardien.*Actif/ }));
-    expect(screen.getByLabelText('Mémoire · Gardien', { selector: 'input' })).toBeTruthy();
-    expect(screen.queryByLabelText('Réponse utilisateur · Narrateur', { selector: 'input' })).toBeNull();
   });
 
   it('opens the configuration of a newly created project, then still edits and deletes it', async () => {
@@ -827,12 +830,11 @@ describe('projects and chat screens', () => {
     expect(saved).toBeNull();
   });
 
-  it('creates a narrator from project configuration and selects it in the team', async () => {
-    const guardian = existingAgent('019ad30c-19b0-7000-8000-000000000301', 'memory_proposals', 'Gardien');
-    const narrator = existingAgent('019ad30c-19b0-7000-8000-000000000302', 'narrative', 'Narrateur');
-    let library: AgentDto[] = [narrator, guardian];
-    let assignments: ProjectAgent[] = [narrator, guardian].map((agent) => assignmentOf(agent));
-    let configured: ProjectAgentsInput | null = null;
+  /** Serves a project's team and the library, recording what the setup screen saves. */
+  function mockProjectSetup(initialLibrary: AgentDto[], initialTeam: AgentDto[]) {
+    let library = initialLibrary;
+    let assignments: ProjectAgent[] = initialTeam.map((agent) => assignmentOf(agent));
+    const saved: { configured: ProjectAgentsInput | null } = { configured: null };
     adapter.mockImplementation(async (config) => {
       if (config.url === '/session') return respond(config, 200, { authenticated: true });
       if (config.url === `/projects/${project.id}`) return respond(config, 200, project);
@@ -858,33 +860,88 @@ describe('projects and chat screens', () => {
       }
       if (config.url === `/projects/${project.id}/agents`) {
         if (config.method === 'put') {
-          configured = projectAgentsInputSchema.parse(JSON.parse(String(config.data)));
-          assignments = configured.agents.map((selection) => assignmentOf(
+          saved.configured = projectAgentsInputSchema.parse(JSON.parse(String(config.data)));
+          assignments = saved.configured.agents.map((selection) => assignmentOf(
             library.find((agent) => agent.id === selection.agentId)!, selection.versionId));
         }
         return respond(config, 200, assignments);
       }
       throw new Error(`Unexpected request: ${config.method} ${config.url}`);
     });
+    return saved;
+  }
+
+  it('creates a narrator from its step of the pipeline and selects it in the team', async () => {
+    const guardian = existingAgent('019ad30c-19b0-7000-8000-000000000301', 'memory_proposals', 'Gardien');
+    const narrator = existingAgent('019ad30c-19b0-7000-8000-000000000302', 'narrative', 'Narrateur');
+    const saved = mockProjectSetup([narrator, guardian], [narrator, guardian]);
 
     renderApp(`/projects/${project.id}?tab=config&section=agents`);
-    fireEvent.click(await screen.findByRole('button', { name: 'Nouvel agent' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Créer un agent : Narrateur' }));
     const dialog = within(await screen.findByRole('dialog'));
+    // Créé depuis l'étape du Narrateur, l'agent en garde le contrat de sortie.
+    const output = dialog.getByLabelText('Contrat de sortie', { selector: 'input' });
+    expect(output.getAttribute('value')).toBe('Réponse utilisateur');
+    expect(output).toHaveProperty('disabled', true);
     fireEvent.change(dialog.getByRole('textbox', { name: 'Nom' }), { target: { value: 'Nouveau narrateur' } });
     fireEvent.change(dialog.getByRole('textbox', { name: 'Instructions' }), { target: { value: 'Sois lyrique.' } });
-    fireEvent.click(dialog.getByLabelText('Contrat de sortie', { selector: 'input' }));
-    fireEvent.click(await screen.findByRole('option', { name: /Restitution Réponse utilisateur/ }));
     fireEvent.click(dialog.getByRole('button', { name: 'Créer l’agent' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     // Le nouvel agent remplace l'ancien narrateur sans quitter la page de configuration.
-    const narratorSelect = await screen.findByLabelText('Réponse utilisateur · Narrateur', { selector: 'input' });
-    await waitFor(() => expect(narratorSelect.getAttribute('value')).toBe('Nouveau narrateur · v1'));
+    const narratorSelect = await screen.findByLabelText('Version de Nouveau narrateur', { selector: 'input' });
+    expect(narratorSelect.getAttribute('value')).toBe('v1 · Nouveau narrateur');
+    expect(screen.queryByLabelText('Version de Narrateur', { selector: 'input' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Enregistrer l’équipe' }));
     await screen.findByText('Configuration enregistrée. Elle sera utilisée au prochain tour.');
-    expect(configured).toMatchObject({ agents: [
+    expect(saved.configured).toMatchObject({ agents: [
       { agentId: '019ad30c-19b0-7000-8000-000000000303', versionId: '019ad30c-19b0-7000-8000-000000000304' },
       { agentId: guardian.id, versionId: guardian.versions[0]!.id },
     ] });
+  });
+
+  it('adds library agents to their step, keeps a single Director, and gives the Director no memory', async () => {
+    const narrator = existingAgent('019ad30c-19b0-7000-8000-000000000311', 'narrative', 'Narrateur');
+    const guardian = existingAgent('019ad30c-19b0-7000-8000-000000000312', 'memory_proposals', 'Gardien');
+    const observer = existingAgent('019ad30c-19b0-7000-8000-000000000313', 'envelope', 'Observateur');
+    const director = { ...existingAgent('019ad30c-19b0-7000-8000-000000000314', 'direction', 'Metteur en scène'), phase: 'direction' as const };
+    const rival = { ...existingAgent('019ad30c-19b0-7000-8000-000000000315', 'direction', 'Dramaturge'), phase: 'direction' as const };
+    const saved = mockProjectSetup([narrator, guardian, observer, director, rival], [narrator, guardian, director]);
+
+    renderApp(`/projects/${project.id}?tab=config&section=agents`);
+    const setup = within(await screen.findByRole('region', { name: 'Agents' }));
+    const direction = within(await setup.findByRole('region', { name: 'Direction' }));
+    expect(direction.getByText('Le Directeur ne reçoit aucune mémoire')).toBeTruthy();
+    fireEvent.click(direction.getByRole('button', { name: 'Détails de Metteur en scène' }));
+    expect(direction.queryByRole('button', { name: /Enregistrer les accès/ })).toBeNull();
+
+    const analysis = within(setup.getByRole('region', { name: 'Analyse' }));
+    expect(analysis.getByText('Aucun agent d’analyse : le Narrateur écrit sans perspective préalable.')).toBeTruthy();
+    fireEvent.click(analysis.getByRole('textbox', { name: 'Ajouter depuis la bibliothèque : Analyse' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'Observateur' }));
+    // Ajouté depuis l'étape d'analyse, l'agent est retenu d'office.
+    expect(analysis.getByLabelText('Version de Observateur', { selector: 'input' })).toBeTruthy();
+    expect(analysis.getByText('Accès mémoire réglable après enregistrement')).toBeTruthy();
+    expect(analysis.queryByRole('textbox', { name: 'Ajouter depuis la bibliothèque : Analyse' })).toBeNull();
+
+    // Choisir un autre Directeur remplace le premier : il n'y en a jamais deux.
+    fireEvent.click(direction.getByRole('textbox', { name: 'Remplacer depuis la bibliothèque : Direction' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'Dramaturge' }));
+    expect(direction.getByLabelText('Version de Dramaturge', { selector: 'input' })).toBeTruthy();
+    expect(direction.queryByLabelText('Version de Metteur en scène', { selector: 'input' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Enregistrer l’équipe' }));
+    await screen.findByText('Configuration enregistrée. Elle sera utilisée au prochain tour.');
+    expect(saved.configured?.agents).toEqual([
+      { agentId: narrator.id, versionId: narrator.versions[0]!.id },
+      { agentId: guardian.id, versionId: guardian.versions[0]!.id },
+      { agentId: rival.id, versionId: rival.versions[0]!.id },
+      { agentId: observer.id, versionId: observer.versions[0]!.id },
+    ]);
+
+    // Le Directeur est facultatif : on peut s'en passer.
+    fireEvent.click(direction.getByRole('button', { name: 'Retirer Dramaturge' }));
+    expect(direction.getByText('Sans Directeur, le tour passe directement de l’analyse au Narrateur.')).toBeTruthy();
+    expect(direction.getByRole('textbox', { name: 'Choisir dans la bibliothèque : Direction' })).toBeTruthy();
   });
 
   it('replaces the branch memory from the exported CSV files', async () => {
@@ -1264,10 +1321,6 @@ describe('projects and chat screens', () => {
         }, ...narrative.versions] };
         return respond(config, 200, narrative);
       }
-      if (config.url === `/agents/${observer.id}/versions` && config.method === 'post') {
-        return respond(config, 200, { ...observer, versions: [{ ...observer.versions[0]!,
-          id: '019ad30c-19b0-7000-8000-000000000407', version: 2 }, ...observer.versions] });
-      }
       return chatAdapter(config);
     });
     const fetchMock = vi.fn().mockImplementation(async () => {
@@ -1284,15 +1337,14 @@ describe('projects and chat screens', () => {
     await screen.findByText('Réponse originale.');
     fireEvent.click(screen.getByRole('button', { name: 'Rejouer le dernier tour avec…' }));
     const dialog = within(await screen.findByRole('dialog'));
-    const narratorSelect = await dialog.findByLabelText('Narrateur', { selector: 'input' });
-    expect(narratorSelect.getAttribute('value')).toBe('Narrateur · v1');
+    const narratorSelect = await dialog.findByLabelText('Version de Narrateur', { selector: 'input' });
+    expect(narratorSelect.getAttribute('value')).toBe('v1 · Narrateur');
     expect((dialog.getByRole('textbox', { name: 'Prompt du projet' }) as HTMLTextAreaElement).value).toBe(project.systemPrompt);
-    fireEvent.click(dialog.getByRole('checkbox', { name: 'Observateur' }));
-    // Publier une version d'un agent retiré ne le remet pas dans l'équipe.
-    fireEvent.click(dialog.getByRole('button', { name: 'Nouvelle version de Observateur' }));
-    fireEvent.click(await dialog.findByRole('button', { name: 'Publier la version' }));
-    await waitFor(() => expect(dialog.getByRole('checkbox', { name: 'Observateur' })).toHaveProperty('checked', false));
-    expect(dialog.getByRole('textbox', { name: 'Version de Observateur' })).toHaveProperty('disabled', true);
+    // Le dialogue présente l'équipe dans l'ordre du pipeline, comme la configuration du projet.
+    expect(dialog.getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent))
+      .toEqual(['Analyse', 'Direction', 'Narrateur', 'Gardien']);
+    fireEvent.click(dialog.getByRole('button', { name: 'Retirer Observateur' }));
+    expect(dialog.queryByLabelText('Version de Observateur', { selector: 'input' })).toBeNull();
 
     // La nouvelle version part des instructions de la version retenue pour le tour, pas de la dernière.
     fireEvent.click(dialog.getByRole('button', { name: 'Nouvelle version de Narrateur' }));
@@ -1300,12 +1352,13 @@ describe('projects and chat screens', () => {
     expect((instructions as HTMLTextAreaElement).value).toBe('Ton v1');
     fireEvent.change(instructions, { target: { value: 'Ton variante.' } });
     fireEvent.click(dialog.getByRole('button', { name: 'Publier la version' }));
-    await waitFor(() => expect(dialog.getByLabelText('Narrateur', { selector: 'input' }).getAttribute('value'))
-      .toBe('Narrateur · v3'));
+    await waitFor(() => expect(dialog.getByLabelText('Version de Narrateur', { selector: 'input' }).getAttribute('value'))
+      .toBe('v3 · Narrateur'));
     expect(published).toMatchObject({ instructions: 'Ton variante.', expectedVersion: 2 });
 
-    // Le Directeur, absent du projet, s'active puis change de version comme un agent d'analyse.
-    fireEvent.click(dialog.getByRole('checkbox', { name: 'Directeur' }));
+    // Le Directeur, absent du projet, s'ajoute depuis la bibliothèque puis change de version.
+    fireEvent.click(dialog.getByRole('textbox', { name: 'Choisir dans la bibliothèque : Direction' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'Directeur' }));
     fireEvent.click(dialog.getByRole('textbox', { name: 'Version de Directeur' }));
     fireEvent.click(await screen.findByRole('option', { name: 'v1 · Directeur' }));
 
@@ -1376,14 +1429,12 @@ describe('projects and chat screens', () => {
     renderApp(`/projects/${project.id}`);
     fireEvent.click(await screen.findByRole('button', { name: 'Rejouer le dernier tour avec…' }));
     const dialog = within(await screen.findByRole('dialog'));
-    const narratorSelect = await dialog.findByLabelText('Narrateur', { selector: 'input' });
-    expect(narratorSelect.getAttribute('value')).toBe('Narrateur · v1');
+    const narratorSelect = await dialog.findByLabelText('Version de Narrateur', { selector: 'input' });
+    expect(narratorSelect.getAttribute('value')).toBe('v1 · Narrateur');
     expect((dialog.getByRole('textbox', { name: 'Prompt du projet' }) as HTMLTextAreaElement).value).toBe('Prompt enregistré.');
     fireEvent.click(narratorSelect);
-    fireEvent.click(await screen.findByRole('option', { name: 'Narrateur · v2' }));
-    const directorCheckbox = dialog.getByRole('checkbox', { name: 'Directeur' });
-    expect(directorCheckbox).toHaveProperty('checked', true);
-    fireEvent.click(directorCheckbox);
+    fireEvent.click(await screen.findByRole('option', { name: 'v2 · Narrateur' }));
+    fireEvent.click(dialog.getByRole('button', { name: 'Retirer Directeur' }));
     fireEvent.click(dialog.getByRole('button', { name: 'Rejouer' }));
 
     await screen.findByText('Réponse corrigée.');
