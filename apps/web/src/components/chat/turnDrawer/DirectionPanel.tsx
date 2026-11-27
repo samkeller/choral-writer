@@ -1,8 +1,7 @@
-import { Alert, Anchor, Badge, Box, Group, SimpleGrid, Stack, Text, Tooltip } from '@mantine/core';
+import { Alert, Anchor, Box, Group, Stack, Text, Tooltip } from '@mantine/core';
 import { IconInfoCircle } from '@tabler/icons-react';
 import type { DirectionTrace, TurnDirection } from '@choral-writer/shared';
 
-import { DevelopmentScopeBadge } from '../../llm/DevelopmentScopeBadge';
 import { phasePresentation } from '../../phases/phasePresentation';
 import { formatCost, formatSeconds } from '../turnFormat';
 import { DrawerBlock } from './DrawerBlock';
@@ -11,8 +10,6 @@ import {
   TENSION_ESTIMATE_HINT, describeEstimatedLevel, nudgeDescriptions, tensionMoveLabels, tensionMoveSentences,
 } from './directionPresentation';
 import type { TurnDrawerTab } from './turnDrawerTabs';
-
-type Contribution = TurnDirection['retained'][number];
 
 const directionColor = phasePresentation.direction.color;
 
@@ -50,14 +47,14 @@ export function DirectionPanel({ trace, levels, onOpenTab }: {
           <DrawerBlock title="Interventions sur la manière de raconter">
             <Nudges nudges={direction.nudges} />
           </DrawerBlock>
-          <SimpleGrid cols={{ base: 1, md: 2 }} spacing="sm">
-            <DrawerBlock title={`Contributions retenues · ${direction.retained.length}`}>
-              <Contributions contributions={direction.retained} empty="Aucune contribution retenue." />
-            </DrawerBlock>
-            <DrawerBlock title={`Contributions écartées · ${direction.dismissed.length}`}>
-              <Contributions contributions={direction.dismissed} empty="Aucune contribution écartée." />
-            </DrawerBlock>
-          </SimpleGrid>
+          <DrawerBlock title="Tri des contributions">
+            <Text size="sm">
+              {direction.retained.length} retenue(s), {direction.dismissed.length} écartée(s), chacune avec sa raison.{' '}
+              <Anchor component="button" type="button" size="sm" onClick={() => onOpenTab('analysis')}>
+                Voir le sort de chaque item dans Analyse →
+              </Anchor>
+            </Text>
+          </DrawerBlock>
         </>
       )}
     </Stack>
@@ -130,25 +127,6 @@ function Nudges({ nudges }: { nudges: TurnDirection['nudges'] }) {
               ? <>En appui sur la contribution de {nudge.basis.agent} : « {nudge.basis.item.text} »</>
               : 'Sans contribution d’appui.'}
           </Text>
-        </Stack>
-      ))}
-    </Stack>
-  );
-}
-
-function Contributions({ contributions, empty }: { contributions: Contribution[]; empty: string }) {
-  if (contributions.length === 0) return <Text size="sm" c="dimmed">{empty}</Text>;
-  return (
-    <Stack gap="sm">
-      {contributions.map(({ agent, item, why }, position) => (
-        <Stack key={`${agent}-${position}`} gap={2}>
-          <Group gap={6} wrap="nowrap">
-            <Badge size="sm" variant="light" color={phasePresentation.analysis.color} tt="none">{agent}</Badge>
-            <Text size="xs" c="dimmed">{item.kind}</Text>
-            <DevelopmentScopeBadge item={item} />
-          </Group>
-          <Text size="sm">{item.text}</Text>
-          <Text size="xs" c="dimmed">Raison : {why}</Text>
         </Stack>
       ))}
     </Stack>

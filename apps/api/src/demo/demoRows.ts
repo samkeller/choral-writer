@@ -9,6 +9,7 @@ import {
 import type {
   chatBranches, chatMessages, chatTurns, llmCall, llmUsage, memoryBanks, memoryRuns, memorySettings, projectAgents, projects,
 } from '../db/schema.js';
+import { joinSections } from '../llm/contextComposition.js';
 import { resolveCost, type PriceRate } from '../llm/usage/pricingResolver.js';
 import { memoryContext, formatMemoryContext, reduceProposals } from '../modules/memories/services/memoryState.js';
 import { appliedMemoryMessage } from '../modules/memories/services/memoriesService.js';
@@ -17,7 +18,7 @@ import { conversationMessages } from '../modules/chat/services/conversationMessa
 import {
   directorOutputContract, forbiddenNudgeTypes, identifyWhiteboard, isDirectorAgent, resolveDirection,
 } from '../modules/chat/services/directorService.js';
-import { narratorSystemPrompt } from '../modules/chat/services/narratorPrompt.js';
+import { narratorSystemSections } from '../modules/chat/services/narratorPrompt.js';
 import { turnConfiguration } from '../modules/chat/services/turnConfiguration.js';
 import { turnDevelopments } from '../modules/chat/services/turnDevelopments.js';
 import { formatItem } from '../modules/chat/services/whiteboardFormat.js';
@@ -56,6 +57,7 @@ const LATENCY: Record<LlmStage, { baseMs: number; perTokenMs: number }> = {
   narrator: { baseMs: 1_500, perTokenMs: 22 },
   guardian: { baseMs: 1_000, perTokenMs: 10 },
   memory_setup: { baseMs: 1_000, perTokenMs: 10 },
+  attribution: { baseMs: 800, perTokenMs: 8 },
 };
 const REDUCER_MS = 4;
 const INVALID_RESPONSE = 'Le fournisseur LLM a renvoyé une réponse au format invalide.';
@@ -175,7 +177,9 @@ export function buildDemoProjectRows(project: DemoProject, options: DemoRowsOpti
       ? playedTurn(played, turn.regeneratedFrom).turn.userMessage
       : newMessage(project.id, 'user', requiredInput(turn), new Date(startedAtMs), id);
     if (!turn.regeneratedFrom) rows.messages.push(userMessage);
-    const dialogue = (system: string) => conversationMessages(system, history, userMessage);
+    // The demo records requests without their composition: one system section is enough to rebuild the messages.
+    const dialogue = (system: string) =>
+      conversationMessages([{ part: 'systemPrompt', text: system }], history, userMessage).messages;
 
     let analysisEnd = startedAtMs;
     const whiteboard: AnalysisEnvelope[] = [];
@@ -226,8 +230,8 @@ export function buildDemoProjectRows(project: DemoProject, options: DemoRowsOpti
     const developments = turnDevelopments(whiteboard, direction);
 
     const narratorMemory = memoryContext(before, narrator);
-    const narratorMessages = dialogue(narratorSystemPrompt(
-      [project.systemPrompt, narrator.instructions].filter(Boolean).join('\n\n'), whiteboard, narratorMemory, direction,
+    const narratorMessages = dialogue(joinSections(
+      narratorSystemSections(project.systemPrompt, narrator.instructions, whiteboard, narratorMemory, direction),
     ));
     let end: number;
     let memoryAfter = before;

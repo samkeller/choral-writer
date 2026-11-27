@@ -1,5 +1,6 @@
 export const turnDrawerTabs = [
   { value: 'overview', label: 'Synthèse' },
+  { value: 'analysis', label: 'Analyse' },
   { value: 'context', label: 'Contexte' },
   { value: 'cost', label: 'Coût et durée' },
   { value: 'direction', label: 'Direction' },

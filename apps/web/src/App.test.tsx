@@ -1128,7 +1128,7 @@ describe('projects and chat screens', () => {
     expect(drawer.getByRole('button', { name: 'Tour précédent' }).hasAttribute('disabled')).toBe(true);
     expect(drawer.getByRole('button', { name: 'Tour suivant' }).hasAttribute('disabled')).toBe(true);
     expect(drawer.getByRole('tab', { name: 'Synthèse' }).getAttribute('aria-selected')).toBe('true');
-    expect(drawer.queryByRole('tab', { name: 'Analyse' })).toBeNull();
+    expect(drawer.getByRole('tab', { name: 'Analyse' })).toBeTruthy();
     expect(await drawer.findByRole('button', { name: /^Coût : 0,0004 \$/ })).toBeTruthy();
     expect(drawer.getByRole('button', { name: /^Durée : 2,3 s, Narrateur : 1,5 s/ })).toBeTruthy();
     expect(drawer.getByRole('button', { name: /^Entrée du Narrateur : 900 tokens, premier tour/ })).toBeTruthy();
