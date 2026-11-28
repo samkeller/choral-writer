@@ -21,8 +21,9 @@ Le frontend utilise Mantine 8 comme système UI de référence. Le thème est ce
 
 ### Grammaire des phases et contraste
 
-- **Analyse** : bleu (`blue`), icône loupe (`IconSearch`). **Restitution** : violet (`violet`), icône plume (`IconFeather`). Le vert `choral` reste l'accent des actions et de la navigation, pas une couleur de phase.
+- **Analyse** : bleu (`blue`), icône loupe (`IconSearch`). **Direction** : orange (`orange`), icône boussole (`IconCompass`). **Restitution** : violet (`violet`), icône plume (`IconFeather`). Le vert `choral` reste l'accent des actions et de la navigation, pas une couleur de phase.
 - La définition typée est centralisée dans [`phasePresentation.ts`](../../apps/web/src/components/phases/phasePresentation.ts).
+- Les **étapes** du pipeline prolongent cette charte, dans l'ordre d'exécution : **Analyse** en bleu et **Direction** en orange, comme leur phase ; **Narrateur** en violet, la couleur de la Restitution ; **Gardien** en sarcelle (`teal`), pour le distinguer du Narrateur dans la même phase. Les étapes emploient la nuance 7, lisible sur fond sombre. Elles colorent la frise du tiroir du tour et les étapes de la configuration des agents. La définition est dans [`stagePresentation.ts`](../../apps/web/src/components/phases/stagePresentation.ts), qui dérive ses couleurs de `phasePresentation`.
 - Séparer la phase du contrat de sortie : celui-ci reste un texte secondaire neutre, comme le numéro de version et le nombre de projets. Ne pas employer les couleurs de phase pour signaler succès ou erreur.
 - Sur une surface interactive métier, un liseré de phase peut faciliter le balayage ; la bordure complète indique le détail ouvert. Ne pas colorer toute la surface ni ajouter d'ombre importante.
 - Le thème renforce les textes secondaires et placeholders (`dark.2`/`dark.3`), ainsi que les textes des variantes Mantine `light`, `subtle` et `outline` (nuance 2). La variante `light` signifie ici un fond teinté, pas un thème clair. `autoContrast` choisit le texte des boutons pleins, notamment sur le vert d'action. Vérifier le contraste sur la surface réelle, pas seulement la palette.

@@ -34,13 +34,18 @@ export type AnalysisAgentProgress = {
 
 function analysisContract(agentName: string, itemBudget: number): string {
   return [
-    'Return exactly one JSON object with this shape:',
-    '{"v":1,"agent":"<your name>","summary":"<one sentence>","items":[{"kind":"<free-form string>","text":"<string>","importance":"LOW | NORMAL | HIGH"}]}',
-    'Use LOW for secondary details, NORMAL for relevant information, and HIGH for information that materially changes the interpretation or action.',
-    `Aim for at most ${itemBudget} items. This is an upper guideline, not a quota: return fewer items or none when appropriate.`,
-    'Keep only distinct, actionable contributions within your specialty that can change the next scene or its interpretation. Do not restate the conversation or repeat the same point in different words.',
-    'Prefer decisive constraints, risks and opportunities over exhaustive observations. Reserve HIGH for genuinely decisive information.',
-    `Set "agent" to ${JSON.stringify(agentName)}. Use an empty items array when you have nothing to contribute.`,
+    'Renvoie exactement un objet JSON de cette forme :',
+    '{"v":1,"agent":"<ton nom>","summary":"<une phrase>","items":[<item>]}',
+    'Chaque item est soit une perspective, soit un développement :',
+    '- perspective (avis, suggestion, risque, contrainte…) : {"kind":"<type libre, jamais development>","text":"<texte>","importance":"LOW | NORMAL | HIGH"}',
+    '- développement, c’est-à-dire ce qui arrive dans le monde du récit à ce tour : {"kind":"development","characters":["<personnage concerné>"],"scope":"scene | offscreen","text":"<une phrase factuelle>","importance":"LOW | NORMAL | HIGH"}',
+    'Un développement est un fait, pas une suggestion : son texte dit ce qui arrive, en une phrase, sans prose ni réplique. "scope" vaut "scene" s’il arrive dans la scène en cours, "offscreen" s’il arrive hors champ ; un développement hors champ a lieu même si le récit ne le raconte pas. Un développement ne décide jamais de ce que fait ou dit le personnage joué par l’utilisateur.',
+    'Le "summary" ne révèle aucun développement hors champ.',
+    'Utilise LOW pour les détails secondaires, NORMAL pour les informations pertinentes et HIGH pour ce qui change nettement l’interprétation ou l’action.',
+    `Vise au plus ${itemBudget} items. C’est un plafond indicatif, pas un quota : renvoie moins d’items, voire aucun, quand c’est approprié.`,
+    'Ne garde que des contributions distinctes et exploitables, dans ta spécialité, qui peuvent changer la scène suivante ou son interprétation. Ne reformule pas la conversation et ne répète pas un même point en d’autres mots.',
+    'Préfère les contraintes, risques et occasions décisifs aux observations exhaustives. Réserve HIGH aux informations vraiment décisives.',
+    `Donne à "agent" la valeur ${JSON.stringify(agentName)}. Renvoie un tableau "items" vide quand tu n’as rien à apporter.`,
   ].join('\n');
 }
 
@@ -72,9 +77,13 @@ export class ChatAnalysisService {
         agentVersionId: agent.versionId,
         stage: 'analysis',
         memory,
-        messages: conversationMessages(
-          [input.systemPrompt, agent.instructions, analysisContract(agent.name, itemBudget),
-            formatMemoryContext(memory)].filter(Boolean).join('\n\n'),
+        ...conversationMessages(
+          [
+            { part: 'systemPrompt', text: input.systemPrompt },
+            { part: 'instructions', text: agent.instructions },
+            { part: 'rules', text: analysisContract(agent.name, itemBudget) },
+            { part: 'memory', text: formatMemoryContext(memory) },
+          ],
           input.history,
           input.userMessage,
         ),

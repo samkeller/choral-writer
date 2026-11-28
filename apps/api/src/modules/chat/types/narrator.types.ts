@@ -1,12 +1,17 @@
-import type { AnalysisEnvelope, ChatTurn, MemoryContext, Message } from '@choral-writer/shared';
+import type { AnalysisEnvelope, ChatTurn, MemoryContext, Message, TurnDirection } from '@choral-writer/shared';
 
 export type NarratorInput = {
   projectId: string;
   turnId: string;
   agentId: string;
   agentVersionId: string;
+  /** The project's system prompt. */
   systemPrompt: string;
+  /** The Narrator's own instructions. */
+  instructions: string;
   whiteboard: readonly AnalysisEnvelope[];
+  /** When present, replaces the whiteboard in the Narrator's prompt. */
+  direction: TurnDirection | null;
   history: readonly ChatTurn[];
   userMessage: Message;
   signal: AbortSignal;
@@ -14,5 +19,5 @@ export type NarratorInput = {
   memoryContext?: MemoryContext;
 };
 
-export type NarratorOutput = { resolution: string; prose: string; callId: string };
+export type NarratorOutput = { prose: string; callId: string };
 export type Narrator = (input: NarratorInput) => Promise<NarratorOutput>;

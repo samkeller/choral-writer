@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import type { ChatBranch, ChatCommand, ChatHistory, Message, Project } from '@choral-writer/shared';
+import type { ChatBranch, ChatCommand, ChatHistory, Message, Project, ReplayConfiguration } from '@choral-writer/shared';
 
 import { ClientApiError, getErrorMessage } from '../api/client';
-import { getProject } from '../api/projects/projectsApi';
+import { getProject, setDefaultBranch } from '../api/projects/projectsApi';
 import { getBranches, getChatHistory, streamTurn } from '../api/chat/chatApi';
 import { getMemory, retryMemory } from '../api/memories/memoriesApi';
 import { initialPipelineProgress, updatePipelineProgress } from './chatPipelineProgress';
@@ -13,7 +13,7 @@ export type { ChatPipelineProgress } from './chatPipelineProgress';
 
 type ChatAction =
   | { operation: 'send'; content: string }
-  | { operation: 'regenerate' | 'retry' };
+  | { operation: 'regenerate' | 'retry'; configuration?: ReplayConfiguration };
 
 /**
  * Owns branch selection, provisional streaming and reconciliation with committed
@@ -90,6 +90,15 @@ export function useChat(projectId: string) {
       const next = new URLSearchParams(current);
       next.set('branch', branchId);
       return next;
+    });
+  }
+
+  /** Makes the branch the story branch, the one the project opens on, then shows it. */
+  function chooseBranch(branchId: string) {
+    if (activeRequest.current) return;
+    // Shown once saved, so that the reload that follows reads the project as it now is.
+    void setDefaultBranch(projectId, branchId).then(() => selectBranch(branchId), (chooseError: unknown) => {
+      setError(`Cette branche n’a pas pu devenir celle du récit : ${getErrorMessage(chooseError)}`);
     });
   }
 
@@ -239,9 +248,14 @@ export function useChat(projectId: string) {
   return {
     project, branches, history, messages, loading, error, pending, partial, pipelineProgress, failedBranchId,
     selectBranch,
+    chooseBranch,
+    /** Takes in a project the server changed, such as after an adoption, without reloading the conversation. */
+    replaceProject: setProject,
     send: (content: string) => execute({ operation: 'send', content }),
-    regenerate: () => execute({ operation: 'regenerate' }),
-    retry: () => execute({ operation: 'retry' }),
+    /** Without a configuration, a regeneration runs with the project's. */
+    regenerate: (configuration?: ReplayConfiguration) => execute(replay('regenerate', configuration)),
+    /** Without a configuration, a retry runs with the one recorded on the failed turn. */
+    retry: (configuration?: ReplayConfiguration) => execute(replay('retry', configuration)),
     retryMemory: retryHeadMemory,
     legacyMemoryConfirmation: legacyAction !== null,
     cancelLegacyMemoryReset: () => setLegacyAction(null),
@@ -252,4 +266,8 @@ export function useChat(projectId: string) {
     },
     reload: () => setRevision((value) => value + 1),
   };
+}
+
+function replay(operation: 'regenerate' | 'retry', configuration?: ReplayConfiguration): ChatAction {
+  return configuration ? { operation, configuration } : { operation };
 }

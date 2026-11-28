@@ -1,16 +1,20 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Alert, Box, Button, Center, Group, Loader, Modal, Stack, Tabs, Text } from '@mantine/core';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { IconArrowLeft, IconRefresh } from '@tabler/icons-react';
+import { IconAdjustmentsHorizontal, IconArrowLeft, IconRefresh } from '@tabler/icons-react';
 import { projectParamsSchema } from '@choral-writer/shared';
 
 import { PageHeader } from '../components/PageHeader';
 import { BranchSwitcher } from '../components/chat/BranchSwitcher';
 import { MessageComposer } from '../components/chat/MessageComposer';
 import { MessageList } from '../components/chat/MessageList';
-import { TraceDrawer } from '../components/chat/TraceDrawer';
+import { ReplayDialog } from '../components/chat/ReplayDialog';
+import { PipelineFailure } from '../components/chat/PipelineProgress';
+import { TurnDrawer } from '../components/chat/turnDrawer/TurnDrawer';
+import { VariantComparisonDrawer } from '../components/chat/variantComparison/VariantComparisonDrawer';
 import { ProjectConfiguration } from './ProjectConfiguration';
 import { useChat } from '../hooks/useChat';
+import { useTurnMetrics } from '../hooks/useTurnMetrics';
 import { NotFoundPage } from './NotFoundPage';
 import { IconAction } from '../components/atoms/IconAction';
 import styles from './ChatPage.module.css';
@@ -27,8 +31,19 @@ function ProjectChat({ projectId }: { projectId: string }) {
   const setupOpen = !chat.pending && (search.get('tab') === 'config' || search.get('setup') === 'agents');
   const head = chat.history?.turns.at(-1);
   const [traceTurnId, setTraceTurnId] = useState<string | null>(null);
+  const [replayOpen, setReplayOpen] = useState(false);
+  const [comparedTurnId, setComparedTurnId] = useState<string | null>(null);
+  const comparedTurn = chat.history?.turns.find((turn) => turn.id === comparedTurnId);
+  const turnMetrics = useTurnMetrics(projectId, chat.history, chat.pending);
+  const metricsByTurn = useMemo(
+    () => new Map((turnMetrics.metrics ?? []).map((metrics) => [metrics.turnId, metrics])),
+    [turnMetrics.metrics],
+  );
 
-  useEffect(() => setTraceTurnId(null), [chat.history?.branch.id]);
+  useEffect(() => {
+    setTraceTurnId(null);
+    setComparedTurnId(null);
+  }, [chat.history?.branch.id]);
 
   if (chat.loading) {
     return <Center py="xl"><Loader color="choral" aria-label="Chargement de la conversation" /></Center>;
@@ -40,7 +55,7 @@ function ProjectChat({ projectId }: { projectId: string }) {
         title={chat.project?.name ?? 'Conversation'}
         actions={<Group gap="xs">
           <BranchSwitcher branches={chat.branches} currentId={chat.history?.branch.id ?? null}
-            disabled={chat.pending || !chat.history} onChange={chat.selectBranch} />
+            disabled={chat.pending || !chat.history} onChange={chat.chooseBranch} />
           <IconAction component={Link} to="/projects" label="Tous les projets">
             <IconArrowLeft size={18} aria-hidden="true" />
           </IconAction>
@@ -91,10 +106,14 @@ function ProjectChat({ projectId }: { projectId: string }) {
               partial={chat.partial}
               pending={chat.pending}
               pipelineProgress={chat.pipelineProgress}
+              turnMetrics={metricsByTurn}
+              inspectedTurnId={traceTurnId}
               onInspectTurn={setTraceTurnId}
+              onCompareTurn={chat.pending ? undefined : setComparedTurnId}
             />
           </Box>
-          {head?.status === 'failed' && <Text c="red" size="xs" role="alert">{head.error}</Text>}
+          {head?.status === 'failed' && !chat.pending
+            && <PipelineFailure error={head.error} onRetry={() => void chat.retry()} />}
           {head?.memory?.status === 'failed' && !chat.pending && <Alert color="yellow" title="Mémoire à relancer">
             <Text size="sm">{head.memory.message}</Text>
             <Group gap="xs" mt="xs">
@@ -105,28 +124,59 @@ function ProjectChat({ projectId }: { projectId: string }) {
           </Alert>}
           <MessageComposer pending={chat.pending} onSend={chat.send} actions={head && (
             <Group justify="flex-end" gap={4} wrap="nowrap">
+              {head.status !== 'running' && (
+                <IconAction label="Rejouer le dernier tour avec…" disabled={chat.pending} onClick={() => setReplayOpen(true)}>
+                  <IconAdjustmentsHorizontal size={18} aria-hidden="true" />
+                </IconAction>
+              )}
               {head.status === 'completed' && (
                 <IconAction label="Régénérer la réponse" disabled={chat.pending} onClick={() => void chat.regenerate()}>
                   <IconRefresh size={18} aria-hidden="true" />
                 </IconAction>
               )}
-
               {head.status === 'failed' && (
-                <>
-                  <IconAction label="Réessayer la réponse" color="red" disabled={chat.pending} onClick={() => void chat.retry()}>
-                    <IconRefresh size={18} aria-hidden="true" />
-                  </IconAction>
-                </>
+                <IconAction label="Réessayer la réponse" color="red" disabled={chat.pending} onClick={() => void chat.retry()}>
+                  <IconRefresh size={18} aria-hidden="true" />
+                </IconAction>
               )}
             </Group>
           )} />
           </Stack>
           {traceTurnId && (
-            <TraceDrawer
+            <TurnDrawer
               projectId={projectId}
+              turnIds={chat.history?.turns.map((turn) => turn.id) ?? []}
+              metricsByTurn={metricsByTurn}
+              metricsError={turnMetrics.error}
+              onRetryMetrics={turnMetrics.reload}
               turnId={traceTurnId}
+              onSelectTurn={setTraceTurnId}
               onClose={() => setTraceTurnId(null)}
             />
+          )}
+          {comparedTurn?.regeneratedFromTurnId && (
+            <VariantComparisonDrawer
+              projectId={projectId}
+              originalTurnId={comparedTurn.regeneratedFromTurnId}
+              variantTurnId={comparedTurn.id}
+              onAdopted={(project) => {
+                setComparedTurnId(null);
+                chat.replaceProject(project);
+                if (project.defaultBranchId) chat.selectBranch(project.defaultBranchId);
+              }}
+              onKeepOriginal={() => {
+                setComparedTurnId(null);
+                const originalBranchId = chat.branches.find((branch) => branch.id === comparedTurn.originBranchId)?.sourceBranchId;
+                if (originalBranchId) chat.selectBranch(originalBranchId);
+              }}
+              onClose={() => setComparedTurnId(null)}
+            />
+          )}
+          {replayOpen && head && (
+            <ReplayDialog project={chat.project} turn={head} onClose={() => setReplayOpen(false)} onReplay={(configuration) => {
+              setReplayOpen(false);
+              void (head.status === 'failed' ? chat.retry(configuration) : chat.regenerate(configuration));
+            }} />
           )}
           <Modal opened={chat.legacyMemoryConfirmation} onClose={chat.cancelLegacyMemoryReset} title="Ancien tour sans état mémoire">
             <Text mb="md">Ce tour précède M6. Cette alternative repartira sans les entrées ajoutées depuis.

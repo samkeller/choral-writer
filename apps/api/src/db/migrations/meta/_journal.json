@@ -71,6 +71,34 @@
       "when": 1795026561500,
       "tag": "0009_groovy_storm",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1795278490623,
+      "tag": "0010_turn_configuration",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1795344607954,
+      "tag": "0011_direction",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1795376318892,
+      "tag": "0012_developments",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1795730785437,
+      "tag": "0013_attribution",
+      "breakpoints": true
     }
   ]
 }

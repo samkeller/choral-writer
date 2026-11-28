@@ -1,12 +1,11 @@
 import { useEffect, useRef } from 'react';
 import { Group, Loader, Paper, ScrollArea, Stack, Text } from '@mantine/core';
-import { IconRoute } from '@tabler/icons-react';
-import type { ChatTurn, Message } from '@choral-writer/shared';
+import type { ChatTurn, Message, TurnMetrics } from '@choral-writer/shared';
 
 import type { ChatPipelineProgress } from '../../hooks/useChat';
-import { IconAction } from '../atoms/IconAction';
 import { MarkdownContent } from '../llm/MarkdownContent';
 import { PipelineProgress } from './PipelineProgress';
+import { TurnLine } from './TurnLine';
 import styles from './MessageList.module.css';
 
 interface MessageListProps {
@@ -15,19 +14,23 @@ interface MessageListProps {
   partial: string;
   pending: boolean;
   pipelineProgress: ChatPipelineProgress | null;
+  turnMetrics: ReadonlyMap<string, TurnMetrics>;
+  inspectedTurnId: string | null;
   onInspectTurn: (turnId: string) => void;
+  /** Offered under a completed variant of a turn; absent while a turn runs. */
+  onCompareTurn?: (turnId: string) => void;
 }
 
 export function MessageList({
-  messages, turns, partial, pending, pipelineProgress, onInspectTurn,
+  messages, turns, partial, pending, pipelineProgress, turnMetrics, inspectedTurnId, onInspectTurn, onCompareTurn,
 }: MessageListProps) {
   const container = useRef<HTMLDivElement>(null);
   const initializedScroll = useRef(false);
   const autoScrolledUserMessageId = useRef<string | null>(null);
-  const turnByMessageId = new Map(turns.flatMap((turn) => [
-    [turn.userMessage.id, turn.id] as const,
-    ...(turn.assistantMessage ? [[turn.assistantMessage.id, turn.id] as const] : []),
-  ]));
+  /** A turn's line follows its last message: the answer, or the input of a failed turn. */
+  const turnByLastMessageId = new Map(turns.map((turn, index) => [
+    (turn.assistantMessage ?? turn.userMessage).id, { turn, number: index + 1 },
+  ] as const));
 
   useEffect(() => {
     const viewport = container.current;
@@ -61,31 +64,39 @@ export function MessageList({
     >
       <Stack gap="md" pr="xs">
         {messages.map((message) => {
-          const turnId = turnByMessageId.get(message.id);
+          const endedTurn = turnByLastMessageId.get(message.id);
           return (
-            <Paper
-              key={message.id}
-              p={{ base: 'xs', sm: 'lg' }}
-              withBorder={message.role === 'user'}
-              bg={message.role === 'user' ? 'dark.6' : 'transparent'}
-              className={message.role === 'user' ? styles.userMessage : styles.assistantMessage}
-            >
-              <Group justify="space-between" align="center" mb="xs" className={styles.messageHeader}>
-                <Text size="xs" c={message.role === 'user' ? 'choral.3' : 'dimmed'} fw={600}>
-                  {message.role === 'user' ? 'Vous' : 'Assistant'}
-                </Text>
-                {turnId && (
-                  <IconAction label="Inspecter les traces de ce tour" onClick={() => onInspectTurn(turnId)}>
-                    <IconRoute size={16} aria-hidden="true" />
-                  </IconAction>
+            <Stack key={message.id} gap={4}
+              align={message.role === 'user' ? 'flex-end' : 'flex-start'} className={styles.messageBlock}>
+              <Paper
+                p={{ base: 'xs', sm: 'lg' }}
+                withBorder={message.role === 'user'}
+                bg={message.role === 'user' ? 'dark.6' : 'transparent'}
+                className={message.role === 'user' ? styles.userMessage : styles.assistantMessage}
+              >
+                <Group justify="space-between" align="center" mb="xs" className={styles.messageHeader}>
+                  <Text size="xs" c={message.role === 'user' ? 'choral.3' : 'dimmed'} fw={600}>
+                    {message.role === 'user' ? 'Vous' : 'Assistant'}
+                  </Text>
+                </Group>
+                {message.role === 'assistant' ? (
+                  <MarkdownContent content={message.content} className={styles.assistantContent} />
+                ) : (
+                  <Text className={styles.messageContent}>{message.content}</Text>
                 )}
-              </Group>
-              {message.role === 'assistant' ? (
-                <MarkdownContent content={message.content} className={styles.assistantContent} />
-              ) : (
-                <Text className={styles.messageContent}>{message.content}</Text>
+              </Paper>
+              {endedTurn && endedTurn.turn.status !== 'running' && (
+                <TurnLine
+                  turnNumber={endedTurn.number}
+                  metrics={turnMetrics.get(endedTurn.turn.id)}
+                  failed={endedTurn.turn.status === 'failed'}
+                  selected={inspectedTurnId === endedTurn.turn.id}
+                  onOpen={() => onInspectTurn(endedTurn.turn.id)}
+                  onCompare={onCompareTurn && endedTurn.turn.regeneratedFromTurnId && endedTurn.turn.status === 'completed'
+                    ? () => onCompareTurn(endedTurn.turn.id) : undefined}
+                />
               )}
-            </Paper>
+            </Stack>
           );
         })}
         {partial && (

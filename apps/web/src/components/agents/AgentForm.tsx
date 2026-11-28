@@ -11,15 +11,25 @@ import { PhaseTag } from '../phases/PhaseTag';
 type Props = {
   onCancel: () => void;
 } & (
-  | { initial?: undefined; onSubmit: (input: AgentInput) => Promise<void> }
-  | { initial: Agent; onSubmit: (input: AgentVersionInput) => Promise<void> }
+  | {
+    initial?: undefined; baseVersionId?: undefined; onSubmit: (input: AgentInput) => Promise<void>;
+    /** Fixes the output contract, for an agent created in a given role. */
+    output?: Agent['output'];
+  }
+  | {
+    initial: Agent; onSubmit: (input: AgentVersionInput) => Promise<void>;
+    /** The version the new one starts from; the latest by default. */
+    baseVersionId?: string;
+    output?: undefined;
+  }
 );
 
 export function AgentForm(props: Props) {
-  const initial = props.initial?.versions[0];
+  const initial = props.initial?.versions.find((version) => version.id === props.baseVersionId)
+    ?? props.initial?.versions[0];
   const [name, setName] = useState(initial?.name ?? '');
   const [instructions, setInstructions] = useState(initial?.instructions ?? '');
-  const [output, setOutput] = useState<Agent['output']>(props.initial?.output ?? 'envelope');
+  const [output, setOutput] = useState<Agent['output']>(props.initial?.output ?? props.output ?? 'envelope');
   const [error, setError] = useState('');
   const [pending, setPending] = useState(false);
 
@@ -63,7 +73,7 @@ export function AgentForm(props: Props) {
               </Group>
             )}
             onChange={(value) => { if (value) setOutput(agentOutputSchema.parse(value)); }}
-            disabled={pending || Boolean(props.initial)} />
+            disabled={pending || Boolean(props.initial) || Boolean(props.output)} />
           <output aria-label="Phase de l’agent">
             <PhaseTag phase={agentOutputPresentation[output].phase} />
           </output>

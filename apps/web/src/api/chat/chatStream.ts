@@ -1,4 +1,6 @@
-import { headInputSchema, sendMessageSchema, type ChatCommand, type ChatEvent } from '@choral-writer/shared';
+import {
+  replayInputSchema, sendMessageSchema, type ChatCommand, type ChatEvent,
+} from '@choral-writer/shared';
 
 import { checkUnauthorized, ClientApiError, createClientApiError } from '../client';
 import { readChatEvents } from './chatEvents';
@@ -11,10 +13,10 @@ export async function streamTurn(
 ): Promise<void> {
   const base = `/api/projects/${command.projectId}/branches/${command.branchId}/turns`;
   const url = command.operation === 'send' ? base : `${base}/${command.turnId}/${command.operation}`;
+  const head = { expectedHeadTurnId: command.expectedHeadTurnId, allowLegacyMemoryReset: command.allowLegacyMemoryReset };
   const input = command.operation === 'send'
     ? sendMessageSchema.parse({ expectedHeadTurnId: command.expectedHeadTurnId, content: command.content })
-    : headInputSchema.parse({ expectedHeadTurnId: command.expectedHeadTurnId,
-      allowLegacyMemoryReset: command.allowLegacyMemoryReset });
+    : replayInputSchema.parse({ ...head, configuration: command.configuration });
   const response = await fetch(url, {
     method: 'POST',
     credentials: 'include',

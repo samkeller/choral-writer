@@ -1,11 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { AnalysisEnvelope, ChatBranch, ChatEvent, Message, ProjectAgent } from '@choral-writer/shared';
+import type {
+  AnalysisEnvelope, ChatBranch, ChatEvent, ChatTurn, Message, ProjectAgent, TurnDirection,
+} from '@choral-writer/shared';
 
 import type { ChatServiceDependencies, ChatTransactionContext } from '../types/chat.types.js';
 import type { Narrator } from '../types/narrator.types.js';
 import { ChatService } from './chatService.js';
 import { emptyMemoryState } from '@choral-writer/shared';
 import { skippedMemory } from '../../memories/services/memoriesService.js';
+import { ApiError } from '../../../errors/errors.js';
 
 function setup() {
   const projectId = 'project';
@@ -25,6 +28,7 @@ function setup() {
   const context = {
     project: { id: projectId, systemPrompt: 'Current prompt.' },
     projectAgents: [narrator],
+    resolveAgents: vi.fn<ChatTransactionContext['resolveAgents']>(),
     memory: {
       prepare: vi.fn<ChatTransactionContext['memory']['prepare']>().mockResolvedValue({
         projectId, branchId: branch.id, headTurnId: null, revisionId: null, catalogRevisionId: null,
@@ -51,16 +55,22 @@ function setup() {
       path: vi.fn<ChatTransactionContext['turns']['path']>().mockResolvedValue([]),
       start: vi.fn<ChatTransactionContext['turns']['start']>().mockResolvedValue('turn'),
       finish: vi.fn<ChatTransactionContext['turns']['finish']>(),
+      configuration: vi.fn<ChatTransactionContext['turns']['configuration']>(),
+      directions: vi.fn<ChatTransactionContext['turns']['directions']>().mockResolvedValue([]),
+      recordDirection: vi.fn<ChatTransactionContext['turns']['recordDirection']>(),
+      recordDevelopments: vi.fn<ChatTransactionContext['turns']['recordDevelopments']>(),
     },
     recordActivity: vi.fn<ChatTransactionContext['recordActivity']>(),
   } satisfies ChatTransactionContext;
   const narrate = vi.fn<Narrator>();
   const analyze = vi.fn<ChatServiceDependencies['analyze']>().mockResolvedValue([]);
+  const direct = vi.fn<ChatServiceDependencies['direct']>();
   const dependencies: ChatServiceDependencies = {
     projects: { get: vi.fn<ChatServiceDependencies['projects']['get']>() },
     servicesForProject: () => context,
     withProjectTransaction: async (_projectId, work) => work(context),
     analyze,
+    direct,
     narrate,
   };
   const emitted: ChatEvent[] = [];
@@ -70,13 +80,13 @@ function setup() {
     operation: 'send', projectId, branchId: branch.id,
     expectedHeadTurnId: null, content: user.content,
   }, emit, new AbortController().signal);
-  return { context, analyze, narrate, emit, emitted, run };
+  return { context, analyze, direct, narrate, emit, emitted, run };
 }
 
 describe('chat orchestration without infrastructure', () => {
   it('preserves a fully validated narration if delivery fails before memory processing', async () => {
     const { context, narrate, emit, run } = setup();
-    narrate.mockResolvedValue({ prose: 'The door opens.', resolution: 'The door opens.', callId: 'narrator-call' });
+    narrate.mockResolvedValue({ prose: 'The door opens.', callId: 'narrator-call' });
     const memory = { ...skippedMemory('Memory interrupted.'), status: 'failed' as const, code: 'MEMORY_FAILED' };
     context.memory.failed.mockResolvedValue(memory);
     emit.mockImplementation(async (event) => {
@@ -89,17 +99,41 @@ describe('chat orchestration without infrastructure', () => {
     expect(context.turns.finish).toHaveBeenCalledWith('turn', 'branch', expect.objectContaining({ status: 'completed', memory }), expect.any(Date));
   });
 
-  it('adds enabled narrator instructions to the project prompt', async () => {
+  it('records the configuration the turn starts with, without copying versioned instructions', async () => {
+    const { context, narrate, run } = setup();
+    context.projectAgents.push({
+      agentId: 'analyst', versionId: 'analyst-version', phase: 'analysis', output: 'envelope',
+      version: 3, name: 'Chaos', instructions: 'Find uncertainty.', memoryRead: { mode: 'selected', tagIds: ['tag'] },
+    });
+    narrate.mockResolvedValue({ prose: 'The door opens.', callId: 'narrator-call' });
+
+    await run();
+
+    expect(context.turns.start).toHaveBeenCalledWith(expect.objectContaining({
+      configuration: {
+        systemPrompt: 'Current prompt.',
+        agents: [
+          { agentId: 'narrator', versionId: 'narrator-version', version: 1, name: 'Narrator',
+            phase: 'restitution', output: 'narrative', memoryRead: null },
+          { agentId: 'analyst', versionId: 'analyst-version', version: 3, name: 'Chaos',
+            phase: 'analysis', output: 'envelope', memoryRead: { mode: 'selected', tagIds: ['tag'] } },
+        ],
+      },
+    }));
+  });
+
+  it('gives the narrator its instructions next to the project prompt', async () => {
     const { context, narrate, run } = setup();
     context.projectAgents[0]!.instructions = 'Write in a concise, playful tone.';
-    narrate.mockResolvedValue({ prose: 'The door opens.', resolution: 'The door opens.', callId: 'narrator-call' });
+    narrate.mockResolvedValue({ prose: 'The door opens.', callId: 'narrator-call' });
 
     await run();
 
     expect(narrate).toHaveBeenCalledWith(expect.objectContaining({
       agentId: 'narrator',
       agentVersionId: 'narrator-version',
-      systemPrompt: 'Current prompt.\n\nWrite in a concise, playful tone.',
+      systemPrompt: 'Current prompt.',
+      instructions: 'Write in a concise, playful tone.',
       whiteboard: [],
     }));
   });
@@ -115,7 +149,7 @@ describe('chat orchestration without infrastructure', () => {
       items: [{ kind: 'observation', text: 'A wire is visible.', importance: 'NORMAL' }],
     }];
     analyze.mockResolvedValue(whiteboard);
-    narrate.mockResolvedValue({ prose: 'The door opens carefully.', resolution: 'The door opens.', callId: 'narrator-call' });
+    narrate.mockResolvedValue({ prose: 'The door opens carefully.', callId: 'narrator-call' });
 
     await run();
 
@@ -137,7 +171,7 @@ describe('chat orchestration without infrastructure', () => {
       await onAgentProgress?.({ agentId: 'analyst', name: 'Chaos', status: 'completed', durationMs: 12 });
       return [];
     });
-    narrate.mockResolvedValue({ prose: 'The door opens.', resolution: 'The door opens.', callId: 'narrator-call' });
+    narrate.mockResolvedValue({ prose: 'The door opens.', callId: 'narrator-call' });
 
     await run();
 
@@ -182,7 +216,7 @@ describe('chat orchestration without infrastructure', () => {
   it('does not reclassify a persistence failure as a generation failure', async () => {
     const { context, narrate, run } = setup();
     const error = new Error('Persistence unavailable.');
-    narrate.mockResolvedValue({ prose: 'The door opens.', resolution: 'The door opens.', callId: 'narrator-call' });
+    narrate.mockResolvedValue({ prose: 'The door opens.', callId: 'narrator-call' });
     context.turns.finish.mockRejectedValue(error);
 
     await expect(run()).rejects.toBe(error);
@@ -204,5 +238,138 @@ describe('chat orchestration without infrastructure', () => {
     expect(emit).not.toHaveBeenCalled();
     expect(narrate).not.toHaveBeenCalled();
     expect(context.turns.finish).not.toHaveBeenCalled();
+  });
+});
+
+describe('direction phase', () => {
+  const director: ProjectAgent = {
+    agentId: 'director', versionId: 'director-version', phase: 'direction', output: 'direction',
+    version: 2, name: 'Director', instructions: 'Keep the scene moving.',
+  };
+  const whiteboard: AnalysisEnvelope[] = [{
+    v: 1, agent: 'Chaos', summary: 'The door may be trapped.',
+    items: [
+      { kind: 'observation', text: 'A wire is visible.', importance: 'NORMAL' },
+      { kind: 'idea', text: 'A draft blows.', importance: 'LOW' },
+    ],
+  }];
+  const direction: TurnDirection = {
+    tension: 'monter',
+    nudges: [{ type: 'saillance', target: 'The wire.', basis: null }],
+    retained: [{ agent: 'Chaos', item: whiteboard[0]!.items[0]!, why: 'Concrete.' }],
+    dismissed: [{ agent: 'Chaos', item: whiteboard[0]!.items[1]!, why: 'Noise.' }],
+  };
+
+  function withDirector() {
+    const test = setup();
+    test.context.projectAgents.push(director);
+    test.analyze.mockResolvedValue(whiteboard);
+    test.narrate.mockResolvedValue({ prose: 'The door opens.', callId: 'narrator-call' });
+    return test;
+  }
+
+  it('skips direction entirely when the project has no Director', async () => {
+    const { context, direct, narrate, emitted, run } = setup();
+    narrate.mockResolvedValue({ prose: 'The door opens.', callId: 'narrator-call' });
+
+    await run();
+
+    expect(direct).not.toHaveBeenCalled();
+    expect(context.turns.directions).not.toHaveBeenCalled();
+    expect(narrate).toHaveBeenCalledWith(expect.objectContaining({ direction: null }));
+    expect(emitted.some((event) => event.type === 'chat.pipeline.stage' && event.stage === 'direction')).toBe(false);
+  });
+
+  it('directs between analysis and narration, records the direction and hands it to the narrator', async () => {
+    const { context, direct, narrate, emitted, run } = withDirector();
+    const history = ['t1', 't2', 't3', 't4'].map((id) => ({ id }) as ChatTurn);
+    context.turns.path.mockResolvedValue(history);
+    const previous = { ...direction, nudges: [] };
+    context.turns.directions.mockResolvedValue([null, null, previous]);
+    direct.mockResolvedValue(direction);
+
+    await run();
+
+    expect(context.turns.directions).toHaveBeenCalledWith(['t2', 't3', 't4']);
+    expect(direct).toHaveBeenCalledWith(expect.objectContaining({
+      turnId: 'turn', agent: director, whiteboard, history, recentDirections: [null, null, previous],
+      systemPrompt: 'Current prompt.',
+    }));
+    expect(context.turns.recordDirection).toHaveBeenCalledWith('turn', direction);
+    expect(narrate).toHaveBeenCalledWith(expect.objectContaining({ whiteboard, direction }));
+    expect(emitted.filter((event) => event.type === 'chat.pipeline.stage').map((event) =>
+      `${event.stage}:${event.status}`)).toEqual([
+      'analysis:started', 'analysis:completed', 'direction:started', 'direction:completed',
+      'narrator:started', 'narrator:completed',
+    ]);
+  });
+
+  it('falls back to the whole whiteboard and reports the failed stage when the Director fails', async () => {
+    const { context, direct, narrate, emitted, run } = withDirector();
+    direct.mockRejectedValue(new ApiError(502, 'LLM_INVALID_RESPONSE', 'Invalid.', { source: 'llm' }));
+
+    const result = await run();
+
+    expect(result.status).toBe('completed');
+    expect(context.turns.recordDirection).not.toHaveBeenCalled();
+    expect(narrate).toHaveBeenCalledWith(expect.objectContaining({ whiteboard, direction: null }));
+    expect(emitted).toContainEqual(expect.objectContaining({
+      type: 'chat.pipeline.stage', stage: 'direction', status: 'failed',
+    }));
+  });
+
+  it('fails the turn on an unexpected Director error instead of hiding it', async () => {
+    const { direct, narrate, run } = withDirector();
+    direct.mockRejectedValue(new Error('Programming error.'));
+
+    const result = await run();
+
+    expect(result.status).toBe('failed');
+    expect(narrate).not.toHaveBeenCalled();
+  });
+});
+
+describe('developments', () => {
+  const scene = {
+    kind: 'development', characters: ['Mara'], scope: 'scene', text: 'The lamp goes out.', importance: 'HIGH',
+  } as const;
+  const offscreen = {
+    kind: 'development', characters: ['The postman'], scope: 'offscreen', text: 'The postman leaves.', importance: 'LOW',
+  } as const;
+  const whiteboard: AnalysisEnvelope[] = [{ v: 1, agent: 'World', summary: 'Evening.', items: [scene, offscreen] }];
+
+  it('records what happened during the turn and hands every retained development to the Guardian', async () => {
+    const { context, analyze, direct, narrate, run } = setup();
+    context.projectAgents.push({
+      agentId: 'director', versionId: 'director-version', phase: 'direction', output: 'direction',
+      version: 1, name: 'Director', instructions: '',
+    });
+    analyze.mockResolvedValue(whiteboard);
+    direct.mockResolvedValue({
+      tension: 'tenir', nudges: [],
+      retained: [{ agent: 'World', item: offscreen, why: 'World pressure.' }],
+      dismissed: [{ agent: 'World', item: scene, why: 'Too soon.' }],
+    });
+    narrate.mockResolvedValue({ prose: 'The door opens.', callId: 'narrator-call' });
+
+    await run();
+
+    const happened = [{ agent: 'World', item: offscreen }];
+    expect(context.turns.recordDevelopments).toHaveBeenCalledWith('turn', happened);
+    expect(context.memory.process).toHaveBeenCalledWith(
+      'project', 'branch', expect.anything(), expect.objectContaining({ developments: happened }), expect.any(Function),
+    );
+  });
+
+  it('lets every development happen without a Director', async () => {
+    const { context, analyze, narrate, run } = setup();
+    analyze.mockResolvedValue(whiteboard);
+    narrate.mockResolvedValue({ prose: 'The door opens.', callId: 'narrator-call' });
+
+    await run();
+
+    expect(context.turns.recordDevelopments).toHaveBeenCalledWith('turn', [
+      { agent: 'World', item: scene }, { agent: 'World', item: offscreen },
+    ]);
   });
 });

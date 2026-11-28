@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Code, SegmentedControl, Stack, Text } from '@mantine/core';
-import { analysisEnvelopeSchema } from '@choral-writer/shared';
+import { recordedAnalysisEnvelopeSchema } from '@choral-writer/shared';
 
 import { AnalysisEnvelopeDisplay } from './AnalysisEnvelopeDisplay';
 import { MarkdownContent } from './MarkdownContent';
@@ -32,9 +32,6 @@ export function LLMResponseDisplay({ response }: LLMResponseDisplayProps) {
     return <Text c="dimmed">Aucune réponse enregistrée.</Text>;
   }
   if (parsed.kind === 'text') {
-    const narrator = parsed.content.match(/^\s*<resolution>([\s\S]*?)<\/resolution>\s*<prose>([\s\S]*?)<\/prose>\s*$/);
-    const resolution = narrator?.[1];
-    const prose = narrator?.[2];
     return (
       <Stack gap="sm" className={styles.response}>
         <SegmentedControl fullWidth value={view}
@@ -42,20 +39,12 @@ export function LLMResponseDisplay({ response }: LLMResponseDisplayProps) {
           data={[{ value: 'visual', label: 'Lecture' }, { value: 'json', label: 'Source' }]} />
         {view === 'json'
           ? <Code block className={styles.formatted}>{parsed.content}</Code>
-          : resolution !== undefined && prose !== undefined
-            ? <>
-                <details className={styles.branch}>
-                  <summary>Résolution</summary>
-                  <MarkdownContent content={resolution} />
-                </details>
-                <section aria-label="Narration"><MarkdownContent content={prose} /></section>
-              </>
-            : <MarkdownContent content={parsed.content} />}
+          : <MarkdownContent content={parsed.content} />}
       </Stack>
     );
   }
 
-  const envelope = analysisEnvelopeSchema.safeParse(parsed.value);
+  const envelope = recordedAnalysisEnvelopeSchema.safeParse(parsed.value);
   return (
     <Stack gap="sm" className={styles.response}>
       <SegmentedControl

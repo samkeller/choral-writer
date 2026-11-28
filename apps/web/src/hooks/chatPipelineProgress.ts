@@ -1,6 +1,6 @@
 import type { ChatEvent } from '@choral-writer/shared';
 
-type PipelineStage = 'analysis' | 'narrator' | 'guardian' | 'reducer';
+type PipelineStage = 'analysis' | 'direction' | 'narrator' | 'guardian' | 'reducer';
 type PipelineStepStatus = 'pending' | 'running' | 'completed' | 'failed';
 
 export type ChatPipelineProgress = {
@@ -19,6 +19,8 @@ export type ChatPipelineProgress = {
       durationMs: number | null;
     }>;
   };
+  /** Stays pending when the project has no Director. */
+  direction: { status: PipelineStepStatus; elapsedMs: number };
   narrator: { status: PipelineStepStatus; elapsedMs: number };
   guardian: { status: PipelineStepStatus; elapsedMs: number };
   reducer: { status: PipelineStepStatus; elapsedMs: number };
@@ -30,6 +32,7 @@ export function initialPipelineProgress(turnId: string): ChatPipelineProgress {
     activeStage: null,
     activeStageStartedAt: null,
     analysis: { status: 'pending', elapsedMs: 0, agentCount: 0, agents: {} },
+    direction: { status: 'pending', elapsedMs: 0 },
     narrator: { status: 'pending', elapsedMs: 0 },
     guardian: { status: 'pending', elapsedMs: 0 },
     reducer: { status: 'pending', elapsedMs: 0 },

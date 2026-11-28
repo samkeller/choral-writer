@@ -1,18 +1,21 @@
 import type {
-  AnalysisEnvelope, ChatBranch, ChatCommand, ChatHistory, ChatTurn, MemoryResult,
+  AnalysisEnvelope, ChatBranch, ChatCommand, ChatHistory, ChatTurn, MemoryResult, TurnDirection,
 } from '@choral-writer/shared';
 
 import { prepareTurn } from './prepareTurn.js';
+import { pipelineConfiguration, recordedConfiguration } from './pipelineConfiguration.js';
+import { turnConfiguration } from './turnConfiguration.js';
 import type {
   ChatProgressEvent, ChatRunResult, ChatServiceDependencies, ChatTransactionContext, GenerationOutcome,
 } from '../types/chat.types.js';
 import { isAnalysisAgent } from './analysisService.js';
+import { isDirectorAgent, RECENT_DIRECTION_TURNS, type DirectorInput } from './directorService.js';
+import { turnDevelopments } from './turnDevelopments.js';
 import { memoryContext } from '../../memories/services/memoryState.js';
 import type { NarratorOutput } from '../types/narrator.types.js';
 import { ApiError } from '../../../errors/errors.js';
 import type { z } from 'zod';
 import type { memoryExpectedSchema } from '@choral-writer/shared';
-import { parseNarration } from './narratorParser.js';
 
 const NARRATOR_CONTEXT_TURN_LIMIT = 20;
 
@@ -44,11 +47,15 @@ export class ChatService {
   ): Promise<ChatRunResult> {
     return this.dependencies.withProjectTransaction(command.projectId, async (context) => {
       const input = await prepareTurn(context, command);
+      const pipeline = await pipelineConfiguration(context, command);
       const memory = await context.memory.prepare(input.branchId, input.regeneratedFromTurnId, command.allowLegacyMemoryReset);
       const history = await context.turns.path(input.parentTurnId, NARRATOR_CONTEXT_TURN_LIMIT);
-      const narrator = context.projectAgents.find((agent) => agent.output === 'narrative');
+      const narrator = pipeline.agents.find((agent) => agent.output === 'narrative');
       if (!narrator) throw new Error('Project has no narrator assignment.');
-      const turnId = await context.turns.start({ ...input, memorySnapshot: memory.state });
+      const turnId = await context.turns.start({
+        ...input, memorySnapshot: memory.state,
+        configuration: turnConfiguration(pipeline.systemPrompt, pipeline.agents),
+      });
 
       let outcome: GenerationOutcome;
       let narration: NarratorOutput | undefined;
@@ -58,7 +65,7 @@ export class ChatService {
           type: 'chat.turn.started', turnId, branchId: input.branchId,
           operation: command.operation, message: input.userMessage,
         });
-        const analysisAgents = context.projectAgents.filter(isAnalysisAgent);
+        const analysisAgents = pipeline.agents.filter(isAnalysisAgent);
         const analysisStartedAt = performance.now();
         await emit({
           type: 'chat.pipeline.stage', turnId, stage: 'analysis', status: 'started',
@@ -70,7 +77,7 @@ export class ChatService {
             projectId: command.projectId,
             turnId,
             agents: analysisAgents,
-            systemPrompt: context.project.systemPrompt,
+            systemPrompt: pipeline.systemPrompt,
             history,
             userMessage: input.userMessage,
             signal,
@@ -93,6 +100,24 @@ export class ChatService {
           elapsedMs: Math.round(performance.now() - analysisStartedAt),
         });
 
+        const director = pipeline.agents.find(isDirectorAgent);
+        const direction = director
+          ? await this.direct(context, emit, {
+            projectId: command.projectId,
+            turnId,
+            agent: director,
+            systemPrompt: pipeline.systemPrompt,
+            whiteboard,
+            history,
+            recentDirections: await context.turns.directions(
+              history.slice(-RECENT_DIRECTION_TURNS).map((turn) => turn.id)),
+            userMessage: input.userMessage,
+            signal,
+          })
+          : null;
+        const developments = turnDevelopments(whiteboard, direction);
+        await context.turns.recordDevelopments(turnId, developments);
+
         const narratorStartedAt = performance.now();
         await emit({ type: 'chat.pipeline.stage', turnId, stage: 'narrator', status: 'started' });
         try {
@@ -101,10 +126,10 @@ export class ChatService {
             turnId,
             agentId: narrator.agentId,
             agentVersionId: narrator.versionId,
-            systemPrompt: [context.project.systemPrompt, narrator.instructions]
-              .filter(Boolean)
-              .join('\n\n'),
+            systemPrompt: pipeline.systemPrompt,
+            instructions: narrator.instructions,
             whiteboard,
+            direction,
             history,
             userMessage: input.userMessage,
             signal,
@@ -126,8 +151,8 @@ export class ChatService {
         });
         outcome = { status: 'completed', content: narration.prose };
         memoryResult = await context.memory.process(command.projectId, input.branchId, memory, {
-          turnId, systemPrompt: context.project.systemPrompt,
-          agents: context.projectAgents, resolution: narration.resolution, prose: narration.prose, signal,
+          turnId, systemPrompt: pipeline.systemPrompt,
+          agents: pipeline.agents, prose: narration.prose, developments, signal,
         }, async (stage, status, elapsedMs) => {
           if (!signal.aborted) await emit({ type: 'chat.pipeline.stage', turnId, stage, status, elapsedMs });
         });
@@ -155,14 +180,41 @@ export class ChatService {
         throw new ApiError(409, 'MEMORY_CHANGED', 'La mémoire a changé. Rechargez avant de relancer.');
       }
       const source = await context.memory.source(turnId);
-      const narration = await parseNarration(source.narrator);
+      const configuration = await recordedConfiguration(context, turnId);
       const result = await context.memory.process(projectId, branchId, view, {
-        turnId, systemPrompt: context.project.systemPrompt, agents: context.projectAgents,
-        resolution: narration.resolution, prose: narration.prose, signal,
+        turnId, systemPrompt: configuration.systemPrompt, agents: configuration.agents,
+        prose: source.narrator, developments: source.developments, signal,
       }, async () => {});
       await context.recordActivity(new Date());
       return result;
     });
+  }
+
+  /**
+   * Records the turn's direction. A failed Director call does not fail the turn: the stage is
+   * reported as failed and the Narrator falls back to the whole whiteboard (null direction).
+   */
+  private async direct(
+    context: ChatTransactionContext, emit: (event: ChatProgressEvent) => Promise<void>, input: DirectorInput,
+  ): Promise<TurnDirection | null> {
+    const startedAt = performance.now();
+    const elapsedMs = () => Math.round(performance.now() - startedAt);
+    await emit({ type: 'chat.pipeline.stage', turnId: input.turnId, stage: 'direction', status: 'started' });
+    try {
+      const direction = await this.dependencies.direct(input);
+      await context.turns.recordDirection(input.turnId, direction);
+      await emit({
+        type: 'chat.pipeline.stage', turnId: input.turnId, stage: 'direction', status: 'completed', elapsedMs: elapsedMs(),
+      });
+      return direction;
+    } catch (error) {
+      if (input.signal.aborted) throw error;
+      await emit({
+        type: 'chat.pipeline.stage', turnId: input.turnId, stage: 'direction', status: 'failed', elapsedMs: elapsedMs(),
+      });
+      if (error instanceof ApiError && error.options.source === 'llm') return null;
+      throw error;
+    }
   }
 
   private async finishTurn(

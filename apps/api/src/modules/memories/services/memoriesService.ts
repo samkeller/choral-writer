@@ -1,6 +1,6 @@
 import { v7 as uuidv7 } from 'uuid';
 import {
-  defaultMemoryRead, type MemoryMutation, type MemoryResult, type MemoryState, type MemoryView,
+  defaultMemoryRead, readsMemory, type MemoryMutation, type MemoryResult, type MemoryState, type MemoryView,
 } from '@choral-writer/shared';
 import type { Database, Transaction } from '../../../db/client.js';
 import { ApiError } from '../../../errors/errors.js';
@@ -10,6 +10,11 @@ import { MemoryRepository } from '../repositories/memoryRepository.js';
 import { applyManualChange, applyMemorySetup, reduceProposals, validateMemory } from './memoryState.js';
 import { GuardianService, type GuardianInput } from './guardianService.js';
 import type { createCallLLM } from '../../../llm/call-llm.js';
+
+/** What a successful memory run reports to the user. */
+export function appliedMemoryMessage(changeCount: number): string {
+  return changeCount ? `${changeCount} changement(s) mémoire appliqué(s).` : 'Aucun changement mémoire nécessaire.';
+}
 
 export function skippedMemory(message: string): MemoryResult {
   return { status: 'skipped', message, code: null, changes: [], guardianMs: 0, reducerMs: 0 };
@@ -49,6 +54,10 @@ export class MemoriesService {
       if (change.op === 'setAgentRead') {
         if (change.read.tagIds.some((id) => !view.state.tags.some((tag) => tag.id === id))) {
           throw new ApiError(422, 'UNKNOWN_TAG', 'Un tag sélectionné n’existe plus.');
+        }
+        if (agents.some((agent) => agent.agentId === change.agentId && !readsMemory(agent.output))
+          && change.read.mode !== 'none') {
+          throw new ApiError(422, 'DIRECTOR_HAS_NO_MEMORY', 'Le Directeur ne reçoit aucune mémoire.');
         }
         if (agents.some((agent) => agent.agentId === change.agentId && agent.output === 'memory_proposals')
           && change.read.mode === 'selected') {
@@ -187,7 +196,7 @@ export class MemorySession {
         input.signal.throwIfAborted();
         const result: MemoryResult = {
           status: 'success', code: null,
-          message: reduced.changes.length ? `${reduced.changes.length} changement(s) mémoire appliqué(s).` : 'Aucun changement mémoire nécessaire.',
+          message: appliedMemoryMessage(reduced.changes.length),
           changes: reduced.changes, tagSuggestions, guardianMs, reducerMs: Math.round(performance.now() - reducerStarted),
         };
         await storage.recordRun(runId, branchId, input.turnId, result);

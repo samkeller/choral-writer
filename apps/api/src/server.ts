@@ -4,8 +4,8 @@ import { db, pool } from './db/client.js';
 import { callLLM } from './llm/index.js';
 import { AgentsService } from './modules/agents/services/agentsService.js';
 import { ProjectsService } from './modules/projects/services/projectServices.js';
-import { createChatBranchService, createChatService } from './modules/chat/index.js';
-import { createTraceService } from './modules/traces/index.js';
+import { VariantAdoptionService, createChatBranchService, createChatService } from './modules/chat/index.js';
+import { createAttributionService, createTraceService } from './modules/traces/index.js';
 import { MemoriesService } from './modules/memories/services/memoriesService.js';
 
 async function main(): Promise<void> {
@@ -14,16 +14,20 @@ async function main(): Promise<void> {
   const agents = new AgentsService(db, projects);
   const memories = new MemoriesService(db, projects, callLLM);
   const chat = createChatService(db, projects, callLLM, memories);
+  const traces = createTraceService(db);
   const app = buildApp(config, {
     projects,
     agents,
     chat,
-    traces: createTraceService(db, chat),
+    traces,
     memories,
+    attribution: createAttributionService(db, callLLM, traces),
+    adoption: new VariantAdoptionService(projects),
   });
 
   try {
     await pool.query('select 1');
+    await agents.ensureLibrary();
     await app.listen({ host: '0.0.0.0', port: config.port });
   } catch (error) {
     app.log.error(error, 'Could not start the API server.');

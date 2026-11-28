@@ -18,8 +18,10 @@ export const agents = choralWriterSchema.table('agent', {
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   unique('agent_id_contract_unique').on(table.id, table.phase, table.output),
+  // 'direction' is compared as text: an enum value added in a migration transaction cannot be cast yet.
   check('agent_phase_output_check', sql`(${table.phase} = 'analysis' AND ${table.output} = 'envelope')
-    OR (${table.phase} = 'restitution' AND ${table.output} IN ('narrative', 'memory_proposals'))`),
+    OR (${table.phase} = 'restitution' AND ${table.output} IN ('narrative', 'memory_proposals'))
+    OR (${table.phase}::text = 'direction' AND ${table.output}::text = 'direction')`),
 ]);
 
 export const agentVersions = choralWriterSchema.table('agent_version', {

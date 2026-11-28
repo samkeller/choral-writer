@@ -6,6 +6,7 @@ import type { Agent, AgentInput, AgentVersionInput, ProjectAgent, ProjectAgentsI
 import type { Database, Transaction } from '../../../db/client.js';
 import { agents, agentVersions, projectAgents } from '../../../db/entities/agents/agent.js';
 import { projects } from '../../../db/entities/project.js';
+import { LIBRARY_AGENTS } from './agentLibrary.js';
 import { DEFAULT_GUARDIAN_ID, DEFAULT_NARRATOR_ID } from './defaultNarrators.js';
 
 export class AgentRepository {
@@ -81,6 +82,20 @@ export class AgentRepository {
       .for('key share');
   }
 
+  /** Resolves versions as a pipeline would run them, without assigning them to the project. */
+  async resolveProjectAgents(projectId: string, selections: ProjectAgentsInput['agents']): Promise<ProjectAgent[]> {
+    if (selections.length === 0) return [];
+    const versions = await this.database.select({
+      agentId: agents.id, versionId: agentVersions.id, phase: agents.phase, output: agents.output,
+      version: agentVersions.version, name: agentVersions.name, instructions: agentVersions.instructions,
+    }).from(agents).innerJoin(agentVersions, eq(agentVersions.agentId, agents.id))
+      .where(inArray(agentVersions.id, selections.map((selection) => selection.versionId)))
+      .orderBy(asc(agents.phase), asc(agentVersions.name), asc(agents.id))
+      .for('key share');
+    const current = await this.listForProject(projectId);
+    return versions.map((version) => ({ ...version, memoryRead: memoryReadFor(current, version) }));
+  }
+
   async replace(projectId: string, selections: {
     agentId: string; versionId: string; phase: Agent['phase']; output: Agent['output'];
   }[]): Promise<void> {
@@ -89,8 +104,7 @@ export class AgentRepository {
     if (selections.length > 0) {
       await this.database.insert(projectAgents).values(selections.map((selection) => ({
         projectId, ...selection,
-        memoryRead: previous.find((item) => item.agentId === selection.agentId)?.memoryRead
-          ?? defaultMemoryRead(selection.output),
+        memoryRead: memoryReadFor(previous, selection),
       })));
     }
   }
@@ -112,4 +126,39 @@ export class AgentRepository {
     await this.replace(projectId, versions);
   }
 
+  /**
+   * Adds the library agents and versions a database lacks. Only an already seeded identifier is skipped:
+   * a version number taken by another version fails, and so does a seeded version whose stored content
+   * differs from the library, since a published version is immutable.
+   */
+  async ensureLibrary(): Promise<void> {
+    const versions = LIBRARY_AGENTS.flatMap((agent) => agent.versions.map((version) => ({ ...version, agentId: agent.id })));
+    await this.database.insert(agents)
+      .values(LIBRARY_AGENTS.map(({ id, phase, output }) => ({ id, phase, output })))
+      .onConflictDoNothing({ target: agents.id });
+    await this.database.insert(agentVersions)
+      .values(versions.map(({ id, agentId, version, name, instructions }) => ({ id, agentId, version, name, instructions })))
+      .onConflictDoNothing({ target: agentVersions.id });
+    const stored = await this.database.select({
+      id: agentVersions.id, agentId: agentVersions.agentId, version: agentVersions.version,
+      name: agentVersions.name, instructions: agentVersions.instructions, phase: agents.phase, output: agents.output,
+    }).from(agentVersions).innerJoin(agents, eq(agents.id, agentVersions.agentId))
+      .where(inArray(agentVersions.id, versions.map((version) => version.id)));
+    const diverging = versions.filter((expected) => {
+      const agent = LIBRARY_AGENTS.find((item) => item.id === expected.agentId)!;
+      const row = stored.find((item) => item.id === expected.id);
+      return !row || row.agentId !== expected.agentId || row.version !== expected.version || row.name !== expected.name
+        || row.instructions !== expected.instructions || row.phase !== agent.phase || row.output !== agent.output;
+    });
+    if (diverging.length > 0) {
+      throw new Error(`Library agent versions differ from the stored ones: ${diverging.map((version) => version.id).join(', ')}. Publish a new version instead of editing one.`);
+    }
+  }
+}
+
+/** An agent keeps the memory access it has in the project; a newcomer gets its output's default. */
+function memoryReadFor(
+  current: readonly ProjectAgent[], agent: { agentId: string; output: Agent['output'] },
+): MemoryRead {
+  return current.find((item) => item.agentId === agent.agentId)?.memoryRead ?? defaultMemoryRead(agent.output);
 }

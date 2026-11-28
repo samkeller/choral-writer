@@ -11,6 +11,30 @@ Après une mise à jour ou un changement de branche qui ajoute des migrations,
 réexécuter `pnpm db:migrate` avant `pnpm dev`. Le serveur ne migre pas la base
 automatiquement ; une ancienne structure peut rendre les endpoints incompatibles.
 
+## Worktree isolé pour tester une branche
+
+Pour tester plusieurs branches en parallèle, sans arrêter les autres serveurs ni partager de base, lancer depuis n'importe quel checkout du dépôt :
+
+```sh
+pnpm wt:new <nom> [--branch <branche>] [--base <branche>] [--empty] [--first-port <port>] [--pg-bin <dossier>] [--parent-dir <dossier>]
+pnpm wt:remove <nom> [--branch <branche>] [--base <branche>] [--force] [--parent-dir <dossier>]
+```
+
+`<nom>` : minuscules, chiffres et tirets. `wt:new` prépare un worktree prêt pour `pnpm dev` :
+
+1. crée la branche `--branch` (défaut `feat/<nom>`) depuis `origin/<base>` (défaut `feat/v2`) dans `<dossier parent>/<nom>`. Le dossier parent vaut `--parent-dir`, sinon `CHORAL_WT_DIR`, sinon `../choral-wt` ; un chemin relatif part du checkout principal ;
+2. copie `.env` et `.env.tests` du checkout principal ; dans `.env`, `DATABASE_URL` vise la base `choral_writer_wt_<nom>` (tirets changés en `_`) et `PORT` prend le premier port libre à partir de `--first-port` (défaut `3002`) qu'aucun autre checkout ne réserve. `.env.tests` est recopié tel quel : tous les checkouts partagent volontairement la même base de test jetable. Vite suit ce `PORT` et prend le port libre suivant si `5175` est occupé ;
+3. crée la base, puis y copie le schéma `choral_writer` (structure et données) de la base du checkout principal par `pg_dump --no-owner --no-privileges | psql`, car le rôle applicatif ne peut pas la prendre pour modèle. Avec `--empty`, la base reste vide et seules les migrations la remplissent ;
+4. lance `pnpm install --frozen-lockfile` avec le store pnpm du checkout principal, `pnpm db:migrate` puis le build de `shared`.
+
+`pg_dump` et `psql` sont cherchés dans `--pg-bin` ou `PG_BIN`, puis dans le PATH, puis, sous Windows, dans la version la plus récente de `C:\Program Files\PostgreSQL\<version>\bin`. `--empty` s'en passe. Les mots de passe passent par l'environnement des binaires et ne sont jamais affichés. Si la préparation échoue, le message donne la commande de nettoyage.
+
+`wt:remove`, lancé depuis un autre checkout, ne touche qu'à un worktree secondaire enregistré par `git worktree list` et situé dans le dossier parent : il refuse toujours le checkout principal, un dossier qui le contient et tout autre dossier. Il supprime alors, dans cet ordre, le dossier, l'enregistrement du worktree, sa branche locale puis la base `choral_writer_wt_<nom>`. Il refuse si la branche n'est pas fusionnée dans `origin/<base>` ou si le worktree contient des modifications non commitées ; `--force` passe outre.
+
+Pour une branche existante, comme celle d'une PR, partir de son sommet : `pnpm wt:new <nom> --base <branche de la PR>`, puis `pnpm wt:remove <nom> --base <branche de la PR>`, qui vérifie qu'aucun commit local ne serait perdu.
+
+Reprise après un échec partiel : relancer la même commande. Un fichier verrouillé sous Windows, par exemple par un serveur encore lancé, interrompt la suppression du dossier : arrêter le serveur puis relancer, avec `--force` si git ne peut plus lire le dossier à moitié supprimé. Si plus aucun worktree n'est enregistré sous ce nom, `wt:remove` ne supprime rien sans `--force`. Avec `--force`, il supprime la base `choral_writer_wt_<nom>` et la branche `--branch` (défaut `feat/<nom>`) si elle existe et n'est extraite nulle part. Il vaut mieux vérifier avant que cette base et cette branche n'appartiennent à aucun autre worktree.
+
 ## Workspaces et scripts
 
 Le repository pnpm contient `apps/web` (React/Vite), `apps/api` (Fastify) et `packages/shared` (contrats et validation partagés). Les scripts racine coordonnent les workspaces :
@@ -21,6 +45,9 @@ Le repository pnpm contient `apps/web` (React/Vite), `apps/api` (Fastify) et `pa
 | `pnpm build` | Construit `shared`, l'API puis le frontend |
 | `pnpm typecheck` | Vérifie les types des packages et applications |
 | `pnpm test` | Exécute les tests de l'API et du frontend avec Vitest |
+| `pnpm db:seed:demo` | Remplace les projets de démo dans la base de `.env` (voir ci-dessous) |
+| `pnpm eval:v2` | Évalue la V2 de bout en bout, en simulé par défaut (voir [Évaluation de bout en bout](#évaluation-de-bout-en-bout)) |
+| `pnpm wt:new` / `pnpm wt:remove` | Crée ou supprime un [worktree isolé](#worktree-isolé-pour-tester-une-branche) |
 
 Commandes frontend ciblées :
 
@@ -32,6 +59,55 @@ Commandes frontend ciblées :
 | `pnpm --filter @choral-writer/web test` | Exécute les tests Vitest du frontend |
 
 Le frontend utilise React 19, TypeScript, Vite, React Router 7, Mantine 8 et Tabler Icons. Les versions effectivement résolues sont enregistrées dans `pnpm-lock.yaml`.
+
+## Données de démo
+
+`pnpm db:seed:demo` écrit directement dans la base pointée par `.env`, sans appel LLM,
+deux projets fictifs préfixés « Démo · » :
+
+- **La cloche de Port-Lénic** : une équipe complète tirée de la bibliothèque d'agents (trois
+  agents d'analyse, le Directeur mesuré, le Narrateur scénique et le Gardien des Intentions),
+  la mémoire activée avec les tags de départ et des Intentions, et des tours tracés (coûts,
+  tokens, durées, analyses, direction, développements dans la scène et hors champ, configuration).
+  On y trouve un tour antérieur sans configuration enregistrée ni coût, une analyse relancée après
+  une réponse invalide, le passage du Directeur de la version 1 à la version 2, un tour dont la
+  direction échoue, un dernier tour en échec sur la branche principale et une branche
+  « Alternative 1 » régénérée sans Directeur.
+- **Expédition au col des Brumes** : un petit projet sans Directeur.
+
+La commande est idempotente : elle remplace ces projets, repérés par leurs identifiants fixes
+(`019aee20-…`), sans toucher aux autres. Elle ajoute au besoin les agents de la bibliothèque, comme
+le serveur au démarrage. `pnpm db:seed:demo --clear` supprime seulement les projets de démo.
+La commande refuse de s'exécuter avec `NODE_ENV=production`, et sur une base dont l'hôte n'est pas
+`localhost`, `127.0.0.1` ou `::1`, sauf avec `--allow-remote`.
+
+Le contenu est décrit dans `apps/api/src/demo/demoScenario.ts` ; `demoRows.ts` le traduit en lignes
+conformes aux schémas réels, en validant les sorties comme le pipeline. Une nouvelle donnée de trace
+s'ajoute à ces deux fichiers. `demoRows.test.ts` valide le scénario sans base, et
+`demoSeed.integration.test.ts` vérifie que l'API relit tout sans erreur.
+
+## Évaluation de bout en bout
+
+`pnpm eval:v2` joue un scénario fictif de dix saisies (`apps/api/src/evaluation/evaluationScenario.ts`)
+avec deux configurations : une équipe « type V1 », un nouveau projet comme sur `main` (Narrateur et
+Gardien par défaut, mémoire désactivée), et une équipe V2 tirée de la bibliothèque (cinq agents d'analyse, Directeur mesuré, Narrateur scénique,
+Gardien des Intentions, mémoire activée). Chaque configuration a son projet, créé dans la base de `.env`
+avec les mêmes protections que le seed de démo, et chaque saisie passe par le vrai pipeline (`ChatService`).
+Le script mesure ensuite, depuis les traces, le coût, la durée, les échecs, les replis du Directeur, les
+développements et la part de l'historique. Il fait juger les deux récits en aveugle par deux passes en ordre
+inversé, et relève la friction d'après le code de l'UI de chaque configuration, `origin/main` pour la V1.
+La V2 change plusieurs facteurs à la fois : l'évaluation compare deux expériences, sans isoler un facteur.
+
+- Sans option, le fournisseur est simulé : aucun appel réseau, les projets sont supprimés à la fin (`--keep` pour les garder).
+- `--estimate` estime le coût réel du scénario complet sans aucun appel au fournisseur : le pipeline joué en
+  simulé fournit les tokens d'entrée, `llm_price` le tarif du modèle `LLM_MODEL`. Il demande une base migrée
+  avec un tarif pour ce modèle, et crée puis supprime quatre projets.
+- `--real` appelle le vrai fournisseur et consomme des crédits : à ne lancer qu'avec l'accord du mainteneur.
+  Les projets sont gardés pour être relus dans l'application.
+
+Les résultats vont dans `eval-output/`, non versionné. `rapport.md` contient la prose et reste sur le poste ;
+`synthese.md` ne contient que des nombres et des verdicts, et peut être publiée sur un ticket. Ils sont écrits
+avant le jugement puis complétés : un juge qui échoue encore après une relance laisse sa raison, pas un rapport perdu.
 
 ## Variables d'environnement
 

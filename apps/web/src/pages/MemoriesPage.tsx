@@ -1,6 +1,7 @@
 ﻿import { useEffect, useState } from 'react';
 import { Alert, Badge, Button, Checkbox, Group, Loader, Modal, Pagination, Paper, Stack, Switch, Text, TextInput, Textarea, Title } from '@mantine/core';
 import type { MemoryEntry, MemoryMutation, MemorySetupProposal, MemoryTag } from '@choral-writer/shared';
+import { readsMemory } from '@choral-writer/shared';
 import { IconArchive, IconEdit, IconFileSpreadsheet, IconHistory, IconPlus, IconRefresh, IconTags } from '@tabler/icons-react';
 import {
   ConfigurationDetailPane,
@@ -121,6 +122,7 @@ export function ProjectMemories({ memory, selectBranch }: {
           </Stack>)}
           {draft.agents.map((assignment, index) => {
             const agent = memory.agents.find((item) => item.agentId === assignment.agentId);
+            if (agent && !readsMemory(agent.output)) return null;
             const tags = [...view.state.tags.map((tag) => ({ value: tag.id, label: draft.tags.find((item) => item.ref === tag.id)?.name ?? tag.name })),
             ...draft.tags.filter((tag) => !view.state.tags.some((item) => item.id === tag.ref)).map((tag) => ({ value: tag.ref, label: tag.name }))];
             return <MemoryReadSelect key={assignment.agentId} label={`Mémoire proposée pour ${agent?.name ?? assignment.agentId}`} tags={agent?.output === 'memory_proposals' ? [] : tags} guardian={agent?.output === 'memory_proposals'}

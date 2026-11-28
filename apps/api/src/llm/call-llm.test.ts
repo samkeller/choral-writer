@@ -120,22 +120,6 @@ describe('callLLM', () => {
     }));
   });
 
-  it('traces custom response validation failures as errors', async () => {
-    const { callLLM, insert } = setup(async () => completion('untagged'));
-
-    await expect(callLLM({
-      projectId, stage: 'narrator',
-      messages: [{ role: 'user', content: 'begin' }],
-      validateResponse: () => { throw new Error('Missing narrator sections.'); },
-    })).rejects.toThrow('Missing narrator sections.');
-
-    expect(insert).toHaveBeenCalledWith(expect.objectContaining({
-      response: 'untagged',
-      status: 'error',
-      error: 'Missing narrator sections.',
-    }));
-  });
-
   it('records provider errors in the trace', async () => {
     const { callLLM, insert } = setup(async () => {
       throw new Error('provider unavailable');

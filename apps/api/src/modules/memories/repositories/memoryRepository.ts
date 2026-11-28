@@ -33,17 +33,17 @@ export class MemoryRepository {
   }
 
   async save(branchId: string, state: MemoryState, enabled: boolean, catalog: boolean): Promise<void> {
-    if (catalog) {
-      await this.db.insert(memorySettings).values({
-        projectId: this.projectId, revisionId: uuidv7(), enabled,
-        catalog: { v: 2, tags: state.tags, legacy: state.legacy },
-      }).onConflictDoUpdate({ target: memorySettings.projectId, set: {
-        revisionId: uuidv7(), enabled, catalog: { v: 2, tags: state.tags, legacy: state.legacy },
-      } });
-    }
+    if (catalog) await this.saveSettings(state, enabled);
     await this.db.insert(memoryBanks).values({
       projectId: this.projectId, branchId, revisionId: uuidv7(), entries: { v: 2, entries: state.entries },
     }).onConflictDoUpdate({ target: memoryBanks.branchId, set: { revisionId: uuidv7(), entries: { v: 2, entries: state.entries } } });
+  }
+
+  /** The tag catalog and the memory switch are project settings, shared by every branch. */
+  async saveSettings(state: Pick<MemoryState, 'tags' | 'legacy'>, enabled: boolean): Promise<void> {
+    const catalog = { v: 2 as const, tags: state.tags, legacy: state.legacy };
+    await this.db.insert(memorySettings).values({ projectId: this.projectId, revisionId: uuidv7(), enabled, catalog })
+      .onConflictDoUpdate({ target: memorySettings.projectId, set: { revisionId: uuidv7(), enabled, catalog } });
   }
 
   async snapshot(turnId: string): Promise<MemoryState | null> {
@@ -67,11 +67,15 @@ export class MemoryRepository {
       .orderBy(asc(memoryRuns.createdAt), asc(memoryRuns.id));
   }
 
+  /** What the Guardian maintains memory from: the turn's prose and developments (none for older turns). */
   async source(turnId: string) {
     const [narrator] = await this.db.select({ response: llmCall.response }).from(llmCall).where(and(
       eq(llmCall.turnId, turnId), eq(llmCall.stage, 'narrator'), eq(llmCall.status, 'success'),
     )).orderBy(desc(llmCall.createdAt), desc(llmCall.id)).limit(1);
     if (!narrator?.response) throw new Error('The original narrator trace is unavailable.');
-    return { narrator: narrator.response };
+    const [turn] = await this.db.select({ developments: chatTurns.developments }).from(chatTurns).where(and(
+      eq(chatTurns.projectId, this.projectId), eq(chatTurns.id, turnId),
+    ));
+    return { narrator: narrator.response, developments: turn?.developments ?? [] };
   }
 }

@@ -1,0 +1,1 @@
+ALTER TABLE "choral_writer"."chat_turn" ADD COLUMN "developments" jsonb;

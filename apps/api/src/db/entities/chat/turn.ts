@@ -8,7 +8,9 @@ import { choralWriterSchema } from '../../namespace.js';
 import { projects } from '../project.js';
 import { chatMessages } from './message.js';
 import { chatBranches } from './branch.js';
-import type { MemoryResult, MemoryState } from '@choral-writer/shared';
+import type {
+  AttributedDevelopment, MemoryResult, MemoryState, TurnAttributionRecord, TurnConfiguration, TurnDirection,
+} from '@choral-writer/shared';
 
 /**
  * One execution of the narrative pipeline for a user message.
@@ -31,6 +33,14 @@ export const chatTurns = choralWriterSchema.table('chat_turn', {
   error: text('error'),
   memorySnapshot: jsonb('memory_snapshot').$type<MemoryState>(),
   memoryResult: jsonb('memory_result').$type<MemoryResult>(),
+  /** Null only for turns started before configurations were recorded. */
+  configuration: jsonb('configuration').$type<TurnConfiguration>(),
+  /** Null when the turn ran without a Director, or when the narrator fell back to the whole whiteboard. */
+  direction: jsonb('direction').$type<TurnDirection>(),
+  /** Developments that happened during the turn, as their agents wrote them. Null for turns recorded before them. */
+  developments: jsonb('developments').$type<AttributedDevelopment[]>(),
+  /** Last attribution of the prose and last failure, computed on demand by the Debug mode; null until first requested. */
+  attribution: jsonb('attribution').$type<TurnAttributionRecord>(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   completedAt: timestamp('completed_at', { withTimezone: true }),
 }, (table): PgTableExtraConfigValue[] => [

@@ -44,7 +44,7 @@ describe('LLMResponseDisplay', () => {
   });
 
   it('renders narrator prose for reading and preserves the exact source', () => {
-    const response = '<resolution>La porte résiste.</resolution>\n<prose>## Arrivée\n\n**Bonjour.**</prose>';
+    const response = '## Arrivée\n\n**Bonjour.**';
     render(
       <MantineProvider env="test" forceColorScheme="dark">
         <LLMResponseDisplay response={response} />
@@ -53,17 +53,7 @@ describe('LLMResponseDisplay', () => {
 
     expect(screen.getByRole('heading', { name: 'Arrivée' })).toBeTruthy();
     expect(screen.getByText('Bonjour.').tagName).toBe('STRONG');
-    expect(screen.getByText('Résolution').closest('details')?.open).toBe(false);
     fireEvent.click(screen.getByRole('radio', { name: 'Source' }));
     expect(screen.getByText((_, element) => element?.tagName === 'PRE' && element.textContent === response)).toBeTruthy();
-  });
-
-  it('keeps malformed tags and plain text available without discarding content', () => {
-    render(
-      <MantineProvider env="test" forceColorScheme="dark">
-        <LLMResponseDisplay response={'<prose>Bonjour sans fermeture.'} />
-      </MantineProvider>,
-    );
-    expect(screen.getByText('<prose>Bonjour sans fermeture.')).toBeTruthy();
   });
 });

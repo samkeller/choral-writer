@@ -140,7 +140,31 @@ brutes ne sont renvoyés qu'à la demande, sans exposer l'erreur fournisseur sto
 Les routes sont `GET /api/projects/:projectId/turns/:turnId/traces` pour le résumé
 et `GET /api/projects/:projectId/turns/:turnId/traces/:callId` pour le détail.
 
-L'orchestration du tour coordonne l'analyse, la restitution, puis la mémoire M6.
+## Direction facultative
+
+Un projet peut épingler au plus un Directeur (phase et contrat `direction`). Sans
+Directeur, le tour se déroule comme avant. Sinon, après l'analyse et avant le
+Narrateur, un appel non streamé reçoit la saisie, l'historique, le whiteboard dont
+chaque item porte un identifiant (`c1`, `c2`…) et les directions des 3 derniers
+tours. Sa sortie est validée contre ce whiteboard : chaque item est retenu ou
+écarté une seule fois avec un `why`, une `tension` parmi `monter`, `tenir`,
+`relacher`, `basculer`, et 0 à 2 nudges de types distincts (`saillance`, `retard`,
+`pression`, `complication`, `relance`), dont aucun type n'a servi au tour
+précédent ; un `basis` désigne un item existant.
+
+La direction est résolue (items recopiés tels quels) et enregistrée dans
+`chat_turn.direction`. Le Narrateur reçoit alors la direction et les seuls items
+retenus, à la place du whiteboard, avec une consigne fixe : la prose répond
+d'abord à la saisie, tension et nudges sont des pressions, pas des faits.
+
+Une sortie invalide est retentée une fois. Si l'appel échoue encore (erreur
+fournisseur ou sortie invalide), l'étape `direction` est signalée en échec, la
+direction reste nulle et le Narrateur reçoit le whiteboard complet ; le tour
+continue. Toute autre erreur fait échouer le tour. Le résumé de traces expose
+la phase (`direction`) avec statut, durée, nombre d'appels et direction ; son
+coût figure dans les appels `direction` et dans le registre `llm_usage`.
+
+L'orchestration du tour coordonne l'analyse, la direction facultative, la restitution, puis la mémoire M6.
 Les propositions du Gardien sont réduites dans un savepoint ; un échec de mémoire
 est enregistré sans annuler une narration terminée. Les détails d'exécution et
 les limites figurent dans [`pipeline.md`](../pipeline.md).

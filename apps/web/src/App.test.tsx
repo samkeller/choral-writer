@@ -9,7 +9,7 @@ import {
   agentInputSchema, projectInputSchema, projectAgentsInputSchema, publishAgentVersionSchema,
   type AgentDto, type PublishAgentVersion, type ChatBranchDto,
   type ChatEventDto, type ChatHistoryDto, type ProjectAgent,
-  type MessageDto, type ProjectDto, type TraceCallDetail, type TurnTraceSummary,
+  type MessageDto, type ProjectDto, type TraceCallDetail, type TurnMetrics, type TurnTraceSummary,
   type ProjectAgentsInput,
   memoryMutationSchema, type MemoryView, type MemoryResult,
 } from '@choral-writer/shared';
@@ -577,6 +577,13 @@ describe('projects and chat screens', () => {
     expect(writes).toHaveLength(1);
   });
 
+  function metricsOf(turnId: string, overrides: Partial<TurnMetrics> = {}): TurnMetrics {
+    return {
+      turnId, durationMs: 2300, cost: { microUsd: 4100, complete: true },
+      narratorInputTokens: 900, narratorComposition: null, configurationChanges: null, direction: null, ...overrides,
+    };
+  }
+
   function existingChat() {
     const user: MessageDto = {
       id: '019ad30c-19b0-7000-8000-000000000002', projectId: project.id,
@@ -596,15 +603,24 @@ describe('projects and chat screens', () => {
       }],
     };
     const histories = new Map([[branch.id, original]]);
+    /** The project as the server holds it: choosing a branch in the header makes it the story branch. */
+    let stored = project;
     adapter.mockImplementation(async (config) => {
       if (config.url === '/session') return respond(config, 200, { authenticated: true });
-      if (config.url === `/projects/${project.id}`) return respond(config, 200, project);
+      if (config.url === `/projects/${project.id}`) return respond(config, 200, stored);
+      if (config.url === `/projects/${project.id}/default-branch` && config.method === 'put') {
+        stored = { ...stored, defaultBranchId: JSON.parse(String(config.data)).branchId };
+        return respond(config, 200, stored);
+      }
       if (config.url === `/projects/${project.id}/branches`) {
         return respond(config, 200, [...histories.values()].map((item) => item.branch));
       }
       const selected = [...histories.values()].find((item) =>
         config.url === `/projects/${project.id}/branches/${item.branch.id}/history`);
       if (selected) return respond(config, 200, selected);
+      const measured = [...histories.values()].find((item) =>
+        config.url === `/projects/${project.id}/branches/${item.branch.id}/turn-metrics`);
+      if (measured) return respond(config, 200, measured.turns.map((turn) => metricsOf(turn.id)));
       throw new Error(`Unexpected request: ${config.url}`);
     });
     const alternativeId = '019ad30c-19b0-7000-8000-000000000006';
@@ -625,8 +641,79 @@ describe('projects and chat screens', () => {
         }],
       };
     }
-    return { original, histories, alternativeId, newTurnId, alternative, user };
+    return {
+      original, histories, alternativeId, newTurnId, alternative, user,
+      storedProject: () => stored,
+      adopt: (adopted: ProjectDto) => { stored = adopted; },
+    };
   }
+
+  /** The alternative displayed, with what the comparison reads for both versions and the adoption route. */
+  function comparableChat() {
+    const fixture = existingChat();
+    fixture.histories.set(fixture.alternativeId, fixture.alternative('completed'));
+    const chatAdapter = adapter.getMockImplementation()!;
+    const summaryOf = (turnId: string, prose: string): TurnTraceSummary => ({
+      turnId, analysis: [], direction: null, developments: null, calls: [], timeline: [], durationMs: 1000,
+      narrator: { status: 'success', durationMs: 1000, prose }, cost: { microUsd: 100, complete: true }, configuration: null,
+    });
+    const summaries = new Map([
+      [fixture.original.turns[0]!.id, summaryOf(fixture.original.turns[0]!.id, 'Réponse originale.')],
+      [fixture.newTurnId, summaryOf(fixture.newTurnId, 'Réponse alternative.')],
+    ]);
+    adapter.mockImplementation(async (config) => {
+      const [, turnId, resource] = config.url?.match(/turns\/([^/]+)\/(traces|attribution|adoption)$/) ?? [];
+      if (resource === 'traces') return respond(config, 200, summaries.get(turnId!));
+      if (resource === 'attribution') return respond(config, 200, {
+        attribution: { whatHappened: 'Un résumé générique.', contributions: [], callId: turnId, createdAt: project.createdAt },
+        failure: null, cost: { microUsd: 1, complete: true, calls: 1 },
+      });
+      if (resource === 'adoption' && turnId === fixture.newTurnId) {
+        fixture.adopt({ ...fixture.storedProject(), systemPrompt: 'Prompt de la variante.', defaultBranchId: fixture.alternativeId });
+        return respond(config, 200, fixture.storedProject());
+      }
+      return chatAdapter(config);
+    });
+    const requestsTo = (pattern: RegExp) => adapter.mock.calls.filter(([config]) => pattern.test(config.url ?? ''));
+    return { ...fixture, requestsTo };
+  }
+
+  it('adopts a compared variant, then makes the original the story branch again from the header', async () => {
+    const fixture = comparableChat();
+    renderApp(`/projects/${project.id}?branch=${fixture.alternativeId}`);
+    fireEvent.click(await screen.findByRole('button', { name: 'Comparer avec l’original' }));
+    const drawer = within(await screen.findByRole('dialog', { name: 'Comparer deux versions du tour' }));
+    await drawer.findAllByText('Un résumé générique.');
+
+    fireEvent.click(drawer.getByRole('button', { name: 'Adopter la variante' }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Comparer deux versions du tour' })).toBeNull());
+    expect(fixture.storedProject().defaultBranchId).toBe(fixture.alternativeId);
+    expect(screen.getByTestId('location').textContent).toContain(`branch=${fixture.alternativeId}`);
+    expect(screen.getByText('Réponse alternative.')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Branche de conversation' }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Principale' }));
+
+    await screen.findByText('Réponse originale.');
+    expect(screen.getByTestId('location').textContent).toContain(`branch=${branch.id}`);
+    expect(fixture.storedProject().defaultBranchId).toBe(branch.id);
+  });
+
+  it('keeps the original: back on its branch, without any request that changes the project', async () => {
+    const fixture = comparableChat();
+    renderApp(`/projects/${project.id}?branch=${fixture.alternativeId}`);
+    fireEvent.click(await screen.findByRole('button', { name: 'Comparer avec l’original' }));
+    const drawer = within(await screen.findByRole('dialog', { name: 'Comparer deux versions du tour' }));
+    await drawer.findAllByText('Un résumé générique.');
+
+    fireEvent.click(drawer.getByRole('button', { name: 'Garder l’original' }));
+
+    await screen.findByText('Réponse originale.');
+    expect(screen.getByTestId('location').textContent).toContain(`branch=${branch.id}`);
+    expect(fixture.requestsTo(/\/(adoption|default-branch)$/)).toEqual([]);
+    expect(fixture.storedProject()).toEqual(project);
+  });
 
   it.each(['success', 'failed', 'conflict'] as const)(
     'retries only memory inside the story timeline without navigating or changing narration (%s)',
@@ -668,14 +755,14 @@ describe('projects and chat screens', () => {
       vi.stubGlobal('fetch', fetchMock);
       renderApp(`/projects/${project.id}`);
       fireEvent.click(await screen.findByRole('button', { name: 'Relancer le Gardien' }));
-      await within(screen.getByRole('log', { name: 'Conversation' })).findByText('Mémoire en cours');
-      expect(screen.queryByText('Analyse en cours')).toBeNull();
-      expect(screen.queryByText('Narrateur en cours')).toBeNull();
+      await within(screen.getByRole('log', { name: 'Conversation' })).findByText(/^Mémoire ·/);
+      expect(screen.queryByText(/^Analyse ·/)).toBeNull();
+      expect(screen.queryByText(/^Narrateur ·/)).toBeNull();
       expect(screen.getByLabelText('Votre message').hasAttribute('disabled')).toBe(true);
       expect(screen.getByRole('tab', { name: 'Configuration' }).hasAttribute('disabled')).toBe(true);
       expect(screen.getByTestId('location').textContent).toBe(`/projects/${project.id}`);
       await act(async () => { release(); });
-      await waitFor(() => expect(screen.queryByText('Mémoire en cours')).toBeNull());
+      await waitFor(() => expect(screen.queryByText(/^Mémoire ·/)).toBeNull());
       if (outcome !== 'success') {
         await screen.findByText(outcome === 'failed' ? 'Encore vide.' : 'Mémoire modifiée ailleurs.');
         expect(screen.getByRole('button', { name: 'Relancer le Gardien' }).hasAttribute('disabled')).toBe(false);
@@ -742,25 +829,28 @@ describe('projects and chat screens', () => {
     });
 
     renderApp(`/projects/${project.id}?setup=agents`);
-    const responseSelect = await screen.findByLabelText('Réponse utilisateur · Narrateur', { selector: 'input' });
-    await waitFor(() => expect(responseSelect.getAttribute('value')).toBe('Narrateur · v1'));
-    expect((await screen.findByRole('button', { name: 'Enregistrer les accès de Narrateur' })).textContent).toBe('Enregistrer les accès');
-    const instructions = screen.getByText('Lire les instructions').closest('details');
-    expect(instructions?.open).toBe(false);
-    fireEvent.click(screen.getByText('Lire les instructions'));
-    expect(instructions?.open).toBe(true);
-    expect(screen.getByText('Ton v1')).toBeTruthy();
+    const setup = within(await screen.findByRole('region', { name: 'Agents' }));
+    const responseSelect = await setup.findByLabelText('Version de Narrateur', { selector: 'input' });
+    await waitFor(() => expect(responseSelect.getAttribute('value')).toBe('v1 · Narrateur'));
+    // Les étapes suivent l'ordre d'exécution du pipeline.
+    expect(setup.getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent))
+      .toEqual(['Analyse', 'Direction', 'Narrateur', 'Gardien']);
+    // Le Narrateur et le Gardien sont obligatoires : on les remplace, on ne les retire pas.
+    expect(setup.queryByRole('button', { name: 'Retirer Narrateur' })).toBeNull();
+    expect(setup.queryByRole('button', { name: 'Retirer Gardien' })).toBeNull();
+    await waitFor(() => expect(setup.getAllByText('Toute la mémoire')).toHaveLength(2));
+    expect(setup.queryByText('Ton v1')).toBeNull();
+    fireEvent.click(setup.getByRole('button', { name: 'Détails de Narrateur' }));
+    expect((await setup.findByRole('button', { name: 'Enregistrer les accès de Narrateur' })).textContent).toBe('Enregistrer les accès');
+    expect(setup.getByText('Ton v1')).toBeTruthy();
     expect(writes).toBe(0);
     fireEvent.click(responseSelect);
-    fireEvent.click(await screen.findByRole('option', { name: 'Narrateur · v2' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'v2 · Narrateur' }));
     fireEvent.click(screen.getByRole('button', { name: 'Enregistrer l’équipe' }));
     await screen.findByText('Configuration enregistrée. Elle sera utilisée au prochain tour.');
     expect(writes).toBe(1);
     expect(assignments.find((entry) => entry.output === 'narrative')?.version).toBe(2);
     expect(assignments.find((entry) => entry.output === 'memory_proposals')?.versionId).toBe(memoryVersion.id);
-    fireEvent.click(screen.getByRole('button', { name: /Gardien.*Actif/ }));
-    expect(screen.getByLabelText('Mémoire · Gardien', { selector: 'input' })).toBeTruthy();
-    expect(screen.queryByLabelText('Réponse utilisateur · Narrateur', { selector: 'input' })).toBeNull();
   });
 
   it('opens the configuration of a newly created project, then still edits and deletes it', async () => {
@@ -817,12 +907,11 @@ describe('projects and chat screens', () => {
     expect(saved).toBeNull();
   });
 
-  it('creates a narrator from project configuration and selects it in the team', async () => {
-    const guardian = existingAgent('019ad30c-19b0-7000-8000-000000000301', 'memory_proposals', 'Gardien');
-    const narrator = existingAgent('019ad30c-19b0-7000-8000-000000000302', 'narrative', 'Narrateur');
-    let library: AgentDto[] = [narrator, guardian];
-    let assignments: ProjectAgent[] = [narrator, guardian].map((agent) => assignmentOf(agent));
-    let configured: ProjectAgentsInput | null = null;
+  /** Serves a project's team and the library, recording what the setup screen saves. */
+  function mockProjectSetup(initialLibrary: AgentDto[], initialTeam: AgentDto[]) {
+    let library = initialLibrary;
+    let assignments: ProjectAgent[] = initialTeam.map((agent) => assignmentOf(agent));
+    const saved: { configured: ProjectAgentsInput | null } = { configured: null };
     adapter.mockImplementation(async (config) => {
       if (config.url === '/session') return respond(config, 200, { authenticated: true });
       if (config.url === `/projects/${project.id}`) return respond(config, 200, project);
@@ -848,33 +937,113 @@ describe('projects and chat screens', () => {
       }
       if (config.url === `/projects/${project.id}/agents`) {
         if (config.method === 'put') {
-          configured = projectAgentsInputSchema.parse(JSON.parse(String(config.data)));
-          assignments = configured.agents.map((selection) => assignmentOf(
+          saved.configured = projectAgentsInputSchema.parse(JSON.parse(String(config.data)));
+          assignments = saved.configured.agents.map((selection) => assignmentOf(
             library.find((agent) => agent.id === selection.agentId)!, selection.versionId));
         }
         return respond(config, 200, assignments);
       }
       throw new Error(`Unexpected request: ${config.method} ${config.url}`);
     });
+    return saved;
+  }
+
+  it('creates a narrator from its step of the pipeline and selects it in the team', async () => {
+    const guardian = existingAgent('019ad30c-19b0-7000-8000-000000000301', 'memory_proposals', 'Gardien');
+    const narrator = existingAgent('019ad30c-19b0-7000-8000-000000000302', 'narrative', 'Narrateur');
+    const saved = mockProjectSetup([narrator, guardian], [narrator, guardian]);
 
     renderApp(`/projects/${project.id}?tab=config&section=agents`);
-    fireEvent.click(await screen.findByRole('button', { name: 'Nouvel agent' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Créer un agent : Narrateur' }));
     const dialog = within(await screen.findByRole('dialog'));
+    // Créé depuis l'étape du Narrateur, l'agent en garde le contrat de sortie.
+    const output = dialog.getByLabelText('Contrat de sortie', { selector: 'input' });
+    expect(output.getAttribute('value')).toBe('Réponse utilisateur');
+    expect(output).toHaveProperty('disabled', true);
     fireEvent.change(dialog.getByRole('textbox', { name: 'Nom' }), { target: { value: 'Nouveau narrateur' } });
     fireEvent.change(dialog.getByRole('textbox', { name: 'Instructions' }), { target: { value: 'Sois lyrique.' } });
-    fireEvent.click(dialog.getByLabelText('Contrat de sortie', { selector: 'input' }));
-    fireEvent.click(await screen.findByRole('option', { name: /Restitution Réponse utilisateur/ }));
     fireEvent.click(dialog.getByRole('button', { name: 'Créer l’agent' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     // Le nouvel agent remplace l'ancien narrateur sans quitter la page de configuration.
-    const narratorSelect = await screen.findByLabelText('Réponse utilisateur · Narrateur', { selector: 'input' });
-    await waitFor(() => expect(narratorSelect.getAttribute('value')).toBe('Nouveau narrateur · v1'));
+    const narratorSelect = await screen.findByLabelText('Version de Nouveau narrateur', { selector: 'input' });
+    expect(narratorSelect.getAttribute('value')).toBe('v1 · Nouveau narrateur');
+    expect(screen.queryByLabelText('Version de Narrateur', { selector: 'input' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Enregistrer l’équipe' }));
     await screen.findByText('Configuration enregistrée. Elle sera utilisée au prochain tour.');
-    expect(configured).toMatchObject({ agents: [
+    expect(saved.configured).toMatchObject({ agents: [
       { agentId: '019ad30c-19b0-7000-8000-000000000303', versionId: '019ad30c-19b0-7000-8000-000000000304' },
       { agentId: guardian.id, versionId: guardian.versions[0]!.id },
     ] });
+  });
+
+  it('adds library agents to their step, keeps a single Director, and gives the Director no memory', async () => {
+    const narrator = existingAgent('019ad30c-19b0-7000-8000-000000000311', 'narrative', 'Narrateur');
+    const guardian = existingAgent('019ad30c-19b0-7000-8000-000000000312', 'memory_proposals', 'Gardien');
+    const plainObserver = existingAgent('019ad30c-19b0-7000-8000-000000000313', 'envelope', 'Observateur');
+    const observer: AgentDto = { ...plainObserver,
+      versions: [{ ...plainObserver.versions[0]!, instructions: 'Relève ce que la scène laisse dans l’ombre.' }] };
+    const director = { ...existingAgent('019ad30c-19b0-7000-8000-000000000314', 'direction', 'Metteur en scène'), phase: 'direction' as const };
+    const rival = { ...existingAgent('019ad30c-19b0-7000-8000-000000000315', 'direction', 'Dramaturge'), phase: 'direction' as const };
+    const saved = mockProjectSetup([narrator, guardian, observer, director, rival], [narrator, guardian, director]);
+
+    renderApp(`/projects/${project.id}?tab=config&section=agents`);
+    const setup = within(await screen.findByRole('region', { name: 'Agents' }));
+    const direction = within(await setup.findByRole('region', { name: 'Direction' }));
+    expect(direction.getByText('Le Directeur ne reçoit aucune mémoire')).toBeTruthy();
+    fireEvent.click(direction.getByRole('button', { name: 'Détails de Metteur en scène' }));
+    expect(direction.queryByRole('button', { name: /Enregistrer les accès/ })).toBeNull();
+
+    const analysis = within(setup.getByRole('region', { name: 'Analyse' }));
+    expect(analysis.getByText('Aucun agent d’analyse : le Narrateur écrit sans perspective préalable.')).toBeTruthy();
+    fireEvent.click(analysis.getByRole('textbox', { name: 'Ajouter depuis la bibliothèque : Analyse' }));
+    // Le choix dans la bibliothèque laisse lire les instructions avant d'ajouter l'agent.
+    const option = await screen.findByRole('option', { name: /^Observateur/ });
+    expect(within(option).getByText('Relève ce que la scène laisse dans l’ombre.')).toBeTruthy();
+    fireEvent.click(option);
+    // Ajouté depuis l'étape d'analyse, l'agent est retenu d'office.
+    expect(analysis.getByLabelText('Version de Observateur', { selector: 'input' })).toBeTruthy();
+    expect(analysis.getByText('Accès mémoire réglable après enregistrement')).toBeTruthy();
+    expect(analysis.queryByRole('textbox', { name: 'Ajouter depuis la bibliothèque : Analyse' })).toBeNull();
+
+    // Choisir un autre Directeur remplace le premier : il n'y en a jamais deux.
+    fireEvent.click(direction.getByRole('textbox', { name: 'Remplacer depuis la bibliothèque : Direction' }));
+    fireEvent.click(await screen.findByRole('option', { name: /^Dramaturge/ }));
+    expect(direction.getByLabelText('Version de Dramaturge', { selector: 'input' })).toBeTruthy();
+    expect(direction.queryByLabelText('Version de Metteur en scène', { selector: 'input' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Enregistrer l’équipe' }));
+    await screen.findByText('Configuration enregistrée. Elle sera utilisée au prochain tour.');
+    expect(saved.configured?.agents).toEqual([
+      { agentId: narrator.id, versionId: narrator.versions[0]!.id },
+      { agentId: guardian.id, versionId: guardian.versions[0]!.id },
+      { agentId: rival.id, versionId: rival.versions[0]!.id },
+      { agentId: observer.id, versionId: observer.versions[0]!.id },
+    ]);
+
+    // Le Directeur est facultatif : on peut s'en passer.
+    fireEvent.click(direction.getByRole('button', { name: 'Retirer Dramaturge' }));
+    expect(direction.getByText('Sans Directeur, le tour passe directement de l’analyse au Narrateur.')).toBeTruthy();
+    expect(direction.getByRole('textbox', { name: 'Choisir dans la bibliothèque : Direction' })).toBeTruthy();
+  });
+
+  it('opens the details of the agent suggested by « Configurer ce projet », until the user closes them', async () => {
+    const narrator = existingAgent('019ad30c-19b0-7000-8000-000000000321', 'narrative', 'Narrateur');
+    const guardian = existingAgent('019ad30c-19b0-7000-8000-000000000322', 'memory_proposals', 'Gardien');
+    const observer = existingAgent('019ad30c-19b0-7000-8000-000000000323', 'envelope', 'Observateur');
+    mockProjectSetup([narrator, guardian, observer], [narrator, guardian, observer]);
+
+    renderApp(`/projects/${project.id}?setup=agents&agentVersion=${observer.versions[0]!.id}`);
+    const setup = within(await screen.findByRole('region', { name: 'Agents' }));
+    const toggle = await setup.findByRole('button', { name: 'Détails de Observateur' });
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    const details = setup.getByRole('region', { name: 'Détails de Observateur' });
+    expect(details.id).toBe(toggle.getAttribute('aria-controls'));
+    expect(within(details).getByText('Instructions')).toBeTruthy();
+    expect(setup.getByRole('button', { name: 'Détails de Narrateur' }).getAttribute('aria-expanded')).toBe('false');
+
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(setup.queryByRole('region', { name: 'Détails de Observateur' })).toBeNull();
   });
 
   it('replaces the branch memory from the exported CSV files', async () => {
@@ -978,10 +1147,9 @@ describe('projects and chat screens', () => {
       emit({ type: 'chat.message.delta', delta: 'Bonjour' });
     });
     await screen.findByText('Bonjour');
-    await screen.findByText('Analyse en cours');
-    expect(screen.getByText(/0\/2 agents/)).toBeTruthy();
-    expect(screen.getByLabelText('Agent Chaos en cours')).toBeTruthy();
-    expect(screen.getByLabelText('Agent Cohérence en cours')).toBeTruthy();
+    await screen.findByText(/^Analyse · 0\/2 agents · \d/);
+    // A single line during the turn: no detail per agent.
+    expect(screen.queryByText('Chaos')).toBeNull();
     expect(screen.getByLabelText('Votre message').hasAttribute('disabled')).toBe(true);
     expect(screen.getByRole('tab', { name: 'Configuration' }).hasAttribute('disabled')).toBe(true);
 
@@ -993,7 +1161,7 @@ describe('projects and chat screens', () => {
       emit({ type: 'chat.pipeline.stage', turnId, stage: 'analysis', status: 'completed', elapsedMs: 1250 });
       emit({ type: 'chat.pipeline.stage', turnId, stage: 'narrator', status: 'started' });
     });
-    await screen.findByText('Narrateur en cours');
+    await screen.findByText(/^Narrateur · \d/);
     await act(async () => {
       savedHistory = {
         branch: { ...branch, headTurnId: turnId },
@@ -1010,7 +1178,7 @@ describe('projects and chat screens', () => {
     });
     await waitFor(() => expect(screen.getByLabelText('Votre message').hasAttribute('disabled')).toBe(false));
     expect(screen.getByRole('tab', { name: 'Configuration' }).hasAttribute('disabled')).toBe(false);
-    expect(screen.queryByText('Narrateur en cours')).toBeNull();
+    expect(screen.queryByText(/^Narrateur · \d/)).toBeNull();
     expect(screen.getAllByText('Bonjour Mara.')).toHaveLength(1);
     view.unmount();
     renderApp(`/projects/${project.id}`);
@@ -1019,7 +1187,7 @@ describe('projects and chat screens', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('opens turn traces from chat, reconstructs the whiteboard and loads call details on demand', async () => {
+  it('opens the turn drawer from the line under an answer, on a summary that leads to each detail tab', async () => {
     const fixture = existingChat();
     const turnId = fixture.original.turns[0]!.id;
     const analysisCallId = '019ad30c-19b0-7000-8000-000000000301';
@@ -1038,7 +1206,13 @@ describe('projects and chat screens', () => {
           items: [{ kind: 'recommendation', text: 'Chercher la clé.', importance: 'HIGH' }],
         },
       }],
-      narrator: { status: 'success', durationMs: 1500, resolution: 'Une porte est verrouillée.', prose: 'La porte résiste.' },
+      direction: {
+        agentId: '019ad30c-19b0-7000-8000-000000000305', agentVersionId: '019ad30c-19b0-7000-8000-000000000306',
+        name: 'Directeur', status: 'error', durationMs: 300, attempts: 2, direction: null,
+        cost: { microUsd: 120, complete: true },
+      },
+      developments: null,
+      narrator: { status: 'success', durationMs: 1500, prose: 'La porte résiste.' },
       calls: [
         {
           id: analysisCallId, turnId, stage: 'analysis',
@@ -1046,17 +1220,29 @@ describe('projects and chat screens', () => {
           agentVersionId: '019ad30c-19b0-7000-8000-000000000304',
           agentName: 'Chaos', agentVersion: 1, model: 'test-model', status: 'success',
           inputTokens: 812, outputTokens: 240, durationMs: 800,
-          createdAt: project.createdAt, error: null, costMicroUsd: 210, costBasis: 'priced',
+          createdAt: project.createdAt, error: null, costMicroUsd: 210, costBasis: 'priced', composition: null,
         },
         {
           id: narratorCallId, turnId, stage: 'narrator',
           agentId: null, agentVersionId: null, agentName: 'Narrateur', agentVersion: 1,
           model: 'test-model', status: 'success', inputTokens: 900, outputTokens: 100,
           durationMs: 1500, createdAt: project.createdAt, error: null,
-          costMicroUsd: 195, costBasis: 'priced',
+          costMicroUsd: 195, costBasis: 'priced', composition: null,
         },
       ],
+      timeline: [
+        { stage: 'analysis', durationMs: 800, agentCount: 1 },
+        { stage: 'narrator', durationMs: 1500, agentCount: 1 },
+      ],
+      durationMs: 2300,
       cost: { microUsd: 405, complete: true },
+      configuration: {
+        systemPrompt: 'Prompt figé du tour.',
+        agents: [{
+          agentId: '019ad30c-19b0-7000-8000-000000000303', versionId: '019ad30c-19b0-7000-8000-000000000304',
+          version: 1, name: 'Chaos', phase: 'analysis', output: 'envelope', memoryRead: { mode: 'all', tagIds: [] },
+        }],
+      },
     };
     const callDetail: TraceCallDetail = {
       ...summary.calls[0]!,
@@ -1095,13 +1281,35 @@ describe('projects and chat screens', () => {
 
     renderApp(`/projects/${project.id}`);
     await screen.findByText('Réponse originale.');
-    fireEvent.click(screen.getAllByRole('button', { name: 'Inspecter les traces de ce tour' })[0]!);
-    await screen.findByRole('heading', { name: 'Traces du tour' });
-    fireEvent.click(screen.getByRole('tab', { name: 'Whiteboard' }));
-    await screen.findByText('Chercher la clé.');
-    fireEvent.click(screen.getByRole('tab', { name: 'Appels (2)' }));
-    fireEvent.click(screen.getByRole('button', { name: /Chaos · Analyse/ }));
-    await screen.findByRole('heading', { name: 'Détail de l’appel' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Tour 1 : 2,3 s · 0,0041 $' }));
+    const drawer = within(await screen.findByRole('dialog'));
+    await drawer.findByRole('heading', { name: 'Tour 1 / 1' });
+    expect(drawer.getByRole('button', { name: 'Tour précédent' }).hasAttribute('disabled')).toBe(true);
+    expect(drawer.getByRole('button', { name: 'Tour suivant' }).hasAttribute('disabled')).toBe(true);
+    expect(drawer.getByRole('tab', { name: 'Synthèse' }).getAttribute('aria-selected')).toBe('true');
+    expect(drawer.getByRole('tab', { name: 'Analyse' })).toBeTruthy();
+    expect(await drawer.findByRole('button', { name: /^Coût : 0,0004 \$/ })).toBeTruthy();
+    expect(drawer.getByRole('button', { name: /^Durée : 2,3 s, Narrateur : 1,5 s/ })).toBeTruthy();
+    expect(drawer.getByRole('button', { name: /^Entrée du Narrateur : 900 tokens, premier tour/ })).toBeTruthy();
+    expect(drawer.getByRole('button', { name: 'Tension : —, direction en échec' })).toBeTruthy();
+    expect(drawer.getByText('Direction en échec après 2 tentative(s) : le Narrateur a reçu le whiteboard complet.')).toBeTruthy();
+
+    fireEvent.click(drawer.getByRole('button', { name: 'Coût et durée par appel →' }));
+    expect(drawer.getByRole('tab', { name: 'Coût et durée' }).getAttribute('aria-selected')).toBe('true');
+    expect(drawer.getByRole('cell', { name: 'Chaos' })).toBeTruthy();
+    expect(drawer.getByText('Analyse 0,0002 $')).toBeTruthy();
+
+    fireEvent.click(drawer.getByRole('tab', { name: 'Configuration' }));
+    await drawer.findByText('Prompt figé du tour.');
+    expect(drawer.getByText('Premier tour du récit : rien à comparer.')).toBeTruthy();
+    expect(drawer.getByText('Enveloppe whiteboard · Toute la mémoire')).toBeTruthy();
+
+    fireEvent.click(drawer.getByRole('tab', { name: 'Récit' }));
+    expect(drawer.getByText('Récit · 1 tour(s)')).toBeTruthy();
+
+    fireEvent.click(drawer.getByRole('tab', { name: 'Appels bruts' }));
+    fireEvent.click(await drawer.findByRole('button', { name: /Chaos · Analyse/ }));
+    await drawer.findByRole('button', { name: 'Retour aux appels' });
     await screen.findByText('Une clé manque.');
     fireEvent.click(screen.getByText('Mémoire reçue · 1 entrée(s)'));
     expect(screen.getAllByText('Endroits reçus', { exact: false }).length).toBeGreaterThan(0);
@@ -1177,6 +1385,173 @@ describe('projects and chat screens', () => {
         fireEvent.click(await screen.findByRole('menuitem', { name: 'Principale' }));
     await screen.findByText('Réponse originale.');
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('replays the last turn with a replacement configuration and a new agent version, leaving the project unchanged', async () => {
+    const fixture = existingChat();
+    const chatAdapter = adapter.getMockImplementation()!;
+    let narrative: AgentDto = {
+      id: '019ad30c-19b0-7000-8000-000000000401', phase: 'restitution', output: 'narrative',
+      createdAt: project.createdAt, projects: [],
+      versions: [2, 1].map((version) => ({
+        id: `019ad30c-19b0-7000-8000-00000000040${version + 1}`,
+        version, name: 'Narrateur', instructions: `Ton v${version}`, createdAt: project.createdAt,
+      })),
+    };
+    const guardian = existingAgent('019ad30c-19b0-7000-8000-000000000404', 'memory_proposals', 'Gardien');
+    const observer = existingAgent('019ad30c-19b0-7000-8000-000000000405', 'envelope', 'Observateur');
+    const director: AgentDto = {
+      id: '019ad30c-19b0-7000-8000-000000000408', phase: 'direction', output: 'direction',
+      createdAt: project.createdAt, projects: [],
+      versions: [2, 1].map((version) => ({
+        id: `019ad30c-19b0-7000-8000-00000000041${version}`,
+        version, name: 'Directeur', instructions: `Oriente v${version}`, createdAt: project.createdAt,
+      })),
+    };
+    const assignments = [assignmentOf(narrative, narrative.versions[1]!.id), assignmentOf(guardian), assignmentOf(observer)];
+    let published: PublishAgentVersion | null = null;
+    const projectWrites: string[] = [];
+    adapter.mockImplementation(async (config) => {
+      if (config.method !== 'get' && config.url?.startsWith(`/projects/${project.id}`)) projectWrites.push(config.url);
+      if (config.url === '/agents') return respond(config, 200, [narrative, guardian, observer, director]);
+      if (config.url === `/projects/${project.id}/agents`) return respond(config, 200, assignments);
+      if (config.url === `/agents/${narrative.id}/versions` && config.method === 'post') {
+        published = publishAgentVersionSchema.parse(JSON.parse(String(config.data)));
+        narrative = { ...narrative, versions: [{
+          id: '019ad30c-19b0-7000-8000-000000000406', version: 3, name: published.name,
+          instructions: published.instructions, createdAt: project.createdAt,
+        }, ...narrative.versions] };
+        return respond(config, 200, narrative);
+      }
+      return chatAdapter(config);
+    });
+    const fetchMock = vi.fn().mockImplementation(async () => {
+      const alternative = fixture.alternative('completed');
+      fixture.histories.set(fixture.alternativeId, alternative);
+      return new Response(`data: ${JSON.stringify({
+        type: 'chat.turn.completed', branchId: fixture.alternativeId,
+        turnId: fixture.newTurnId, message: alternative.turns[0].assistantMessage,
+      })}\n\n`, { headers: { 'Content-Type': 'text/event-stream' } });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderApp(`/projects/${project.id}`);
+    await screen.findByText('Réponse originale.');
+    fireEvent.click(screen.getByRole('button', { name: 'Rejouer le dernier tour avec…' }));
+    const dialog = within(await screen.findByRole('dialog'));
+    const narratorSelect = await dialog.findByLabelText('Version de Narrateur', { selector: 'input' });
+    expect(narratorSelect.getAttribute('value')).toBe('v1 · Narrateur');
+    expect((dialog.getByRole('textbox', { name: 'Prompt du projet' }) as HTMLTextAreaElement).value).toBe(project.systemPrompt);
+    // Le dialogue présente l'équipe dans l'ordre du pipeline, comme la configuration du projet.
+    expect(dialog.getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent))
+      .toEqual(['Analyse', 'Direction', 'Narrateur', 'Gardien']);
+    fireEvent.click(dialog.getByRole('button', { name: 'Retirer Observateur' }));
+    expect(dialog.queryByLabelText('Version de Observateur', { selector: 'input' })).toBeNull();
+
+    // La nouvelle version part des instructions de la version retenue pour le tour, pas de la dernière.
+    fireEvent.click(dialog.getByRole('button', { name: 'Nouvelle version de Narrateur' }));
+    const instructions = await dialog.findByRole('textbox', { name: 'Instructions' });
+    expect((instructions as HTMLTextAreaElement).value).toBe('Ton v1');
+    fireEvent.change(instructions, { target: { value: 'Ton variante.' } });
+    fireEvent.click(dialog.getByRole('button', { name: 'Publier la version' }));
+    await waitFor(() => expect(dialog.getByLabelText('Version de Narrateur', { selector: 'input' }).getAttribute('value'))
+      .toBe('v3 · Narrateur'));
+    expect(published).toMatchObject({ instructions: 'Ton variante.', expectedVersion: 2 });
+
+    // Le Directeur, absent du projet, s'ajoute depuis la bibliothèque puis change de version.
+    fireEvent.click(dialog.getByRole('textbox', { name: 'Choisir dans la bibliothèque : Direction' }));
+    fireEvent.click(await screen.findByRole('option', { name: /^Directeur/ }));
+    fireEvent.click(dialog.getByRole('textbox', { name: 'Version de Directeur' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'v1 · Directeur' }));
+
+    fireEvent.change(dialog.getByRole('textbox', { name: 'Prompt du projet' }), { target: { value: 'Prompt variante.' } });
+    fireEvent.click(dialog.getByRole('button', { name: 'Rejouer' }));
+    await screen.findByText('Réponse alternative.');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      `/api/projects/${project.id}/branches/${branch.id}/turns/${fixture.original.turns[0].id}/regenerate`,
+    );
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      expectedHeadTurnId: fixture.original.turns[0].id,
+      configuration: {
+        systemPrompt: 'Prompt variante.',
+        agents: [
+          { agentId: narrative.id, versionId: '019ad30c-19b0-7000-8000-000000000406' },
+          { agentId: guardian.id, versionId: guardian.versions[0]!.id },
+          { agentId: director.id, versionId: director.versions[1]!.id },
+        ],
+      },
+    });
+    await waitFor(() => expect(screen.getByTestId('location').textContent).toContain(`branch=${fixture.alternativeId}`));
+    expect(projectWrites).toEqual([]);
+  });
+
+  it('retries a failed turn in place with a corrected configuration, starting from the recorded one', async () => {
+    const fixture = existingChat();
+    const head = fixture.original.turns[0]!;
+    Object.assign(head, { status: 'failed', error: 'Échec simulé.', assistantMessage: null });
+    const chatAdapter = adapter.getMockImplementation()!;
+    const narrative: AgentDto = {
+      id: '019ad30c-19b0-7000-8000-000000000501', phase: 'restitution', output: 'narrative',
+      createdAt: project.createdAt, projects: [],
+      versions: [2, 1].map((version) => ({
+        id: `019ad30c-19b0-7000-8000-00000000050${version + 1}`,
+        version, name: 'Narrateur', instructions: `Ton v${version}`, createdAt: project.createdAt,
+      })),
+    };
+    const guardian = existingAgent('019ad30c-19b0-7000-8000-000000000504', 'memory_proposals', 'Gardien');
+    const director: AgentDto = { ...guardian, id: '019ad30c-19b0-7000-8000-000000000505', phase: 'direction',
+      output: 'direction', versions: [{ ...guardian.versions[0]!, id: '019ad30c-19b0-7000-8000-000000000509', name: 'Directeur' }] };
+    const recorded = [assignmentOf(narrative, narrative.versions[1]!.id), assignmentOf(guardian), assignmentOf(director)];
+    const summary: TurnTraceSummary = {
+      turnId: head.id, analysis: [], direction: null, developments: null, narrator: null, calls: [], timeline: [], durationMs: 0,
+      cost: { microUsd: 0, complete: true },
+      configuration: {
+        systemPrompt: 'Prompt enregistré.',
+        agents: recorded.map(({ instructions: _instructions, ...agent }) => ({ ...agent, memoryRead: null })),
+      },
+    };
+    adapter.mockImplementation(async (config) => {
+      if (config.url === '/agents') return respond(config, 200, [narrative, guardian, director]);
+      if (config.url === `/projects/${project.id}/turns/${head.id}/traces`) return respond(config, 200, summary);
+      if (config.url === `/projects/${project.id}/agents`) throw new Error('The recorded configuration is the start.');
+      return chatAdapter(config);
+    });
+    const fetchMock = vi.fn().mockImplementation(async () => {
+      const retried = { ...head, id: fixture.newTurnId, retryOfTurnId: head.id, status: 'completed' as const, error: null,
+        assistantMessage: { ...fixture.user, id: '019ad30c-19b0-7000-8000-000000000508', role: 'assistant' as const,
+          content: 'Réponse corrigée.' } };
+      fixture.histories.set(branch.id, { branch: { ...fixture.original.branch, headTurnId: retried.id }, turns: [retried] });
+      return new Response(`data: ${JSON.stringify({
+        type: 'chat.turn.completed', branchId: branch.id, turnId: retried.id, message: retried.assistantMessage,
+      })}\n\n`, { headers: { 'Content-Type': 'text/event-stream' } });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderApp(`/projects/${project.id}`);
+    fireEvent.click(await screen.findByRole('button', { name: 'Rejouer le dernier tour avec…' }));
+    const dialog = within(await screen.findByRole('dialog'));
+    const narratorSelect = await dialog.findByLabelText('Version de Narrateur', { selector: 'input' });
+    expect(narratorSelect.getAttribute('value')).toBe('v1 · Narrateur');
+    expect((dialog.getByRole('textbox', { name: 'Prompt du projet' }) as HTMLTextAreaElement).value).toBe('Prompt enregistré.');
+    fireEvent.click(narratorSelect);
+    fireEvent.click(await screen.findByRole('option', { name: 'v2 · Narrateur' }));
+    fireEvent.click(dialog.getByRole('button', { name: 'Retirer Directeur' }));
+    fireEvent.click(dialog.getByRole('button', { name: 'Rejouer' }));
+
+    await screen.findByText('Réponse corrigée.');
+    expect(fetchMock.mock.calls[0][0]).toBe(`/api/projects/${project.id}/branches/${branch.id}/turns/${head.id}/retry`);
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      expectedHeadTurnId: head.id,
+      configuration: {
+        systemPrompt: 'Prompt enregistré.',
+        agents: [
+          { agentId: narrative.id, versionId: narrative.versions[0]!.id },
+          { agentId: guardian.id, versionId: guardian.versions[0]!.id },
+        ],
+      },
+    });
+    expect(screen.getByTestId('location').textContent).toBe(`/projects/${project.id}`);
   });
 
       it('switches branches from the header control and marks the current one', async () => {

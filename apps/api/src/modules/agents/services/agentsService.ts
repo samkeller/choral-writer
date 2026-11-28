@@ -4,10 +4,16 @@ import { ApiError, notfoundError } from '../../../errors/errors.js';
 import type { Database } from '../../../db/client.js';
 import type { ProjectsService } from '../../projects/services/projectServices.js';
 import { AgentRepository } from '../repository/agentsRepository.js';
-import { DEFAULT_GUARDIAN_ID, DEFAULT_NARRATOR_ID } from '../repository/defaultNarrators.js';
+import { replaceProjectTeam } from './agentSelection.js';
+import { isBuiltInAgent } from '../repository/agentLibrary.js';
 
 export class AgentsService {
   constructor(private readonly database: Database, private readonly projects: ProjectsService) {}
+
+  /** Run at startup: the library is application data, not a migration, so it is seeded idempotently. */
+  ensureLibrary(): Promise<void> {
+    return this.database.transaction((tx) => new AgentRepository(tx).ensureLibrary());
+  }
 
   list(): Promise<Agent[]> {
     return this.database.transaction((tx) => new AgentRepository(tx).list(), {
@@ -44,8 +50,8 @@ export class AgentsService {
     await this.database.transaction(async (tx) => {
       const repository = new AgentRepository(tx);
       if (!await repository.lock(agentId)) throw notfoundError('Cet agent n’existe pas.');
-      if ([DEFAULT_NARRATOR_ID, DEFAULT_GUARDIAN_ID].includes(agentId) || await repository.used(agentId)) {
-        throw new ApiError(409, 'AGENT_IN_USE', 'Cet agent est utilisé ou fourni par défaut. Détachez-le des projets avant de le supprimer.');
+      if (isBuiltInAgent(agentId) || await repository.used(agentId)) {
+        throw new ApiError(409, 'AGENT_IN_USE', 'Cet agent est utilisé ou fourni avec l’application. Détachez-le des projets avant de le supprimer.');
       }
       await repository.remove(agentId);
     });
@@ -59,18 +65,7 @@ export class AgentsService {
   async configure(projectId: string, input: ProjectAgentsInput): Promise<ProjectAgent[]> {
     return this.projects.withLockedProject(projectId, async (_project, tx) => {
       const repository = new AgentRepository(tx);
-      const resolved = await repository.resolveSelections(input.agents);
-      const uniqueIds = new Set(input.agents.map((selection) => selection.agentId));
-      if (uniqueIds.size !== input.agents.length || resolved.length !== input.agents.length
-        || input.agents.some((selection) => !resolved.some((version) =>
-          version.agentId === selection.agentId && version.versionId === selection.versionId))) {
-        throw new ApiError(400, 'INVALID_AGENT_SELECTION', 'Chaque agent doit référencer une de ses versions existantes, sans doublon.');
-      }
-      if (resolved.filter((agent) => agent.output === 'narrative').length !== 1
-        || resolved.filter((agent) => agent.output === 'memory_proposals').length !== 1) {
-        throw new ApiError(400, 'REQUIRED_AGENT_OUTPUTS', 'Le projet doit avoir exactement un agent de réponse et un Gardien mémoire, en restitution.');
-      }
-      await repository.replace(projectId, resolved);
+      await replaceProjectTeam(repository, projectId, input.agents);
       return repository.listForProject(projectId);
     });
   }

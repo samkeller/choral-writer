@@ -8,7 +8,9 @@ import type {
 import { v7 as uuidv7 } from 'uuid';
 import { z } from 'zod';
 import { APIError } from 'openai/error';
-import { isPlausibleTokens, type LlmStage, type MemoryContext, type PriceWindow } from '@choral-writer/shared';
+import {
+  isPlausibleTokens, type ContextComposition, type LlmStage, type MemoryContext, type PriceWindow,
+} from '@choral-writer/shared';
 
 import { ApiError } from '../errors/errors.js';
 import { normalizeLlmError } from '../errors/llmErrors.js';
@@ -27,16 +29,21 @@ export interface CallLLMInput<T = unknown> {
   stage: LlmStage;
   messages: ChatCompletionMessageParam[];
   memory?: MemoryContext;
+  /** Taille estimée de chaque partie de `messages`, enregistrée avec la trace. */
+  composition?: ContextComposition;
   /**
    * L'entrée est volontairement `any` : la validation s'applique au résultat de
    * `JSON.parse`, et un schéma avec valeur par défaut a une entrée plus large que sa
    * sortie (`memoryProposalsSchema`). Typer l'entrée en `unknown` rejetterait ce cas légitime.
    */
   schema?: z.ZodType<T, z.ZodTypeDef, any>;
-  validateResponse?: (content: string) => void;
   onDelta?: (delta: string) => void | Promise<void>;
   signal?: AbortSignal;
+  /** Délai maximal de l'appel ; 120 s par défaut, à allonger seulement pour une entrée exceptionnellement longue. */
+  timeoutMs?: number;
 }
+
+const DEFAULT_TIMEOUT_MS = 120_000;
 
 export interface LlmCallTrace {
   id: string;
@@ -49,6 +56,7 @@ export interface LlmCallTrace {
   model: string;
   messages: ChatCompletionMessageParam[];
   memory?: MemoryContext;
+  composition?: ContextComposition;
   response: string | null;
   inputTokens: number | null;
   outputTokens: number | null;
@@ -92,7 +100,7 @@ interface LLMClient {
     completions: {
       create(
         params: ChatCompletionCreateParamsNonStreaming | ChatCompletionCreateParamsStreaming,
-        options?: { signal?: AbortSignal },
+        options?: { signal?: AbortSignal; timeout?: number },
       ): Promise<ChatCompletion | AsyncIterable<ChatCompletionChunk>>;
     };
   };
@@ -148,7 +156,8 @@ export function createCallLLM({
     let outputTokens: number | null = null;
     let cachedInputTokens: number | null = null;
     let providerCostUsd: number | null = null;
-    const timeout = AbortSignal.timeout(120_000);
+    const timeoutMs = input.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    const timeout = AbortSignal.timeout(timeoutMs);
     const signal = input.signal ? AbortSignal.any([input.signal, timeout]) : timeout;
 
     /** Normalise la consommation via la stratégie fournisseur : aucune lecture directe de `usage`. */
@@ -202,7 +211,7 @@ export function createCallLLM({
         stream: Boolean(input.onDelta),
         ...(input.onDelta ? { stream_options: { include_usage: true } } : {}),
         ...(input.schema ? { response_format: { type: 'json_object' } } : {}),
-      }, { signal });
+      }, { signal, timeout: timeoutMs });
 
       if (Symbol.asyncIterator in result) {
         content = '';
@@ -261,7 +270,6 @@ export function createCallLLM({
           });
         }
       }
-      input.validateResponse?.(content);
     } catch (error) {
       const durationMs = Math.max(0, now() - startedAt);
       try {
@@ -276,6 +284,7 @@ export function createCallLLM({
           model,
           messages: input.messages,
           memory: input.memory,
+          composition: input.composition,
           response: content,
           inputTokens,
           outputTokens,
@@ -309,6 +318,7 @@ export function createCallLLM({
       model,
       messages: input.messages,
       memory: input.memory,
+      composition: input.composition,
       response: content,
       inputTokens,
       outputTokens,

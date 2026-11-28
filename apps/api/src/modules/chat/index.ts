@@ -3,6 +3,7 @@ import type { createCallLLM } from '../../llm/call-llm.js';
 import type { ProjectsService } from '../projects/services/projectServices.js';
 import { ChatService } from './services/chatService.js';
 import { ChatAnalysisService } from './services/analysisService.js';
+import { ChatDirectorService } from './services/directorService.js';
 import { ChatBranchService } from './services/branchService.js';
 import { ChatMessageService } from './services/messageService.js';
 import { ChatTurnService } from './services/turnService.js';
@@ -16,6 +17,8 @@ import { MemoriesService } from '../memories/services/memoriesService.js';
 
 export type { ChatService } from './services/chatService.js';
 export { ChatController } from './controllers/chatController.js';
+export { VariantAdoptionService } from './services/variantAdoptionService.js';
+export { registerVariantAdoptionRoutes } from './routes/variantAdoptionRoutes.js';
 
 /** Also used by project creation to initialize chat through its branch service. */
 export function createChatBranchService(connection: Database | Transaction, projectId: string): ChatBranchService {
@@ -36,12 +39,14 @@ export function createChatService(
 ): ChatService {
   const transaction = new ChatTransactionService(projects, createEntityServices, memories);
   const analysis = new ChatAnalysisService(callLLM);
+  const director = new ChatDirectorService(callLLM);
   const narrator = new ChatNarratorService(callLLM);
   return new ChatService({
     projects,
     servicesForProject: (projectId) => createEntityServices(database, projectId),
     withProjectTransaction: (projectId, work) => transaction.run(projectId, work),
     analyze: (input) => analysis.generate(input),
+    direct: (input) => director.generate(input),
     narrate: (input) => narrator.generate(input),
   });
 }

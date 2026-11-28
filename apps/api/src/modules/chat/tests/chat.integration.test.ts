@@ -8,9 +8,9 @@ import type {
 import { APIError } from 'openai/error';
 import { v7 as uuidv7 } from 'uuid';
 import {
-  agentSchema, projectAgentSchema, chatEventSchema, chatHistorySchema, projectSchema,
-  traceCallDetailSchema, turnTraceSummarySchema,
-  memoryViewSchema, memoryTraceSchema, type MemoryMutation, type MemoryProposal,
+  agentSchema, projectAgentSchema, chatEventSchema, chatHistorySchema, projectSchema, CONTEXT_CHARS_PER_TOKEN,
+  traceCallDetailSchema, turnMetricsListSchema, turnTraceSummarySchema,
+  memoryViewSchema, memoryTraceSchema, type MemoryMutation, type MemoryProposal, type MemoryView,
 } from '@choral-writer/shared';
 
 import { buildApp } from '../../../app.js';
@@ -21,6 +21,8 @@ import { testProvider } from '../../../tests/support/callLLM.js';
 import { createUsageService } from '../../../llm/usage/usageService.js';
 import { createChatBranchService, createChatService } from '../index.js';
 import { ChatMessageService } from '../services/messageService.js';
+import { narratorSystemSections } from '../services/narratorPrompt.js';
+import { joinSections } from '../../../llm/contextComposition.js';
 import { ChatTurnService } from '../services/turnService.js';
 import { ChatMessageRepository } from '../repositories/messageRepository.js';
 import { ChatTurnRepository } from '../repositories/turnRepository.js';
@@ -33,16 +35,18 @@ import { MemoriesService } from '../../memories/services/memoriesService.js';
 describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', () => {
   const pool = createTestPool();
   const database = drizzle(pool, { schema });
-  const analysisContent = JSON.stringify({
+  const defaultAnalysisContent = JSON.stringify({
     v: 1, agent: 'Chaos', summary: 'There may be a trap.', items: [
       { kind: 'observation', text: 'A wire is visible.', importance: 'HIGH' },
     ],
   });
+  let analysisContent = defaultAnalysisContent;
   let guardianOutput: string | null = null;
   let setupOutput: string | null = null;
+  let directorOutput = '{}';
   let generate: (signal?: AbortSignal) => AsyncGenerator<ChatCompletionChunk> = async function* () {
-    yield chunk('<resolution>La porte s’ouvre.</resolution><prose>Bonjour ');
-    yield chunk('Mara.</prose>');
+    yield chunk('Bonjour ');
+    yield chunk('Mara.');
     yield chunk('', 'stop');
   };
   const create = vi.fn(async (
@@ -51,8 +55,9 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
   ): Promise<ChatCompletion | AsyncIterable<ChatCompletionChunk>> => {
     if (params.stream) return generate(options?.signal);
     const system = params.messages[0]?.content;
-    const content = typeof system === 'string' && system.includes('Propose a compact memory routing configuration')
-      ? setupOutput ?? '{}' : typeof system === 'string' && system.includes('Maintain memory from established narrative events')
+    const content = typeof system === 'string' && system.includes('Tu diriges ce tour') ? directorOutput
+      : typeof system === 'string' && system.includes('Propose a compact memory routing configuration')
+      ? setupOutput ?? '{}' : typeof system === 'string' && system.includes('Tiens la mémoire à jour')
         ? guardianOutput ?? analysisContent : analysisContent;
     return {
       id: 'analysis', object: 'chat.completion', created: 0, model: 'simulated-model',
@@ -69,8 +74,8 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
     provider: testProvider,
     usage: createUsageService(database),
     traces: {
-      insert: async ({ messages, memory, ...trace }) => {
-        await database.insert(schema.llmCall).values({ ...trace, request: { messages, memory } });
+      insert: async ({ messages, memory, composition, ...trace }) => {
+        await database.insert(schema.llmCall).values({ ...trace, request: { messages, memory, composition } });
       },
     },
   });
@@ -82,7 +87,7 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
     appPassword: 'test-password',
     cookieSecret: 'test-cookie-secret-with-at-least-thirty-two-characters',
     nodeEnv: 'test',
-  }, { projects, agents, chat, traces: createTraceService(database, chat), memories });
+  }, { projects, agents, chat, traces: createTraceService(database), memories });
   let cookie: string;
   let address: string;
   const createdIds: string[] = [];
@@ -103,6 +108,9 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
     expect(response.statusCode).toBe(201);
     const project = projectSchema.parse(response.json());
     createdIds.push(project.id);
+    expect((await memoryView(project.id, project.defaultBranchId!)).enabled).toBe(true);
+    // Memory starts on; tests outside memory switch it off to count only their own model calls.
+    await memoryChange(project.id, project.defaultBranchId!, { op: 'settings', enabled: false });
     return project;
   }
 
@@ -121,11 +129,8 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
     const project = await projects.get(projectId);
     const narrator = (await agents.listForProject(projectId)).find((agent) => agent.output === 'narrative');
     if (!narrator) throw new Error('Missing narrator assignment.');
-    return [
-      [project.systemPrompt, narrator.instructions].filter(Boolean).join('\n\n'),
-      'Use the validated analysis envelopes below as context. Return exactly one <resolution> section followed by one <prose> section, with no text outside those tags.',
-      '[]',
-    ].filter(Boolean).join('\n\n');
+    return joinSections(narratorSystemSections(
+      project.systemPrompt, narrator.instructions, [], { tags: [], entries: [] }, null));
   }
 
   async function sendOnBranch(projectId: string, branchId: string, content: string) {
@@ -147,11 +152,12 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
 
   async function repeat(
     projectId: string, branchId: string, turnId: string, operation: 'regenerate' | 'retry',
+    input: Record<string, unknown> = {},
   ) {
     return app.inject({
       method: 'POST',
       url: `/api/projects/${projectId}/branches/${branchId}/turns/${turnId}/${operation}`,
-      headers: { cookie }, payload: { expectedHeadTurnId: turnId },
+      headers: { cookie }, payload: { expectedHeadTurnId: turnId, ...input },
     });
   }
 
@@ -350,7 +356,7 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
     const [trace] = await database.select().from(schema.llmCall).where(eq(schema.llmCall.turnId, start.turnId));
     const narrator = (await agents.listForProject(first.id)).find((agent) => agent.output === 'narrative');
     expect(trace).toMatchObject({
-      response: '<resolution>La porte s’ouvre.</resolution><prose>Bonjour Mara.</prose>',
+      response: 'Bonjour Mara.',
       agentId: narrator?.agentId, agentVersionId: narrator?.versionId,
       status: 'success', model: 'simulated-model', inputTokens: 20,
     });
@@ -362,11 +368,15 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
     expect(traceSummary).toMatchObject({
       turnId: start.turnId,
       analysis: [],
-      narrator: { status: 'success', resolution: 'La porte s’ouvre.', prose: 'Bonjour Mara.' },
+      narrator: { status: 'success', prose: 'Bonjour Mara.' },
     });
     // The simulated model has no price grid: its usage is recorded, but the turn total is partial.
     expect(traceSummary.calls.map((call) => call.costBasis)).toEqual(traceSummary.calls.map(() => 'unpriced'));
     expect(traceSummary.cost).toEqual({ microUsd: 0, complete: false });
+    const narratorComposition = traceSummary.calls.find((call) => call.stage === 'narrator')?.composition;
+    expect(narratorComposition?.map((entry) => entry.part)).toEqual(expect.arrayContaining(['systemPrompt', 'rules', 'input']));
+    expect(narratorComposition?.find((entry) => entry.part === 'input')?.estimatedTokens)
+      .toBe(Math.ceil('Mara entre.'.length / CONTEXT_CHARS_PER_TOKEN));
     const traceDetailResponse = await app.inject({
       method: 'GET',
       url: `/api/projects/${first.id}/turns/${start.turnId}/traces/${trace.id}`,
@@ -376,7 +386,7 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
     const traceDetail = traceCallDetailSchema.parse(traceDetailResponse.json());
     expect(traceDetail).toMatchObject({
       id: trace.id,
-      response: '<resolution>La porte s’ouvre.</resolution><prose>Bonjour Mara.</prose>',
+      response: 'Bonjour Mara.',
     });
     expect(traceDetail.request.messages).toEqual(expect.arrayContaining([
       { role: 'system', content: expect.any(String) },
@@ -386,6 +396,28 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
       method: 'GET', url: `/api/projects/${second.id}/turns/${start.turnId}/traces`, headers: { cookie },
     });
     expect(foreignTrace.statusCode).toBe(404);
+    const metricsResponse = await app.inject({
+      method: 'GET', url: `/api/projects/${first.id}/branches/${first.defaultBranchId}/turn-metrics`, headers: { cookie },
+    });
+    expect(metricsResponse.statusCode).toBe(200);
+    // Calls of the run are recorded before the turn completes, so they all count in its duration.
+    expect(traceSummary.timeline.map((stage) => stage.stage)).toEqual([...new Set(traceSummary.calls.map((call) => call.stage))]);
+    expect(turnMetricsListSchema.parse(metricsResponse.json())).toEqual([{
+      turnId: start.turnId, durationMs: traceSummary.durationMs,
+      cost: { microUsd: 0, complete: false }, narratorInputTokens: 20, narratorComposition,
+      configurationChanges: null, direction: null,
+    }]);
+    // A call recorded before compositions keeps being summarized, without one.
+    await database.update(schema.llmCall).set({ request: { messages: trace.request.messages } })
+      .where(eq(schema.llmCall.id, trace.id));
+    const legacySummary = turnTraceSummarySchema.parse((await app.inject({
+      method: 'GET', url: `/api/projects/${first.id}/turns/${start.turnId}/traces`, headers: { cookie },
+    })).json());
+    expect(legacySummary.calls.find((call) => call.id === trace.id)?.composition).toBeNull();
+    const legacyMetrics = turnMetricsListSchema.parse((await app.inject({
+      method: 'GET', url: `/api/projects/${first.id}/branches/${first.defaultBranchId}/turn-metrics`, headers: { cookie },
+    })).json());
+    expect(legacyMetrics[0]?.narratorComposition).toBeNull();
     const [turn] = await database.select().from(schema.chatTurns).where(eq(schema.chatTurns.id, start.turnId));
     expect(turn.status).toBe('completed');
     await send(first.id, 'Elle avance.');
@@ -453,14 +485,188 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
       { name: 'Chaos', status: 'success', envelope: { summary: 'There may be a trap.' } },
     ]);
     const narratorCall = create.mock.calls.at(-1)?.[0];
-    expect(String(narratorCall?.messages[0]?.content)).toContain('"agent":"Chaos"');
+    expect(String(narratorCall?.messages[0]?.content)).toContain('## Chaos');
+
+    await agents.configure(project.id, { agents: defaults.map(({ agentId, versionId }) => ({ agentId, versionId })) });
+    const later = await app.inject({
+      method: 'GET', url: `/api/projects/${project.id}/turns/${start.turnId}/traces`, headers: { cookie },
+    });
+    const { configuration } = turnTraceSummarySchema.parse(later.json());
+    expect(configuration?.systemPrompt).toBe(project.systemPrompt);
+    expect(configuration?.agents).toHaveLength(defaults.length + 1);
+    expect(configuration?.agents).toContainEqual(expect.objectContaining({
+      agentId: analyst.id, versionId: analysisVersion.id, version: 1, name: 'Chaos', phase: 'analysis', output: 'envelope',
+    }));
+  });
+
+  it('directs the turn when a Director is configured, and falls back to the whole whiteboard when it fails', async () => {
+    const project = await createProject('Direction');
+    const defaults = await agents.listForProject(project.id);
+    const analyst = await agents.create({ name: 'Chaos', instructions: 'Find uncertainty.', phase: 'analysis', output: 'envelope' });
+    const director = agentSchema.parse((await app.inject({
+      method: 'POST', url: '/api/agents', headers: { cookie },
+      payload: { name: 'Directeur', instructions: 'Oriente la scène.', phase: 'direction', output: 'direction' },
+    })).json());
+    const second = await agents.create({ name: 'Autre directeur', instructions: '', phase: 'direction', output: 'direction' });
+    const team = [
+      ...defaults.map(({ agentId, versionId }) => ({ agentId, versionId })),
+      { agentId: analyst.id, versionId: analyst.versions[0]!.id },
+      { agentId: director.id, versionId: director.versions[0]!.id },
+    ];
+    const duplicate = await app.inject({
+      method: 'PUT', url: `/api/projects/${project.id}/agents`, headers: { cookie },
+      payload: { agents: [...team, { agentId: second.id, versionId: second.versions[0]!.id }] },
+    });
+    expect(duplicate.json()).toMatchObject({ error: { code: 'SINGLE_DIRECTOR' } });
+    const configured = await agents.configure(project.id, { agents: team });
+    expect(configured.find((agent) => agent.agentId === director.id)?.memoryRead).toEqual({ mode: 'none', tagIds: [] });
+    const branchId = (await projects.get(project.id)).defaultBranchId!;
+    const view = await memoryView(project.id, branchId);
+    const refused = await app.inject({ method: 'POST', headers: { cookie },
+      url: `/api/projects/${project.id}/branches/${branchId}/memories`,
+      payload: { expectedHeadTurnId: view.headTurnId, expectedRevisionId: view.revisionId,
+        expectedCatalogRevisionId: view.catalogRevisionId,
+        change: { op: 'setAgentRead', agentId: director.id, read: { mode: 'all', tagIds: [] } } },
+    });
+    expect(refused.statusCode).toBe(422);
+    expect(refused.json()).toMatchObject({ error: { code: 'DIRECTOR_HAS_NO_MEMORY' } });
+
+    directorOutput = JSON.stringify({
+      v: 1, retained: [{ item: 'c1', why: 'Concret.' }], dismissed: [], tension: 'monter',
+      nudges: [{ type: 'saillance', target: 'Le fil.', basis: null }],
+    });
+    const directed = events((await send(project.id, 'J’ouvre la porte.')).body);
+    const start = directed.find((event) => event.type === 'chat.turn.started');
+    if (start?.type !== 'chat.turn.started') throw new Error('Missing started turn.');
+    expect(directed.flatMap((event) => event.type === 'chat.pipeline.stage' ? [`${event.stage}:${event.status}`] : []))
+      .toEqual(expect.arrayContaining(['direction:started', 'direction:completed']));
+    expect(directed.at(-1)?.type).toBe('chat.turn.completed');
+    const narratorPrompt = String(create.mock.calls.at(-1)?.[0].messages[0]?.content);
+    expect(narratorPrompt).toContain('DIRECTION DU TOUR');
+    expect(narratorPrompt).toContain('- observation (importance haute) : A wire is visible.');
+    expect(narratorPrompt).not.toContain('ANALYSES DES AGENTS');
+    const summary = turnTraceSummarySchema.parse((await app.inject({
+      method: 'GET', url: `/api/projects/${project.id}/turns/${start.turnId}/traces`, headers: { cookie },
+    })).json());
+    expect(summary.direction).toMatchObject({
+      name: 'Directeur', status: 'success', attempts: 1,
+      cost: { microUsd: expect.any(Number), complete: expect.any(Boolean) },
+      direction: { tension: 'monter', retained: [{ agent: 'Chaos', why: 'Concret.' }], dismissed: [] },
+    });
+    expect(summary.calls.find((call) => call.stage === 'direction')?.costBasis).not.toBeNull();
+    expect(summary.configuration?.agents).toContainEqual(expect.objectContaining({
+      agentId: director.id, version: 1, phase: 'direction', output: 'direction',
+    }));
+
+    directorOutput = 'pas du JSON';
+    const fallback = events((await send(project.id, 'Je recule.')).body);
+    const next = fallback.find((event) => event.type === 'chat.turn.started');
+    if (next?.type !== 'chat.turn.started') throw new Error('Missing started turn.');
+    expect(fallback).toContainEqual(expect.objectContaining({ type: 'chat.pipeline.stage', stage: 'direction', status: 'failed' }));
+    expect(fallback.at(-1)?.type).toBe('chat.turn.completed');
+    const directorPrompts = create.mock.calls.map(([params]) => String(params.messages[0]?.content))
+      .filter((content) => content.includes('Tu diriges ce tour'));
+    expect(directorPrompts.at(-1)).toContain('Types interdits à ce tour, car employés au tour précédent : saillance.');
+    expect(String(create.mock.calls.at(-1)?.[0].messages[0]?.content)).toContain('ANALYSES DES AGENTS');
+    const failed = turnTraceSummarySchema.parse((await app.inject({
+      method: 'GET', url: `/api/projects/${project.id}/turns/${next.turnId}/traces`, headers: { cookie },
+    })).json());
+    expect(failed.direction).toMatchObject({ status: 'error', attempts: 2, direction: null });
+    const metrics = turnMetricsListSchema.parse((await app.inject({
+      method: 'GET', url: `/api/projects/${project.id}/branches/${branchId}/turn-metrics`, headers: { cookie },
+    })).json());
+    expect(metrics.map((turn) => turn.direction)).toEqual([
+      { status: 'success', tension: 'monter', nudges: ['saillance'] },
+      { status: 'error' },
+    ]);
+  });
+
+  it('records the developments of a turn: the Narrator tells the scene ones, the Guardian learns them all', async () => {
+    const project = await createProject('Développements');
+    const branchId = project.defaultBranchId!;
+    const world = await agents.create({ name: 'Monde', instructions: 'Fais avancer le monde.', phase: 'analysis', output: 'envelope' });
+    await agents.configure(project.id, { agents: [
+      ...(await agents.listForProject(project.id)).map(({ agentId, versionId }) => ({ agentId, versionId })),
+      { agentId: world.id, versionId: world.versions[0]!.id },
+    ] });
+    await memoryChange(project.id, branchId, { op: 'settings', enabled: true });
+    const scene = { kind: 'development', characters: ['Mara'], scope: 'scene', text: 'La lampe s’éteint.', importance: 'HIGH' };
+    const offscreen = {
+      kind: 'development', characters: ['Le facteur'], scope: 'offscreen', text: 'Le facteur quitte le village.', importance: 'LOW',
+    };
+    analysisContent = JSON.stringify({ v: 1, agent: 'Monde', summary: 'Le soir tombe.', items: [scene, offscreen] });
+    try {
+      propose([]);
+      const callsBefore = create.mock.calls.length;
+      const completed = events((await send(project.id, 'J’attends.')).body).at(-1);
+      if (completed?.type !== 'chat.turn.completed') throw new Error('Missing completed turn.');
+      const requests = create.mock.calls.slice(callsBefore).map(([params]) => params);
+      const narratorPrompt = String(requests.find((params) => params.stream)?.messages[0]?.content);
+      expect(narratorPrompt).toContain('La lampe s’éteint.');
+      expect(narratorPrompt).not.toContain('Le facteur quitte le village.');
+      const guardianRequest = JSON.stringify(requests.find((params) =>
+        String(params.messages[0]?.content).includes('Tiens la mémoire à jour'))?.messages);
+      expect(guardianRequest).toContain('La lampe s’éteint.');
+      expect(guardianRequest).toContain('Le facteur quitte le village.');
+
+      const summary = turnTraceSummarySchema.parse((await app.inject({
+        method: 'GET', url: `/api/projects/${project.id}/turns/${completed.turnId}/traces`, headers: { cookie },
+      })).json());
+      expect(summary.developments).toEqual({
+        scene: [{ agent: 'Monde', item: scene }],
+        offscreen: [{ agent: 'Monde', item: offscreen }],
+      });
+
+      const view = await memoryView(project.id, branchId);
+      const repair = await app.inject({ method: 'POST', headers: { cookie },
+        url: `/api/projects/${project.id}/branches/${branchId}/turns/${completed.turnId}/memory/retry`,
+        payload: { expectedHeadTurnId: completed.turnId, expectedRevisionId: view.revisionId,
+          expectedCatalogRevisionId: view.catalogRevisionId } });
+      expect(repair.statusCode, repair.body).toBe(200);
+      expect(JSON.stringify(create.mock.calls.at(-1)![0].messages)).toContain('Le facteur quitte le village.');
+    } finally {
+      analysisContent = defaultAnalysisContent;
+      guardianOutput = null;
+    }
+  });
+
+  it('still reads a turn recorded under the former contract, where development was a free-form kind', async () => {
+    const project = await createProject('Ancien format');
+    const analyst = await agents.create({ name: 'Chaos', instructions: 'Find uncertainty.', phase: 'analysis', output: 'envelope' });
+    const director = await agents.create({ name: 'Directeur ancien', instructions: '', phase: 'direction', output: 'direction' });
+    await agents.configure(project.id, { agents: [
+      ...(await agents.listForProject(project.id)).map(({ agentId, versionId }) => ({ agentId, versionId })),
+      { agentId: analyst.id, versionId: analyst.versions[0]!.id },
+      { agentId: director.id, versionId: director.versions[0]!.id },
+    ] });
+    directorOutput = JSON.stringify({ v: 1, retained: [{ item: 'c1', why: 'Concret.' }], dismissed: [], tension: 'tenir', nudges: [] });
+    const started = events((await send(project.id, 'J’attends.')).body).find((event) => event.type === 'chat.turn.started');
+    if (started?.type !== 'chat.turn.started') throw new Error('Missing started turn.');
+    const legacyItem = { kind: 'development', text: 'Un fait générique.', importance: 'NORMAL' };
+    await pool.query('update choral_writer.chat_turn set direction = $1, developments = null where id = $2', [
+      JSON.stringify({ tension: 'tenir', nudges: [{ type: 'saillance', target: 'Le fait.', basis: { agent: 'Chaos', item: legacyItem } }],
+        retained: [{ agent: 'Chaos', item: legacyItem, why: 'Concret.' }], dismissed: [] }),
+      started.turnId,
+    ]);
+    await pool.query('update choral_writer.llm_call set response = $1 where turn_id = $2 and stage = $3', [
+      JSON.stringify({ v: 1, agent: 'Chaos', summary: 'Résumé.', items: [legacyItem] }), started.turnId, 'analysis',
+    ]);
+
+    const response = await app.inject({
+      method: 'GET', url: `/api/projects/${project.id}/turns/${started.turnId}/traces`, headers: { cookie },
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    const summary = turnTraceSummarySchema.parse(response.json());
+    expect(summary.analysis).toMatchObject([{ name: 'Chaos', status: 'success', envelope: { items: [legacyItem] } }]);
+    expect(summary.direction?.direction?.retained).toEqual([{ agent: 'Chaos', item: legacyItem, why: 'Concret.' }]);
+    expect(summary.developments).toBeNull();
   });
 
   it('retains the user message and failure trace but never persists a partial assistant reply', async () => {
     const project = await createProject('Erreur fournisseur');
     const normal = generate;
     generate = async function* () {
-      yield chunk('<resolution>Faits.</resolution><prose>Réponse partielle');
+      yield chunk('Réponse partielle');
       throw APIError.generate(402, { error: { message: 'Insufficient Balance' } }, undefined, new Headers({
         'x-request-id': 'simulated-provider-request',
       }));
@@ -481,7 +687,7 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
       const [trace] = await database.select().from(schema.llmCall).where(eq(schema.llmCall.turnId, turn.id));
       expect(trace).toMatchObject({
         status: 'error',
-        response: '<resolution>Faits.</resolution><prose>Réponse partielle',
+        response: 'Réponse partielle',
       });
     } finally {
       generate = normal;
@@ -524,8 +730,7 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
       const previousCalls = create.mock.calls.length;
       await projects.update(project.id, { name: project.name, systemPrompt: 'Prompt modifié.' });
       generate = async function* () {
-        yield chunk('<resolution>Alternative.</resolution><prose>Réponse alternative.');
-        yield chunk('</prose>');
+        yield chunk('Réponse alternative.');
         yield chunk('', 'stop');
       };
       const regenerated = events((await repeat(
@@ -578,6 +783,174 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
     }
   });
 
+  it('replays the last turn with a replacement configuration without changing the project', async () => {
+    const project = await createProject('Variante', 'Prompt du projet.');
+    const original = events((await send(project.id, 'Même saisie.')).body).at(-1);
+    if (original?.type !== 'chat.turn.completed') throw new Error('Missing source turn.');
+    const team = await agents.listForProject(project.id);
+    const variantNarrator = agentSchema.parse((await app.inject({
+      method: 'POST', url: '/api/agents', headers: { cookie },
+      payload: { name: 'Narrateur variante', phase: 'restitution', output: 'narrative', instructions: 'Ton variante.' },
+    })).json());
+    const variantAgents = team.map((agent) => agent.output === 'narrative'
+      ? { agentId: variantNarrator.id, versionId: variantNarrator.versions[0]!.id }
+      : { agentId: agent.agentId, versionId: agent.versionId });
+
+    const invalid = await repeat(project.id, original.branchId, original.turnId, 'regenerate', {
+      configuration: { systemPrompt: 'Prompt variante.', agents: variantAgents.filter((agent) => agent.agentId !== variantNarrator.id) },
+    });
+    expect(invalid.statusCode).toBe(400);
+    expect(invalid.json()).toMatchObject({ error: { code: 'REQUIRED_AGENT_OUTPUTS' } });
+    expect(await database.select().from(schema.chatBranches).where(eq(schema.chatBranches.projectId, project.id)))
+      .toHaveLength(1);
+
+    const variant = events((await repeat(project.id, original.branchId, original.turnId, 'regenerate', {
+      configuration: { systemPrompt: 'Prompt variante.', agents: variantAgents },
+    })).body).at(-1);
+    if (variant?.type !== 'chat.turn.completed') throw new Error('Missing variant turn.');
+
+    expect(variant.branchId).not.toBe(original.branchId);
+    expect(create).toHaveBeenLastCalledWith(expect.objectContaining({
+      messages: expect.arrayContaining([{
+        role: 'system', content: expect.stringContaining('Prompt variante.\n\nTon variante.'),
+      }]),
+    }), expect.anything());
+    const summary = await app.inject({
+      method: 'GET', url: `/api/projects/${project.id}/turns/${variant.turnId}/traces`, headers: { cookie },
+    });
+    const { configuration } = turnTraceSummarySchema.parse(summary.json());
+    expect(configuration?.systemPrompt).toBe('Prompt variante.');
+    expect(configuration?.agents).toContainEqual(expect.objectContaining({
+      agentId: variantNarrator.id, name: 'Narrateur variante', output: 'narrative', memoryRead: { mode: 'all', tagIds: [] },
+    }));
+    expect((await projects.get(project.id)).systemPrompt).toBe('Prompt du projet.');
+    expect(await agents.listForProject(project.id)).toEqual(team);
+  });
+
+  it('retries a failed variant and repairs its memory with the configuration recorded on the turn', async () => {
+    const project = await createProject('Relance variante', 'Prompt du projet.');
+    await memoryChange(project.id, project.defaultBranchId!, { op: 'settings', enabled: true });
+    const original = events((await send(project.id, 'Même saisie.')).body).at(-1);
+    if (original?.type !== 'chat.turn.completed') throw new Error('Missing source turn.');
+    const variantNarrator = agentSchema.parse((await app.inject({
+      method: 'POST', url: '/api/agents', headers: { cookie },
+      payload: { name: 'Narrateur relance', phase: 'restitution', output: 'narrative', instructions: 'Ton relance.' },
+    })).json());
+    const director = agentSchema.parse((await app.inject({
+      method: 'POST', url: '/api/agents', headers: { cookie },
+      payload: { name: 'Directeur relance', phase: 'direction', output: 'direction', instructions: 'Oriente.' },
+    })).json());
+    const configuration = {
+      systemPrompt: 'Prompt variante.',
+      agents: [...(await agents.listForProject(project.id)).map((agent) => agent.output === 'narrative'
+        ? { agentId: variantNarrator.id, versionId: variantNarrator.versions[0]!.id }
+        : { agentId: agent.agentId, versionId: agent.versionId }),
+      { agentId: director.id, versionId: director.versions[0]!.id }],
+    };
+    const normal = generate;
+    generate = async function* () { throw new Error('simulated failure'); };
+    let failed;
+    try {
+      failed = events((await repeat(project.id, original.branchId, original.turnId, 'regenerate', { configuration })).body).at(-1);
+    } finally { generate = normal; }
+    if (failed?.type !== 'chat.turn.failed' || !failed.turnId || !failed.branchId) throw new Error('Missing failed variant.');
+
+    try {
+      guardianOutput = ' \n '.repeat(100);
+      const callsBeforeRetry = create.mock.calls.length;
+      const retried = events((await repeat(project.id, failed.branchId, failed.turnId, 'retry')).body).at(-1);
+      if (retried?.type !== 'chat.turn.completed') throw new Error('Missing retried variant.');
+      const narration = create.mock.calls.slice(callsBeforeRetry).find(([params]) => params.stream);
+      expect(narration?.[0].messages[0]?.content).toContain('Prompt variante.\n\nTon relance.');
+      const { configuration: recorded } = turnTraceSummarySchema.parse((await app.inject({
+        method: 'GET', url: `/api/projects/${project.id}/turns/${retried.turnId}/traces`, headers: { cookie },
+      })).json());
+      expect(recorded?.agents).toContainEqual(expect.objectContaining({
+        agentId: director.id, versionId: director.versions[0]!.id, output: 'direction',
+      }));
+      const turn = (await history(project.id, failed.branchId)).turns.at(-1)!;
+      expect(turn.memory?.status).toBe('failed');
+
+      const view = await memoryView(project.id, failed.branchId);
+      propose([]);
+      const repair = await app.inject({ method: 'POST', headers: { cookie },
+        url: `/api/projects/${project.id}/branches/${failed.branchId}/turns/${turn.id}/memory/retry`,
+        payload: { expectedHeadTurnId: turn.id, expectedRevisionId: view.revisionId,
+          expectedCatalogRevisionId: view.catalogRevisionId } });
+      expect(repair.statusCode, repair.body).toBe(200);
+      const guardianRequest = JSON.stringify(create.mock.calls.at(-1)![0].messages);
+      expect(guardianRequest).toContain('Tiens la mémoire à jour');
+      expect(guardianRequest).toContain('Prompt variante.');
+      expect(guardianRequest).not.toContain('Prompt du projet.');
+    } finally { guardianOutput = null; }
+    expect((await projects.get(project.id)).systemPrompt).toBe('Prompt du projet.');
+  });
+
+  it('retries a failed turn with a corrected configuration on the same branch, checking the turn first', async () => {
+    const project = await createProject('Relance corrigée', 'Prompt du projet.');
+    const normal = generate;
+    generate = async function* () { throw new Error('simulated failure'); };
+    let failed;
+    try {
+      failed = events((await send(project.id, 'Même saisie.')).body).at(-1);
+    } finally { generate = normal; }
+    if (failed?.type !== 'chat.turn.failed' || !failed.turnId || !failed.branchId) throw new Error('Missing failed turn.');
+    const team = await agents.listForProject(project.id);
+    const correctedNarrator = agentSchema.parse((await app.inject({
+      method: 'POST', url: '/api/agents', headers: { cookie },
+      payload: { name: 'Narrateur corrigé', phase: 'restitution', output: 'narrative', instructions: 'Ton corrigé.' },
+    })).json());
+    const configuration = {
+      systemPrompt: 'Prompt corrigé.',
+      agents: team.map((agent) => agent.output === 'narrative'
+        ? { agentId: correctedNarrator.id, versionId: correctedNarrator.versions[0]!.id }
+        : { agentId: agent.agentId, versionId: agent.versionId }),
+    };
+
+    const stale = await app.inject({
+      method: 'POST', url: `/api/projects/${project.id}/branches/${failed.branchId}/turns/${failed.turnId}/retry`,
+      headers: { cookie }, payload: { expectedHeadTurnId: null, configuration: { ...configuration, agents: [] } },
+    });
+    expect(stale.statusCode).toBe(409);
+    expect(stale.json()).toMatchObject({ error: { code: 'CHAT_HEAD_CHANGED' } });
+
+    const retried = events((await repeat(project.id, failed.branchId, failed.turnId, 'retry', { configuration })).body).at(-1);
+    if (retried?.type !== 'chat.turn.completed') throw new Error('Missing retried turn.');
+    expect(retried.branchId).toBe(failed.branchId);
+    expect(create).toHaveBeenLastCalledWith(expect.objectContaining({
+      messages: expect.arrayContaining([{
+        role: 'system', content: expect.stringContaining('Prompt corrigé.\n\nTon corrigé.'),
+      }]),
+    }), expect.anything());
+    expect((await history(project.id, failed.branchId)).turns).toMatchObject([{ retryOfTurnId: failed.turnId }]);
+    expect(await database.select().from(schema.chatBranches).where(eq(schema.chatBranches.projectId, project.id)))
+      .toHaveLength(1);
+    expect((await projects.get(project.id)).systemPrompt).toBe('Prompt du projet.');
+    expect(await agents.listForProject(project.id)).toEqual(team);
+  });
+
+  it('retries a turn recorded without configuration with the project configuration', async () => {
+    const project = await createProject('Relance ancienne', 'Prompt du projet.');
+    const normal = generate;
+    generate = async function* () { throw new Error('simulated failure'); };
+    let failed;
+    try {
+      failed = events((await send(project.id, 'Même saisie.')).body).at(-1);
+    } finally { generate = normal; }
+    if (failed?.type !== 'chat.turn.failed' || !failed.turnId || !failed.branchId) throw new Error('Missing failed turn.');
+    await database.update(schema.chatTurns).set({ configuration: null }).where(eq(schema.chatTurns.id, failed.turnId));
+    expect((await app.inject({
+      method: 'PUT', url: `/api/projects/${project.id}`, headers: { cookie },
+      payload: { name: 'Relance ancienne', systemPrompt: 'Prompt modifié.' },
+    })).statusCode).toBe(200);
+
+    const retried = events((await repeat(project.id, failed.branchId, failed.turnId, 'retry')).body).at(-1);
+    expect(retried?.type).toBe('chat.turn.completed');
+    expect(create).toHaveBeenLastCalledWith(expect.objectContaining({
+      messages: expect.arrayContaining([{ role: 'system', content: await narratorPrompt(project.id) }]),
+    }), expect.anything());
+  });
+
   it('preserves a failed alternative and retries it without overwriting or repeating the user input', async () => {
     const project = await createProject('Retry');
     const original = events((await send(project.id, 'Même saisie.')).body).at(-1);
@@ -586,7 +959,7 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
     let failedTurnId: string;
     let alternativeId: string;
     generate = async function* () {
-      yield chunk('<resolution>Faits.</resolution><prose>Partiel.');
+      yield chunk('Partiel.');
       throw new Error('simulated failure');
     };
     try {
@@ -604,7 +977,14 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
     expect(retried).toMatchObject({ type: 'chat.turn.completed', branchId: alternativeId });
     const updated = await history(project.id, alternativeId);
     expect(updated.turns).toHaveLength(1);
-    expect(updated.turns[0]).toMatchObject({ retryOfTurnId: failedTurnId, parentTurnId: null });
+    // A retried variant stays a variant of the same original, replayed from the memory the variant started from.
+    expect(updated.turns[0]).toMatchObject({
+      retryOfTurnId: failedTurnId, parentTurnId: null, regeneratedFromTurnId: original.turnId,
+    });
+    const snapshots = await database.select({ id: schema.chatTurns.id, memorySnapshot: schema.chatTurns.memorySnapshot })
+      .from(schema.chatTurns).where(eq(schema.chatTurns.originBranchId, alternativeId));
+    expect(snapshots).toHaveLength(2);
+    expect(snapshots[0]!.memorySnapshot).toEqual(snapshots[1]!.memorySnapshot);
     expect(create).toHaveBeenLastCalledWith(expect.objectContaining({
       messages: [
         { role: 'system', content: await narratorPrompt(project.id) },
@@ -729,9 +1109,9 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
     let release!: () => void;
     const gate = new Promise<void>((resolve) => { release = resolve; });
     generate = async function* () {
-      yield chunk('<resolution>Faits.</resolution><prose>Début');
+      yield chunk('Début');
       await gate;
-      yield chunk(' de la réponse.</prose>');
+      yield chunk(' de la réponse.');
       yield chunk('', 'stop');
     };
     try {
@@ -787,16 +1167,22 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
     return memoryViewSchema.parse(response.json());
   }
   function propose(proposals: MemoryProposal[]) { guardianOutput = JSON.stringify({ v: 2, proposals }); }
+  /** Projects start with tags, so a test addresses its own tags by name rather than by position. */
+  function tagNamed(view: MemoryView, name: string): string {
+    const tag = view.state.tags.find((item) => item.name === name);
+    if (!tag) throw new Error(`Missing tag ${name}.`);
+    return tag.id;
+  }
 
   it('gives each pipeline agent its configured memory and retains access settings across version selections', async () => {
     const project = await createProject('M6 Accès');
     const branchId = project.defaultBranchId!;
     let view = await memoryChange(project.id, branchId, { op: 'saveTag',
       tag: { name: 'world_rules', description: 'Faits canoniques établis.' } });
-    const truth = view.state.tags[0]!.id;
+    const truth = tagNamed(view, 'world_rules');
     view = await memoryChange(project.id, branchId, { op: 'saveTag',
       tag: { name: 'n_knowledge', description: 'Connaissances et croyances de N.' } });
-    const belief = view.state.tags[1]!.id;
+    const belief = tagNamed(view, 'n_knowledge');
     await memoryChange(project.id, branchId, { op: 'saveEntry',
       entry: { tagIds: [truth], key: 'Max', content: 'Vérité réservée au narrateur', protected: true } });
     await memoryChange(project.id, branchId, { op: 'saveEntry',
@@ -828,12 +1214,12 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
       expect(narration.messages[0]!.content).toContain('Vérité réservée au narrateur');
       expect(narration.messages[0]!.content).not.toContain('Croyance réservée à N');
       const guardian = calls.find((params) => typeof params.messages[0]?.content === 'string'
-        && params.messages[0].content.includes('Maintain memory from'))!;
+        && params.messages[0].content.includes('Tiens la mémoire à jour'))!;
       expect(guardian.messages[0]!.content).not.toContain('Mission spécifique de N.');
       expect(guardian.messages[1]!.content).toContain('Connaissances et croyances de N.');
       expect(guardian.messages[1]!.content).toContain('Croyance réservée à N');
       expect(guardian.messages).toHaveLength(2);
-      expect(guardian.messages[1]!.content).toContain('Return JSON only');
+      expect(guardian.messages[1]!.content).toContain('Renvoie uniquement du JSON');
       const turn = (await history(project.id, branchId)).turns.at(-1)!;
       const persisted = await database.select().from(schema.llmCall).where(eq(schema.llmCall.turnId, turn.id));
       const analysisTrace = persisted.find((call) => call.stage === 'analysis')!;
@@ -876,10 +1262,10 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
       expect((await agents.listForProject(project.id)).find((agent) => agent.agentId === analyst.id)?.memoryRead?.tagIds).toEqual([]);
       await memoryChange(project.id, branchId, { op: 'applySetup', proposal: response.json() });
       const result = await memoryView(project.id, branchId);
-      expect(result.state.tags[0]!.name).toBe('world_rules');
+      expect(result.state.tags.map((tag) => tag.name)).toEqual([...before.state.tags.map((tag) => tag.name), 'world_rules']);
       expect(result.state.entries).toEqual([]);
       expect((await agents.listForProject(project.id)).find((agent) => agent.agentId === analyst.id)?.memoryRead)
-        .toEqual({ mode: 'selected', tagIds: [result.state.tags[0]!.id] });
+        .toEqual({ mode: 'selected', tagIds: [tagNamed(result, 'world_rules')] });
     } finally {
       setupOutput = null;
       await agents.configure(project.id, { agents: originalTeam.map(({ agentId, versionId }) => ({ agentId, versionId })) });
@@ -920,7 +1306,7 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
       FOR EACH ROW EXECUTE FUNCTION choral_writer.m6_test_reject_bank()`);
     try {
       propose([
-        { op: 'create', tagIds: [before.state.tags[0]!.id], key: 'Porte', content: 'Une porte', reason: 'Scène' },
+        { op: 'create', tagIds: [tagNamed(before, 'Savoir')], key: 'Porte', content: 'Une porte', reason: 'Scène' },
       ]);
       const last = events((await send(project.id, 'Une scène complète.')).body).at(-1)!;
       expect(last.type).toBe('chat.turn.completed');
@@ -943,7 +1329,7 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
     await memoryChange(project.id, branchId, { op: 'settings', enabled: true });
     try {
       for (let turn = 1; turn <= 25; turn++) {
-        propose(turn === 3 ? [{ op: 'create', tagIds: [view.state.tags[0]!.id],
+        propose(turn === 3 ? [{ op: 'create', tagIds: [tagNamed(view, 'Faits durables')],
           key: 'Secret', content: 'Le secret durable du tour trois.', reason: 'Révélation au tour 3' }] : []);
         const response = events((await send(project.id, turn === 3 ? 'Révélation unique au tour trois.' : `Scène ${turn}.`)).body);
         expect(response.at(-1)?.type).toBe('chat.turn.completed');
@@ -959,11 +1345,11 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
     const project = await createProject('M6 Annulation mémoire');
     const branchId = project.defaultBranchId!;
     const view = await memoryChange(project.id, branchId, { op: 'saveTag',
-      tag: { name: 'Faits', description: 'Informations établies.' } });
+      tag: { name: 'Faits établis', description: 'Informations établies.' } });
     await memoryChange(project.id, branchId, { op: 'settings', enabled: true });
     const controller = new AbortController();
     try {
-      propose([{ op: 'create', tagIds: [view.state.tags[0]!.id], key: 'Mara',
+      propose([{ op: 'create', tagIds: [tagNamed(view, 'Faits établis')], key: 'Mara',
         content: 'Souvenir à annuler', reason: 'Scène' }]);
       const result = await chat.run({ operation: 'send', projectId: project.id, branchId,
         expectedHeadTurnId: null, content: 'Narration conservée.' }, async (event) => {
@@ -982,9 +1368,9 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
     const project = await createProject('M6 Guardian vide');
     const branchId = project.defaultBranchId!;
     const initial = await memoryChange(project.id, branchId, { op: 'saveTag',
-      tag: { name: 'Faits', description: 'Faits établis' } });
+      tag: { name: 'Faits établis', description: 'Faits établis' } });
     await memoryChange(project.id, branchId, { op: 'saveEntry',
-      entry: { tagIds: [initial.state.tags[0]!.id], key: 'Max', content: 'Mémoire intacte', protected: false } });
+      entry: { tagIds: [tagNamed(initial, 'Faits établis')], key: 'Max', content: 'Mémoire intacte', protected: false } });
     await memoryChange(project.id, branchId, { op: 'settings', enabled: true });
     const before = await memoryView(project.id, branchId);
     try {
@@ -1016,8 +1402,8 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
     const project = await createProject('M6 Branches');
     const branchId = project.defaultBranchId!;
     let view = await memoryChange(project.id, branchId, { op: 'saveTag',
-      tag: { name: 'Faits', description: 'Faits établis' } });
-    const tagId = view.state.tags[0]!.id;
+      tag: { name: 'Faits établis', description: 'Faits établis' } });
+    const tagId = tagNamed(view, 'Faits établis');
     await memoryChange(project.id, branchId, { op: 'saveEntry',
       entry: { tagIds: [tagId], key: 'Max', content: 'État initial A', protected: false } });
     await memoryChange(project.id, branchId, { op: 'settings', enabled: true });
@@ -1078,8 +1464,8 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
     const project = await createProject('M6 Atomicité');
     const branchId = project.defaultBranchId!;
     const initial = await memoryChange(project.id, branchId, { op: 'saveTag',
-      tag: { name: 'Faits', description: 'Informations établies.' } });
-    const tagId = initial.state.tags[0]!.id;
+      tag: { name: 'Faits établis', description: 'Informations établies.' } });
+    const tagId = tagNamed(initial, 'Faits établis');
     await memoryChange(project.id, branchId, { op: 'settings', enabled: true });
     const before = await memoryView(project.id, branchId);
     try {
@@ -1110,7 +1496,7 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
     const project = await createProject('M6 Conflits');
     const branchId = project.defaultBranchId!;
     const initial = await memoryView(project.id, branchId);
-    await memoryChange(project.id, branchId, { op: 'saveTag', tag: { name: 'Faits', description: 'Informations établies.' } });
+    await memoryChange(project.id, branchId, { op: 'saveTag', tag: { name: 'Faits établis', description: 'Informations établies.' } });
     const conflict = await app.inject({ method: 'POST', headers: { cookie },
       url: `/api/projects/${project.id}/branches/${branchId}/memories`,
       payload: { expectedHeadTurnId: null, expectedRevisionId: initial.revisionId,
@@ -1146,7 +1532,7 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
     const normal = generate;
     const controller = new AbortController();
     generate = async function* (signal) {
-      yield chunk('<resolution>Faits.</resolution><prose>Début de réponse');
+      yield chunk('Début de réponse');
       if (!signal) throw new Error('Missing LLM abort signal.');
       await new Promise<void>((resolve) => {
         signal.addEventListener('abort', () => resolve(), { once: true });

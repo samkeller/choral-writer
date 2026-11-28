@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import type { ChatCompletion } from 'openai/resources/chat/completions';
 import { emptyMemoryState, type ProjectAgent } from '@choral-writer/shared';
@@ -36,7 +37,7 @@ function setup(responses: string[]) {
     projectId: 'project',
     turnId: 'turn', executionId: 'run', agent: guardian, agents: [guardian],
     state: emptyMemoryState(), systemPrompt: 'Continue the story in prose.',
-    resolution: 'Mara opens the door.', prose: 'The door creaks.', signal: new AbortController().signal,
+    prose: 'The door creaks.', developments: [], signal: new AbortController().signal,
   };
   return { service, input, create, requests, insert };
 }
@@ -51,9 +52,9 @@ describe('Guardian JSON task', () => {
       expect(first.messages).toHaveLength(2);
       expect(first.messages[0]!.content).not.toContain('Continue the story in prose.');
       expect(first.messages[1]!.content).toContain('"projectContext":"Continue the story in prose."');
-      expect(first.messages[1]!.content).toContain('"resolution":"Mara opens the door."');
-      expect(first.messages[1]!.content).toContain('Return JSON only');
-      expect(requests[1]!.messages.at(-1)?.content).toContain('previous attempt');
+      expect(first.messages[1]!.content).toContain('"prose":"The door creaks."');
+      expect(first.messages[1]!.content).toContain('Renvoie uniquement du JSON');
+      expect(requests[1]!.messages.at(-1)?.content).toContain('La tentative précédente');
       expect(insert.mock.calls.map(([trace]) => trace.status)).toEqual(['error', 'success']);
       expect(insert.mock.calls[0]![0].response).toBe(invalid);
     },
@@ -64,5 +65,63 @@ describe('Guardian JSON task', () => {
     await expect(service.generate(input)).rejects.toMatchObject({ code: 'LLM_EMPTY_RESPONSE' });
     expect(create).toHaveBeenCalledTimes(2);
     expect(insert.mock.calls.map(([trace]) => trace.status)).toEqual(['error', 'error']);
+  });
+
+  it('reads every development of the turn as established facts, off-screen ones included', async () => {
+    const { service, input, requests } = setup(['{"v":2,"proposals":[],"tagSuggestions":[]}']);
+    await service.generate({ ...input, developments: [
+      { agent: 'Monde', item: {
+        kind: 'development', characters: ['Mara'], scope: 'scene', text: 'La lampe s’éteint.', importance: 'HIGH',
+      } },
+      { agent: 'Absents', item: {
+        kind: 'development', characters: ['Le facteur'], scope: 'offscreen', text: 'Le facteur part.', importance: 'LOW',
+      } },
+    ] });
+
+    const [system, user] = requests[0]!.messages.map((message) => String(message.content));
+    expect(user).toContain('"developments":[{"agent":"Monde","scope":"scene","characters":["Mara"],"text":"La lampe s’éteint."}'
+      + ',{"agent":"Absents","scope":"offscreen","characters":["Le facteur"],"text":"Le facteur part."}]');
+    expect(system).toContain('même quand la prose ne les raconte pas');
+    expect(system).toContain('"personnage/<nom>", sous le tag « Intentions »');
+  });
+
+  it('records the composition of its sources, and counts the retry reminder as a fixed rule', async () => {
+    const { service, input, insert } = setup(['not json', '{"v":2,"proposals":[],"tagSuggestions":[]}']);
+    await service.generate({ ...input, developments: [{ agent: 'Monde', item: {
+      kind: 'development', characters: ['Mara'], scope: 'scene', text: 'La lampe s’éteint.', importance: 'HIGH',
+    } }] });
+
+    const [first, retry] = insert.mock.calls.map(([trace]) => trace.composition ?? []);
+    expect(first!.map((entry) => entry.part))
+      .toEqual(['instructions', 'rules', 'systemPrompt', 'memory', 'prose', 'developments']);
+    const rules = (composition: typeof first) => composition!.find((entry) => entry.part === 'rules')!.estimatedTokens;
+    expect(rules(retry)).toBeGreaterThan(rules(first));
+  });
+
+  it('sends the same messages as before the composition was measured, retry included', async () => {
+    const tagId = '019ad30c-19b0-7000-8000-000000000811';
+    const { service, input, requests } = setup(['not json', '{"v":2,"proposals":[],"tagSuggestions":[]}']);
+    await service.generate({
+      ...input,
+      state: {
+        v: 2,
+        tags: [{ id: tagId, name: 'Faits', description: 'Faits établis.' }],
+        entries: [{
+          id: '019ad30c-19b0-7000-8000-000000000812', key: 'Lieu', content: 'Une maison fictive.', tagIds: [tagId],
+          protected: false, archived: false, source: 'user', turnId: null, updatedAt: '2025-01-01T00:00:00.000Z',
+        }],
+      },
+      developments: [{ agent: 'Monde', item: {
+        kind: 'development', characters: ['Personnage A'], scope: 'offscreen', text: 'Un départ générique.', importance: 'LOW',
+      } }],
+    });
+
+    // Computed on 4e649cf, before the prompt was split into measured sections: guards it against any drift.
+    const fingerprint = (messages: unknown) => createHash('sha256').update(JSON.stringify(messages)).digest('hex');
+    expect(requests.map((request) => fingerprint(request.messages)))
+      .toEqual([
+        'db7de3462d5bfc76640aed8daee82b1b48dc66c9baabae8e7694f43eb946d20e',
+        '2fd7afb25fc8b68ff8a9e981cebca7ad609dd65fb9f8a7dad93c84db54982099',
+      ]);
   });
 });

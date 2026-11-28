@@ -1,4 +1,6 @@
-import { projectInputSchema, projectSchema, type ProjectInput } from '@choral-writer/shared';
+import {
+  projectDefaultBranchInputSchema, projectInputSchema, projectSchema, type ProjectInput,
+} from '@choral-writer/shared';
 
 import { api } from '../client';
 
@@ -19,6 +21,12 @@ export async function createProject(input: ProjectInput) {
 
 export async function updateProject(id: string, input: ProjectInput) {
   const response = await api.put<unknown>(`/projects/${id}`, projectInputSchema.parse(input));
+  return projectSchema.parse(response.data);
+}
+
+/** Makes the branch the project's story branch, the one it opens on. */
+export async function setDefaultBranch(id: string, branchId: string) {
+  const response = await api.put<unknown>(`/projects/${id}/default-branch`, projectDefaultBranchInputSchema.parse({ branchId }));
   return projectSchema.parse(response.data);
 }
 

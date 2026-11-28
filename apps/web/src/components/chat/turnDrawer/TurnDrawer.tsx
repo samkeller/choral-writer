@@ -1,0 +1,166 @@
+import { useEffect, useState } from 'react';
+import { Alert, Button, Drawer, Group, Loader, Stack, Tabs, Text } from '@mantine/core';
+import { IconChevronLeft, IconChevronRight, IconRefresh } from '@tabler/icons-react';
+import type { TurnMetrics } from '@choral-writer/shared';
+
+import { IconAction } from '../../atoms/IconAction';
+import { MemoryTracePanel } from '../../memories/MemoryTracePanel';
+import { DirectionPanel } from './DirectionPanel';
+import { estimateTensionLevels } from './directionInsights';
+import { StoryPanel } from './StoryPanel';
+import { TraceCallsPanel } from './TraceCallsPanel';
+import { TurnAnalysisPanel } from './TurnAnalysisPanel';
+import { TurnConfigurationPanel } from './TurnConfigurationPanel';
+import { TurnContextPanel } from './TurnContextPanel';
+import { TurnCostPanel } from './TurnCostPanel';
+import { TurnDevelopmentsPanel } from './TurnDevelopmentsPanel';
+import { TurnOverview } from './TurnOverview';
+import { isTurnDrawerTab, turnDrawerTabs, type TurnDrawerTab } from './turnDrawerTabs';
+import { useTurnAttribution } from './useTurnAttribution';
+import { useTurnTraceSummary } from './useTurnTraceSummary';
+import { WithSummary } from './WithSummary';
+import styles from './TurnDrawer.module.css';
+
+interface TurnDrawerProps {
+  projectId: string;
+  /** Turns of the displayed branch, root first. */
+  turnIds: string[];
+  /** Metrics by turn id; a turn without metrics is still loading or could not be measured. */
+  metricsByTurn: ReadonlyMap<string, TurnMetrics>;
+  metricsError: string;
+  onRetryMetrics: () => void;
+  turnId: string;
+  onSelectTurn: (turnId: string) => void;
+  onClose: () => void;
+}
+
+/** The turn drawer (« mode Debug ») : one turn at a time, browsable turn by turn on the same tab. */
+export function TurnDrawer({
+  projectId, turnIds, metricsByTurn, metricsError, onRetryMetrics, turnId, onSelectTurn, onClose,
+}: TurnDrawerProps) {
+  const [tab, setTab] = useState<TurnDrawerTab>('overview');
+  /** The call « Appels bruts » opens on, when a summary link points to one. */
+  const [focusedCallId, setFocusedCallId] = useState<string | null>(null);
+  const summary = useTurnTraceSummary(projectId, turnId);
+  /** Read when a tab that shows it opens on the turn, shared by the Synthèse and the Analyse tab. */
+  const attribution = useTurnAttribution(projectId, turnId, summary.summary, tab === 'overview' || tab === 'analysis');
+  const index = turnIds.indexOf(turnId);
+  const storyMetrics = storyMetricsOf(turnIds, metricsByTurn);
+  const tensionLevels = storyMetrics ? estimateTensionLevels(storyMetrics)[index] ?? null : null;
+  const selectIndex = (target: number) => {
+    const targetId = turnIds[target];
+    if (targetId) onSelectTurn(targetId);
+  };
+  const openTab = (value: TurnDrawerTab) => {
+    setFocusedCallId(null);
+    setTab(value);
+  };
+  const openCall = (callId: string) => {
+    setFocusedCallId(callId);
+    setTab('calls');
+  };
+
+  useEffect(() => setFocusedCallId(null), [turnId]);
+
+  return (
+    // Drawer.Content would also apply its className to the positioning "inner" wrapper: target the content only.
+    <Drawer.Root opened onClose={onClose} position="right" size="min(100vw, 60rem)" classNames={{ content: styles.drawer }}>
+      <Drawer.Overlay backgroundOpacity={0.35} blur={3} />
+      <Drawer.Content>
+        <Drawer.Header className={styles.header}>
+          <Group gap={4} wrap="nowrap">
+            <IconAction label="Tour précédent" disabled={index <= 0} onClick={() => selectIndex(index - 1)}>
+              <IconChevronLeft size={16} aria-hidden="true" />
+            </IconAction>
+            <Drawer.Title fw={700}>Tour {index + 1} / {turnIds.length}</Drawer.Title>
+            <IconAction label="Tour suivant" disabled={index >= turnIds.length - 1} onClick={() => selectIndex(index + 1)}>
+              <IconChevronRight size={16} aria-hidden="true" />
+            </IconAction>
+          </Group>
+          <Drawer.CloseButton aria-label="Fermer le détail du tour" />
+        </Drawer.Header>
+        <Drawer.Body className={styles.body}>
+          <Stack gap="sm">
+            {metricsError && (
+              <Alert color="yellow" title="Indicateurs du récit indisponibles" role="alert">
+                <Group justify="space-between" gap="xs">
+                  <Text size="sm">{metricsError}</Text>
+                  <Button size="compact-sm" variant="light" leftSection={<IconRefresh size={14} />} onClick={onRetryMetrics}>
+                    Réessayer
+                  </Button>
+                </Group>
+              </Alert>
+            )}
+            <Tabs value={tab} onChange={(value) => { if (isTurnDrawerTab(value)) openTab(value); }} keepMounted={false}
+              classNames={{ root: styles.tabs, list: styles.drawerTabList }}>
+              <Tabs.List>
+                {turnDrawerTabs.map(({ value, label }) => <Tabs.Tab key={value} value={value}>{label}</Tabs.Tab>)}
+              </Tabs.List>
+              <Tabs.Panel value="overview">
+                <WithSummary state={summary}>
+                  {(loaded) => (
+                    <TurnOverview summary={loaded} attribution={attribution} metrics={storyMetrics} index={index}
+                      tensionLevels={tensionLevels} onOpenTab={openTab} onOpenCall={openCall} />
+                  )}
+                </WithSummary>
+              </Tabs.Panel>
+              <Tabs.Panel value="analysis">
+                <WithSummary state={summary}>
+                  {(loaded) => <TurnAnalysisPanel summary={loaded} attribution={attribution.state} onOpenCall={openCall} />}
+                </WithSummary>
+              </Tabs.Panel>
+              <Tabs.Panel value="developments">
+                <WithSummary state={summary}>
+                  {(loaded) => <TurnDevelopmentsPanel developments={loaded.developments} />}
+                </WithSummary>
+              </Tabs.Panel>
+              <Tabs.Panel value="context">
+                <WithSummary state={summary}>
+                  {(loaded) => <TurnContextPanel calls={loaded.calls} metrics={storyMetrics} index={index} onSelectTurn={selectIndex} />}
+                </WithSummary>
+              </Tabs.Panel>
+              <Tabs.Panel value="cost">
+                <WithSummary state={summary}>{(loaded) => <TurnCostPanel summary={loaded} />}</WithSummary>
+              </Tabs.Panel>
+              <Tabs.Panel value="direction">
+                <WithSummary state={summary}>
+                  {(loaded) => <DirectionPanel trace={loaded.direction} levels={tensionLevels} onOpenTab={openTab} />}
+                </WithSummary>
+              </Tabs.Panel>
+              <Tabs.Panel value="configuration">
+                <WithSummary state={summary}>
+                  {(loaded) => (
+                    <TurnConfigurationPanel configuration={loaded.configuration} turnNumber={index + 1}
+                      changes={metricsByTurn.get(turnId)?.configurationChanges} />
+                  )}
+                </WithSummary>
+              </Tabs.Panel>
+              <Tabs.Panel value="memory">
+                <MemoryTracePanel key={turnId} projectId={projectId} turnId={turnId} />
+              </Tabs.Panel>
+              <Tabs.Panel value="story">
+                {storyMetrics
+                  ? <StoryPanel metrics={storyMetrics} index={index} onSelectTurn={selectIndex} />
+                  : !metricsError && <Loader color="choral" aria-label="Chargement des indicateurs du récit" />}
+              </Tabs.Panel>
+              <Tabs.Panel value="calls">
+                <WithSummary state={summary}>
+                  {(loaded) => (
+                    <TraceCallsPanel key={turnId} projectId={projectId} turnId={turnId} calls={loaded.calls}
+                      initialCallId={focusedCallId} />
+                  )}
+                </WithSummary>
+              </Tabs.Panel>
+            </Tabs>
+          </Stack>
+        </Drawer.Body>
+      </Drawer.Content>
+    </Drawer.Root>
+  );
+}
+
+/** Metrics of every turn, in branch order; null until each displayed turn has its own. */
+function storyMetricsOf(turnIds: readonly string[], metricsByTurn: ReadonlyMap<string, TurnMetrics>): TurnMetrics[] | null {
+  const metrics = turnIds.flatMap((id) => metricsByTurn.get(id) ?? []);
+  return metrics.length === turnIds.length ? metrics : null;
+}

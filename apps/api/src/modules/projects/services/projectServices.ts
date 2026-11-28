@@ -1,8 +1,11 @@
 import type { Project, ProjectInput } from '@choral-writer/shared';
+import { v7 as uuidv7 } from 'uuid';
 import type { Database, Transaction } from '../../../db/client.js';
 import { ApiError, isLockConflict } from '../../../errors/errors.js';
 import type { ChatBranchService } from '../../chat/services/branchService.js';
 import { AgentRepository } from '../../agents/repository/agentsRepository.js';
+import { MemoryRepository } from '../../memories/repositories/memoryRepository.js';
+import { startingTags } from '../../memories/services/startingTags.js';
 import { ProjectRepository } from '../repositories/projectRepository.js';
 
 type BranchesForTransaction = (tx: Transaction, projectId: string) => ChatBranchService;
@@ -33,6 +36,8 @@ export class ProjectsService {
       const repository = new ProjectRepository(tx);
       const project = await repository.create(input);
       await new AgentRepository(tx).createDefaults(project.id);
+      // Memory starts on: without it the Guardian never runs, so offscreen developments and Intentions are lost.
+      await new MemoryRepository(tx, project.id).saveSettings({ tags: startingTags(uuidv7) }, true);
       const branch = await this.branchesForTransaction(tx, project.id).createMain();
       return repository.setDefaultBranch(project.id, branch.id);
     });
@@ -40,6 +45,14 @@ export class ProjectsService {
 
   update(id: string, input: ProjectInput): Promise<Project> {
     return this.withLockedProject(id, (_project, tx) => new ProjectRepository(tx).update(id, input));
+  }
+
+  /** Makes one of the project's branches its story branch, the one it opens on. */
+  setDefaultBranch(id: string, branchId: string): Promise<Project> {
+    return this.withLockedProject(id, async (_project, tx) => {
+      await this.branchesForTransaction(tx, id).get(branchId);
+      return new ProjectRepository(tx).setDefaultBranch(id, branchId);
+    });
   }
 
   remove(id: string): Promise<void> {
