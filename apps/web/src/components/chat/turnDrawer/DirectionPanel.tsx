@@ -18,13 +18,10 @@ const directionColor = phasePresentation.direction.color;
  * `levels` is null while the story metrics are unavailable: the tension is then told without its scale.
  */
 export function DirectionPanel({ trace, levels, onOpenTab }: {
-  trace: DirectionTrace | null;
+  trace: DirectionTrace;
   levels: TensionLevels | null;
   onOpenTab: (tab: TurnDrawerTab) => void;
 }) {
-  if (!trace) {
-    return <Text c="dimmed">Aucun Directeur pour ce tour : toutes les contributions sont passées au Narrateur.</Text>;
-  }
   const attempts = trace.attempts > 1 ? ` · ${trace.attempts} tentatives` : '';
   const { direction } = trace;
 
@@ -50,9 +47,11 @@ export function DirectionPanel({ trace, levels, onOpenTab }: {
           <DrawerBlock title="Tri des contributions">
             <Text size="sm">
               {direction.retained.length} retenue(s), {direction.dismissed.length} écartée(s), chacune avec sa raison.{' '}
-              <Anchor component="button" type="button" size="sm" onClick={() => onOpenTab('analysis')}>
-                Voir le sort de chaque item dans Analyse →
-              </Anchor>
+              {direction.retained.length + direction.dismissed.length > 0 && (
+                <Anchor component="button" type="button" size="sm" onClick={() => onOpenTab('analysis')}>
+                  Voir le sort de chaque item dans Analyse →
+                </Anchor>
+              )}
             </Text>
           </DrawerBlock>
         </>

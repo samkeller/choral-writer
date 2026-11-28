@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 import type { AxiosAdapter, InternalAxiosRequestConfig } from 'axios';
 import type { TurnMetrics, TurnTraceSummary } from '@choral-writer/shared';
@@ -167,13 +167,40 @@ describe('TurnDrawer', () => {
     expect(drawer.getByRole('tab', { name: 'Analyse' }).getAttribute('aria-selected')).toBe('true');
   });
 
-  it('says so on the Direction tab when the turn ran without a Director', async () => {
+  it('shows only the tabs a turn of the default team has something in, and its timeline once', async () => {
     render(<Harness initialTurnId={firstTurnId} />);
     const drawer = within(await screen.findByRole('dialog'));
+    await drawer.findByText('Points d’attention');
+    const tabs = () => drawer.getAllByRole('tab').map((tab) => tab.textContent);
 
-    fireEvent.click(drawer.getByRole('tab', { name: 'Direction' }));
+    expect(tabs()).toEqual(['Synthèse', 'Contexte', 'Coût et durée', 'Configuration', 'Mémoire', 'Récit', 'Appels bruts']);
+    expect(drawer.queryByText('Déroulé du tour')).toBeNull();
+    fireEvent.click(drawer.getByRole('tab', { name: 'Coût et durée' }));
+    expect(drawer.getByText('Déroulé du tour')).toBeTruthy();
 
-    expect(await drawer.findByText(/Aucun Directeur pour ce tour/)).toBeTruthy();
+    fireEvent.click(drawer.getByRole('button', { name: 'Tour suivant' }));
+    await drawer.findByRole('heading', { name: 'Tour 2 / 2' });
+    await waitFor(() => expect(tabs()).toContain('Direction'));
+    expect(tabs()).toEqual(['Synthèse', 'Analyse', 'Contexte', 'Coût et durée', 'Direction', 'Configuration', 'Mémoire', 'Récit', 'Appels bruts']);
+    // Without any development, the Analyse tab offers no filter for them.
+    fireEvent.click(drawer.getByRole('tab', { name: 'Analyse' }));
+    expect(await drawer.findByRole('radio', { name: 'Tous' })).toBeTruthy();
+    expect(drawer.queryByRole('radio', { name: 'Développements' })).toBeNull();
+  });
+
+  it('falls back to the Synthèse on a turn without the open tab, and comes back to it on a turn with it', async () => {
+    render(<Harness initialTurnId={secondTurnId} />);
+    const drawer = within(await screen.findByRole('dialog'));
+    fireEvent.click(await drawer.findByRole('tab', { name: 'Direction' }));
+
+    fireEvent.click(drawer.getByRole('button', { name: 'Tour précédent' }));
+    await drawer.findByRole('heading', { name: 'Tour 1 / 2' });
+    await waitFor(() => expect(drawer.queryByRole('tab', { name: 'Direction' })).toBeNull());
+    expect(drawer.getByRole('tab', { name: 'Synthèse' }).getAttribute('aria-selected')).toBe('true');
+
+    fireEvent.click(drawer.getByRole('button', { name: 'Tour suivant' }));
+    expect(await drawer.findByText('Tension : monte')).toBeTruthy();
+    expect(drawer.getByRole('tab', { name: 'Direction' }).getAttribute('aria-selected')).toBe('true');
   });
 
   it('browses from turn to turn while keeping the open tab', async () => {

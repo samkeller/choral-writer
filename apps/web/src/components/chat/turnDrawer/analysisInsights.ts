@@ -1,7 +1,7 @@
 import type {
   AnalysisTrace, AttributedItem, AttributionVerdict, TurnAttribution, TurnTraceSummary,
 } from '@choral-writer/shared';
-import { contributionsLetThrough, contributionsToldToNarrator } from '@choral-writer/shared';
+import { contributionsLetThrough, contributionsToldToNarrator, isDevelopment } from '@choral-writer/shared';
 
 import { lastAnalysisCallId } from './turnInsights';
 
@@ -26,7 +26,7 @@ export interface AnalysisCard {
   callId: string | null;
 }
 
-export type AnalysisFilter = 'all' | 'transmitted' | 'dismissed';
+export type AnalysisFilter = 'all' | 'developments' | 'transmitted' | 'dismissed';
 
 /** How the whiteboard reached the Narrator: sorted by the Director, as it was after a failed direction, or without one. */
 export type Transmission = 'directed' | 'directionFailed' | 'undirected';
@@ -76,8 +76,13 @@ export function isTransmitted(fate: ItemFate): boolean {
   return fate.kind !== 'dismissed';
 }
 
-export function matchesFilter(fate: ItemFate, filter: AnalysisFilter): boolean {
-  return filter === 'all' || (filter === 'transmitted') === isTransmitted(fate);
+export function matchesFilter({ item, fate }: AnalysisCard['items'][number], filter: AnalysisFilter): boolean {
+  switch (filter) {
+    case 'all': return true;
+    case 'developments': return isDevelopment(item);
+    case 'transmitted': return isTransmitted(fate);
+    case 'dismissed': return !isTransmitted(fate);
+  }
 }
 
 export interface AnalysisFunnel {

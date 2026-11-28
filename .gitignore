@@ -10,3 +10,5 @@ coverage/
 eval-output/
 
 .mcp.json
+# Worktrees locaux des agents Claude Code.
+.claude/worktrees/

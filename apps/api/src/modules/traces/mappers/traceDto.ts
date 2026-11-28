@@ -5,6 +5,7 @@ import type {
 } from '@choral-writer/shared';
 import { contextCompositionSchema, recordedAnalysisEnvelopeSchema, traceCallDetailSchema } from '@choral-writer/shared';
 
+import { narratorProse } from '../../chat/services/narratorProse.js';
 import type { MetricCallRecord, TraceDetailRecord, TraceSummaryRecord } from '../repositories/traceRepository.js';
 
 /** The fields of a recorded call that time and price a turn. */
@@ -101,7 +102,7 @@ export function toTurnTraceSummaryDto(
   const narratorCall = narratorCalls.at(-1);
   let narrator: NarratorTrace | null = null;
   if (narratorCall) {
-    const prose = narratorCall.status === 'success' ? narratorCall.response : null;
+    const prose = narratorCall.status === 'success' && narratorCall.response ? narratorProse(narratorCall.response) : null;
     narrator = {
       status: prose ? 'success' : 'error',
       durationMs: narratorCalls.reduce((total, call) => total + call.durationMs, 0),

@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, max } from 'drizzle-orm';
 import { defaultMemoryRead, type MemoryRead } from '@choral-writer/shared';
 import { v7 as uuidv7 } from 'uuid';
 import type { Agent, AgentInput, AgentVersionInput, ProjectAgent, ProjectAgentsInput } from '@choral-writer/shared';
@@ -6,7 +6,7 @@ import type { Agent, AgentInput, AgentVersionInput, ProjectAgent, ProjectAgentsI
 import type { Database, Transaction } from '../../../db/client.js';
 import { agents, agentVersions, projectAgents } from '../../../db/entities/agents/agent.js';
 import { projects } from '../../../db/entities/project.js';
-import { LIBRARY_AGENTS } from './agentLibrary.js';
+import { LIBRARY_AGENTS, type LibraryAgent } from './agentLibrary.js';
 import { DEFAULT_GUARDIAN_ID, DEFAULT_NARRATOR_ID } from './defaultNarrators.js';
 
 export class AgentRepository {
@@ -127,31 +127,41 @@ export class AgentRepository {
   }
 
   /**
-   * Adds the library agents and versions a database lacks. Only an already seeded identifier is skipped:
-   * a version number taken by another version fails, and so does a seeded version whose stored content
-   * differs from the library, since a published version is immutable.
+   * Adds the library agents and versions a database lacks. A missing version takes its agent's first free
+   * number: users may publish versions of a library agent, so a library version is known by its fixed
+   * identifier and its content, never by its number. A seeded version whose stored content differs from
+   * the library fails, since a published version is immutable.
    */
-  async ensureLibrary(): Promise<void> {
-    const versions = LIBRARY_AGENTS.flatMap((agent) => agent.versions.map((version) => ({ ...version, agentId: agent.id })));
+  async ensureLibrary(library: readonly LibraryAgent[] = LIBRARY_AGENTS): Promise<void> {
+    const agentIds = library.map((agent) => agent.id);
+    const versions = library.flatMap((agent) => agent.versions.map((version) => ({ ...version, agent })));
     await this.database.insert(agents)
-      .values(LIBRARY_AGENTS.map(({ id, phase, output }) => ({ id, phase, output })))
+      .values(library.map(({ id, phase, output }) => ({ id, phase, output })))
       .onConflictDoNothing({ target: agents.id });
-    await this.database.insert(agentVersions)
-      .values(versions.map(({ id, agentId, version, name, instructions }) => ({ id, agentId, version, name, instructions })))
-      .onConflictDoNothing({ target: agentVersions.id });
+    // Locked as a publication locks its agent, so that no version number is taken meanwhile.
+    await this.database.select({ id: agents.id }).from(agents)
+      .where(inArray(agents.id, agentIds)).orderBy(asc(agents.id)).for('update');
     const stored = await this.database.select({
-      id: agentVersions.id, agentId: agentVersions.agentId, version: agentVersions.version,
+      id: agentVersions.id, agentId: agentVersions.agentId,
       name: agentVersions.name, instructions: agentVersions.instructions, phase: agents.phase, output: agents.output,
     }).from(agentVersions).innerJoin(agents, eq(agents.id, agentVersions.agentId))
       .where(inArray(agentVersions.id, versions.map((version) => version.id)));
-    const diverging = versions.filter((expected) => {
-      const agent = LIBRARY_AGENTS.find((item) => item.id === expected.agentId)!;
-      const row = stored.find((item) => item.id === expected.id);
-      return !row || row.agentId !== expected.agentId || row.version !== expected.version || row.name !== expected.name
-        || row.instructions !== expected.instructions || row.phase !== agent.phase || row.output !== agent.output;
+    const diverging = versions.filter(({ id, agent, name, instructions }) => {
+      const row = stored.find((item) => item.id === id);
+      return row && (row.agentId !== agent.id || row.name !== name || row.instructions !== instructions
+        || row.phase !== agent.phase || row.output !== agent.output);
     });
     if (diverging.length > 0) {
       throw new Error(`Library agent versions differ from the stored ones: ${diverging.map((version) => version.id).join(', ')}. Publish a new version instead of editing one.`);
+    }
+    const highest = await this.database.select({ agentId: agentVersions.agentId, version: max(agentVersions.version) })
+      .from(agentVersions).where(inArray(agentVersions.agentId, agentIds)).groupBy(agentVersions.agentId);
+    for (const agent of library) {
+      let next = (highest.find((row) => row.agentId === agent.id)?.version ?? 0) + 1;
+      const missing = agent.versions.filter((version) => !stored.some((row) => row.id === version.id));
+      if (missing.length === 0) continue;
+      await this.database.insert(agentVersions).values(missing.map(({ id, name, instructions }) => (
+        { id, agentId: agent.id, version: next++, name, instructions })));
     }
   }
 }

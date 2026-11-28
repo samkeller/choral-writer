@@ -65,12 +65,14 @@ describe('analysisCards', () => {
     expect(card?.items[0]?.fate).toEqual({ kind: 'told', why: null, reading: null });
   });
 
-  it('filters transmitted and dismissed items', () => {
-    const fates = analysisCards(summary(direction), null)[0]!.items.map(({ fate }) => fate);
+  it('filters developments, transmitted and dismissed items', () => {
+    const items = analysisCards(summary(direction), null)[0]!.items;
 
-    expect(fates.filter((fate) => matchesFilter(fate, 'transmitted'))).toHaveLength(3);
-    expect(fates.filter((fate) => matchesFilter(fate, 'dismissed'))).toEqual([{ kind: 'dismissed', why: 'Hors sujet.' }]);
-    expect(fates.filter((fate) => matchesFilter(fate, 'all'))).toHaveLength(4);
+    expect(items.filter((entry) => matchesFilter(entry, 'developments')).map(({ item }) => item)).toEqual([offscreen]);
+    expect(items.filter((entry) => matchesFilter(entry, 'transmitted'))).toHaveLength(3);
+    expect(items.filter((entry) => matchesFilter(entry, 'dismissed')).map(({ fate }) => fate))
+      .toEqual([{ kind: 'dismissed', why: 'Hors sujet.' }]);
+    expect(items.filter((entry) => matchesFilter(entry, 'all'))).toHaveLength(4);
   });
 });
 

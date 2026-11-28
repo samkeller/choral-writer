@@ -6,6 +6,7 @@ import { memoryBanks, memoryRuns, memorySettings } from '../../../db/entities/me
 import { chatBranches } from '../../../db/entities/chat/branch.js';
 import { chatTurns } from '../../../db/entities/chat/turn.js';
 import { llmCall } from '../../../db/entities/llmCall.js';
+import { narratorProse } from '../../chat/services/narratorProse.js';
 
 export class MemoryRepository {
   constructor(private readonly db: Database | Transaction, private readonly projectId: string) {}
@@ -72,10 +73,11 @@ export class MemoryRepository {
     const [narrator] = await this.db.select({ response: llmCall.response }).from(llmCall).where(and(
       eq(llmCall.turnId, turnId), eq(llmCall.stage, 'narrator'), eq(llmCall.status, 'success'),
     )).orderBy(desc(llmCall.createdAt), desc(llmCall.id)).limit(1);
-    if (!narrator?.response) throw new Error('The original narrator trace is unavailable.');
+    const prose = narrator?.response ? narratorProse(narrator.response) : '';
+    if (!prose) throw new Error('The original narrator trace is unavailable.');
     const [turn] = await this.db.select({ developments: chatTurns.developments }).from(chatTurns).where(and(
       eq(chatTurns.projectId, this.projectId), eq(chatTurns.id, turnId),
     ));
-    return { narrator: narrator.response, developments: turn?.developments ?? [] };
+    return { prose, developments: turn?.developments ?? [] };
   }
 }
