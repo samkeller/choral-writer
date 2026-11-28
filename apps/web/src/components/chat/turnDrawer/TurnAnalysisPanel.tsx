@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Anchor, Badge, Group, Paper, SegmentedControl, Stack, Text } from '@mantine/core';
-import type { TurnTraceSummary } from '@choral-writer/shared';
+import { isDevelopment, type TurnTraceSummary } from '@choral-writer/shared';
 
 import { DevelopmentScopeBadge } from '../../llm/DevelopmentScopeBadge';
 import { phasePresentation } from '../../phases/phasePresentation';
@@ -11,24 +11,27 @@ import {
 import { verdictPresentation } from './attributionPresentation';
 import { type AttributionState, type ReadingStatus, proseReading } from './useTurnAttribution';
 
-const filters: { value: AnalysisFilter; label: string }[] = [
+const allFilters: { value: AnalysisFilter; label: string }[] = [
   { value: 'all', label: 'Tous' },
+  { value: 'developments', label: 'Développements' },
   { value: 'transmitted', label: 'Transmis' },
   { value: 'dismissed', label: 'Écartés' },
 ];
 
-/** « Analyse » : what each analysis agent produced, and the fate of each item up to the prose. */
+/**
+ * « Analyse » : what each analysis agent produced, and the fate of each item up to the prose. A development
+ * shows its scope: an off-screen one never reached the Narrator, only the Guardian.
+ */
 export function TurnAnalysisPanel({ summary, attribution, onOpenCall }: {
   summary: TurnTraceSummary;
   attribution: AttributionState;
   onOpenCall: (callId: string) => void;
 }) {
   const [filter, setFilter] = useState<AnalysisFilter>('all');
-  if (summary.analysis.length === 0) {
-    return <Text c="dimmed">Aucun agent d’analyse pour ce tour : le Narrateur n’a reçu aucune contribution.</Text>;
-  }
   const { reading, status } = proseReading(attribution);
   const cards = analysisCards(summary, reading);
+  const hasDevelopments = cards.some((card) => card.items.some(({ item }) => isDevelopment(item)));
+  const filters = allFilters.filter(({ value }) => value !== 'developments' || hasDevelopments);
 
   return (
     <Stack gap="sm">
@@ -49,7 +52,7 @@ function AgentCard({ card, filter, reading, onOpenCall }: {
   onOpenCall: (callId: string) => void;
 }) {
   const { agent, callId } = card;
-  const items = card.items.filter((entry) => matchesFilter(entry.fate, filter));
+  const items = card.items.filter((entry) => matchesFilter(entry, filter));
   const transmitted = card.items.filter((entry) => isTransmitted(entry.fate)).length;
   return (
     <Paper component="section" withBorder radius="md" p="sm" bg="dark.7" aria-label={`Analyse · ${agent.name}`}

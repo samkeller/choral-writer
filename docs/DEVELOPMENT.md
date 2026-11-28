@@ -124,7 +124,7 @@ Ne jamais committer de secrets. L'API et le frontend conservent leurs scripts et
 
 Déployer le dépôt comme un service Railway unique. Définir les commandes du service dans les paramètres Railway : build `pnpm build`, pré-déploiement `pnpm db:migrate`, démarrage `pnpm start`, health check `/healthz` (timeout conseillé : 300 s). Le build compile `shared`, l'API et le frontend ; le serveur Fastify sert ensuite `apps/web/dist` et les routes `/api` depuis la même origine. Le serveur requiert le build frontend en mode `production` et échoue au démarrage s'il manque.
 
-Créer une base PostgreSQL Railway et définir les variables suivantes dans le service applicatif :
+Créer une base PostgreSQL Railway, en version 12 ou plus : Drizzle applique les migrations en attente dans une seule transaction, et la migration 0011 y ajoute une valeur d'énumération (`ALTER TYPE … ADD VALUE`), ce que PostgreSQL n'accepte en transaction que depuis la version 12. Définir les variables suivantes dans le service applicatif :
 
 - `DATABASE_URL` : référence à `DATABASE_URL` du service PostgreSQL Railway.
 - `APP_PASSWORD` et `COOKIE_SECRET` : secrets uniques de production ; le secret de cookie doit avoir au moins 32 caractères.

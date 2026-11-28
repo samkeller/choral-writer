@@ -5,14 +5,14 @@ import type { Database } from '../../../db/client.js';
 import type { ProjectsService } from '../../projects/services/projectServices.js';
 import { AgentRepository } from '../repository/agentsRepository.js';
 import { replaceProjectTeam } from './agentSelection.js';
-import { isBuiltInAgent } from '../repository/agentLibrary.js';
+import { isBuiltInAgent, type LibraryAgent } from '../repository/agentLibrary.js';
 
 export class AgentsService {
   constructor(private readonly database: Database, private readonly projects: ProjectsService) {}
 
   /** Run at startup: the library is application data, not a migration, so it is seeded idempotently. */
-  ensureLibrary(): Promise<void> {
-    return this.database.transaction((tx) => new AgentRepository(tx).ensureLibrary());
+  ensureLibrary(library?: readonly LibraryAgent[]): Promise<void> {
+    return this.database.transaction((tx) => new AgentRepository(tx).ensureLibrary(library));
   }
 
   list(): Promise<Agent[]> {

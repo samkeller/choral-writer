@@ -1294,7 +1294,7 @@ describe('projects and chat screens', () => {
     expect(drawer.getByRole('button', { name: 'Tension : —, direction en échec' })).toBeTruthy();
     expect(drawer.getByText('Direction en échec après 2 tentative(s) : le Narrateur a reçu le whiteboard complet.')).toBeTruthy();
 
-    fireEvent.click(drawer.getByRole('button', { name: 'Coût et durée par appel →' }));
+    fireEvent.click(drawer.getByRole('button', { name: /^Durée : 2,3 s/ }));
     expect(drawer.getByRole('tab', { name: 'Coût et durée' }).getAttribute('aria-selected')).toBe('true');
     expect(drawer.getByRole('cell', { name: 'Chaos' })).toBeTruthy();
     expect(drawer.getByText('Analyse 0,0002 $')).toBeTruthy();

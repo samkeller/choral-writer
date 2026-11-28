@@ -13,9 +13,8 @@ import { TurnAnalysisPanel } from './TurnAnalysisPanel';
 import { TurnConfigurationPanel } from './TurnConfigurationPanel';
 import { TurnContextPanel } from './TurnContextPanel';
 import { TurnCostPanel } from './TurnCostPanel';
-import { TurnDevelopmentsPanel } from './TurnDevelopmentsPanel';
 import { TurnOverview } from './TurnOverview';
-import { isTurnDrawerTab, turnDrawerTabs, type TurnDrawerTab } from './turnDrawerTabs';
+import { isTurnDrawerTab, tabApplies, turnDrawerTabs, type TurnDrawerTab } from './turnDrawerTabs';
 import { useTurnAttribution } from './useTurnAttribution';
 import { useTurnTraceSummary } from './useTurnTraceSummary';
 import { WithSummary } from './WithSummary';
@@ -42,8 +41,11 @@ export function TurnDrawer({
   /** The call « Appels bruts » opens on, when a summary link points to one. */
   const [focusedCallId, setFocusedCallId] = useState<string | null>(null);
   const summary = useTurnTraceSummary(projectId, turnId);
+  /** A browsed turn without the open tab shows its Synthèse; the open tab stays while the turn loads. */
+  const shownTab = summary.summary && !tabApplies(tab, summary.summary) ? 'overview' : tab;
+  const tabs = turnDrawerTabs.filter(({ value }) => value === shownTab || tabApplies(value, summary.summary));
   /** Read when a tab that shows it opens on the turn, shared by the Synthèse and the Analyse tab. */
-  const attribution = useTurnAttribution(projectId, turnId, summary.summary, tab === 'overview' || tab === 'analysis');
+  const attribution = useTurnAttribution(projectId, turnId, summary.summary, shownTab === 'overview' || shownTab === 'analysis');
   const index = turnIds.indexOf(turnId);
   const storyMetrics = storyMetricsOf(turnIds, metricsByTurn);
   const tensionLevels = storyMetrics ? estimateTensionLevels(storyMetrics)[index] ?? null : null;
@@ -91,10 +93,10 @@ export function TurnDrawer({
                 </Group>
               </Alert>
             )}
-            <Tabs value={tab} onChange={(value) => { if (isTurnDrawerTab(value)) openTab(value); }} keepMounted={false}
+            <Tabs value={shownTab} onChange={(value) => { if (isTurnDrawerTab(value)) openTab(value); }} keepMounted={false}
               classNames={{ root: styles.tabs, list: styles.drawerTabList }}>
               <Tabs.List>
-                {turnDrawerTabs.map(({ value, label }) => <Tabs.Tab key={value} value={value}>{label}</Tabs.Tab>)}
+                {tabs.map(({ value, label }) => <Tabs.Tab key={value} value={value}>{label}</Tabs.Tab>)}
               </Tabs.List>
               <Tabs.Panel value="overview">
                 <WithSummary state={summary}>
@@ -109,11 +111,6 @@ export function TurnDrawer({
                   {(loaded) => <TurnAnalysisPanel summary={loaded} attribution={attribution.state} onOpenCall={openCall} />}
                 </WithSummary>
               </Tabs.Panel>
-              <Tabs.Panel value="developments">
-                <WithSummary state={summary}>
-                  {(loaded) => <TurnDevelopmentsPanel developments={loaded.developments} />}
-                </WithSummary>
-              </Tabs.Panel>
               <Tabs.Panel value="context">
                 <WithSummary state={summary}>
                   {(loaded) => <TurnContextPanel calls={loaded.calls} metrics={storyMetrics} index={index} onSelectTurn={selectIndex} />}
@@ -124,7 +121,9 @@ export function TurnDrawer({
               </Tabs.Panel>
               <Tabs.Panel value="direction">
                 <WithSummary state={summary}>
-                  {(loaded) => <DirectionPanel trace={loaded.direction} levels={tensionLevels} onOpenTab={openTab} />}
+                  {(loaded) => loaded.direction && (
+                    <DirectionPanel trace={loaded.direction} levels={tensionLevels} onOpenTab={openTab} />
+                  )}
                 </WithSummary>
               </Tabs.Panel>
               <Tabs.Panel value="configuration">

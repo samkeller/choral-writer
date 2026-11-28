@@ -240,6 +240,8 @@ describe('turn attribution and analysis', () => {
     expect(items()).toEqual([expect.stringContaining('Une chute possible.')]);
     fireEvent.click(drawer.getByRole('radio', { name: 'Transmis' }));
     expect(items()).toHaveLength(2);
+    fireEvent.click(drawer.getByRole('radio', { name: 'Développements' }));
+    expect(items()).toEqual([expect.stringMatching(/Hors champ · Personnage B.*Un départ générique\./)]);
 
     fireEvent.click(card.getByRole('button', { name: 'Réponse brute →' }));
     expect(drawer.getByRole('tab', { name: 'Appels bruts' }).getAttribute('aria-selected')).toBe('true');

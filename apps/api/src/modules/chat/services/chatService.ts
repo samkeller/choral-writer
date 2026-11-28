@@ -183,7 +183,7 @@ export class ChatService {
       const configuration = await recordedConfiguration(context, turnId);
       const result = await context.memory.process(projectId, branchId, view, {
         turnId, systemPrompt: configuration.systemPrompt, agents: configuration.agents,
-        prose: source.narrator, developments: source.developments, signal,
+        prose: source.prose, developments: source.developments, signal,
       }, async () => {});
       await context.recordActivity(new Date());
       return result;

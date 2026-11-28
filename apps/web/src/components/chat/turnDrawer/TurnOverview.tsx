@@ -14,7 +14,6 @@ import { DrawerBlock } from './DrawerBlock';
 import { configurationChangeLabel } from './TurnConfigurationPanel';
 import { type TensionLevels, tensionScale } from './directionInsights';
 import { TENSION_ESTIMATE_HINT, nudgeDescriptions, tensionMoveLabels } from './directionPresentation';
-import { TurnTimeline } from './TurnTimeline';
 import type { TurnDrawerTab } from './turnDrawerTabs';
 import { type AttentionPoint, attentionPoints, averageCompleteCost } from './turnInsights';
 import { type TurnAttributionHandle, proseReading } from './useTurnAttribution';
@@ -74,11 +73,6 @@ export function TurnOverview({ summary, attribution, metrics, index, tensionLeve
               ))}
             </Stack>
           )}
-      </DrawerBlock>
-
-      <DrawerBlock title="Déroulé du tour"
-        aside={<Anchor component="button" type="button" size="xs" onClick={() => onOpenTab('cost')}>Coût et durée par appel →</Anchor>}>
-        <TurnTimeline timeline={summary.timeline} />
       </DrawerBlock>
     </Stack>
   );
@@ -171,7 +165,7 @@ function describeAttentionPoint(point: AttentionPoint): { icon: ReactNode; color
       };
     case 'directorDisabled':
       return {
-        icon: <IconCompass size={16} />, color: 'gray', tab: 'direction',
+        icon: <IconCompass size={16} />, color: 'gray', tab: 'configuration',
         text: 'Directeur désactivé depuis le tour précédent : toutes les contributions passent au Narrateur.',
       };
     case 'configurationChanged':

@@ -131,9 +131,11 @@ valides, ni rejet pour dépassement, ni redistribution après un échec.
 
 Le whiteboard est une projection, pas une table persistée. Les traces `llm_call`
 par `turn_id` conservent requête et réponse brutes, statut, étape, agent et version
-de l'agent, durée et tokens. La sortie brute du Narrateur contient résolution et
-prose ; seul le texte de la section prose est diffusé puis enregistré comme
-message assistant. Le module Traces reconstruit le résumé de pipeline et le
+de l'agent, durée et tokens. Le Narrateur ne produit que la prose, diffusée puis
+enregistrée comme message assistant. Les tours du MVP ont enregistré une réponse
+`<resolution>…</resolution><prose>…</prose>` : leur relecture depuis les traces
+(résumé du tour, attribution, relance du Gardien) n'en garde que la prose
+(`narratorProse`), jamais la résolution. Le module Traces reconstruit le résumé de pipeline et le
 whiteboard depuis ces appels. Il vérifie d'abord l'appartenance du tour au projet ;
 le détail d'un appel est ensuite limité à son `turn_id`. Les prompts et réponses
 brutes ne sont renvoyés qu'à la demande, sans exposer l'erreur fournisseur stockée.

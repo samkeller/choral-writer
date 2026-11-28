@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import type {
   ChatCompletion, ChatCompletionChunk, ChatCompletionCreateParamsNonStreaming, ChatCompletionCreateParamsStreaming,
 } from 'openai/resources/chat/completions';
@@ -1395,6 +1395,36 @@ describe.skipIf(!process.env.DATABASE_URL)('projects and chat with PostgreSQL', 
       expect(repaired.assistantMessage).toEqual(turn.assistantMessage);
       expect(repaired.memory?.status).toBe('success');
       expect((await memories.trace(project.id, turn.id)).runs.map((run) => run.result.status)).toEqual(['failed', 'success']);
+    } finally { guardianOutput = null; }
+  });
+
+  it('reads only the prose of a Narrator response recorded by the MVP, in the trace summary and for the Guardian', async () => {
+    const project = await createProject('Tour du MVP');
+    const branchId = project.defaultBranchId!;
+    await memoryChange(project.id, branchId, { op: 'settings', enabled: true });
+    try {
+      propose([]);
+      const completed = events((await send(project.id, 'J’entre.')).body).at(-1);
+      if (completed?.type !== 'chat.turn.completed') throw new Error('Missing completed turn.');
+      await database.update(schema.llmCall)
+        .set({ response: '<resolution>Le garde s’endort.</resolution>\n<prose>La porte grince.</prose>' })
+        .where(and(eq(schema.llmCall.turnId, completed.turnId), eq(schema.llmCall.stage, 'narrator')));
+
+      const summary = turnTraceSummarySchema.parse((await app.inject({
+        method: 'GET', url: `/api/projects/${project.id}/turns/${completed.turnId}/traces`, headers: { cookie },
+      })).json());
+      expect(summary.narrator?.prose).toBe('La porte grince.');
+
+      const view = await memoryView(project.id, branchId);
+      const repair = await app.inject({ method: 'POST', headers: { cookie },
+        url: `/api/projects/${project.id}/branches/${branchId}/turns/${completed.turnId}/memory/retry`,
+        payload: { expectedHeadTurnId: completed.turnId, expectedRevisionId: view.revisionId,
+          expectedCatalogRevisionId: view.catalogRevisionId } });
+      expect(repair.statusCode, repair.body).toBe(200);
+      const guardianRequest = JSON.stringify(create.mock.calls.at(-1)![0].messages);
+      expect(guardianRequest).toContain('La porte grince.');
+      expect(guardianRequest).not.toContain('Le garde s’endort.');
+      expect(guardianRequest).not.toContain('<prose>');
     } finally { guardianOutput = null; }
   });
 

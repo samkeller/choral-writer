@@ -2,6 +2,10 @@ import type { AgentInput, AgentVersionInput } from '@choral-writer/shared';
 
 import { DEFAULT_GUARDIAN_ID, DEFAULT_NARRATOR_ID } from './defaultNarrators.js';
 
+/**
+ * `version` is the number the library declares. Seeding stores it at its agent's first free number
+ * instead when a user has already published that number on the agent.
+ */
 export type LibraryAgentVersion = AgentVersionInput & { id: string; version: number };
 
 /**

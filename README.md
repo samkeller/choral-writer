@@ -1,16 +1,17 @@
 # Choral Writer
 
-Choral Writer est un atelier de narration interactive. Chaque projet définit un univers et une équipe d’agents spécialisés dont les versions sont épinglées au projet. À chaque tour, les agents d’analyse examinent la situation en parallèle, puis le Narrateur diffuse la scène en streaming. Le Gardien peut maintenir une mémoire structurée par branche.
+Choral Writer est un atelier de narration interactive. Chaque projet définit un univers et une équipe d’agents spécialisés dont les versions sont épinglées au projet. À chaque tour, les agents d’analyse examinent la situation en parallèle, un Directeur facultatif oriente le tour, puis le Narrateur diffuse la prose de la scène en streaming. Le Gardien peut maintenir une mémoire structurée par branche.
 
 
 ```mermaid
 flowchart TD
     U["Saisie utilisateur + contexte"] --> A["Analyse · 0 à N agents en parallèle"]
-    A --> W["Whiteboard · vue des enveloppes et des traces du tour"]
-    W --> N["Narrateur · résolution + prose"]
-    N -->|Prose seule, en streaming| C["Message assistant et historique"]
-    W -.->|Propositions mémoire| G["Gardien · propositions mémoire"]
-    N -.->|Propositions mémoire| G
+    A --> W["Whiteboard · perspectives et développements du tour"]
+    W --> D["Direction · Directeur facultatif"]
+    D --> N["Narrateur · prose seule"]
+    N -->|Prose en streaming| C["Message assistant et historique"]
+    N -.->|Prose| G["Gardien · propositions mémoire"]
+    D -.->|Développements transmis| G
     G -.->|Validation| R["Réducteur · validation et application"]
 ```
 
